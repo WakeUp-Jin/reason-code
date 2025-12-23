@@ -1,0 +1,147 @@
+{
+  "name": "catppuccin",
+  "displayName": "Catppuccin",
+  "author": "Catppuccin",
+  "version": "1.0.0",
+  "dark": {
+    "defs": {
+      "black": "#1E1E2E",
+      "white": "#CDD6F4",
+      "gray": "#6C7086",
+      "red": "#F38BA8",
+      "green": "#A6E3A1",
+      "yellow": "#F9E2AF",
+      "blue": "#89B4FA",
+      "purple": "#CBA6F7",
+      "cyan": "#94E2D5",
+      "orange": "#FAB387",
+      "pink": "#F5C2E7",
+      "darkGray": "#313244",
+      "lightGray": "#45475A",
+      "darkBg": "#181825",
+      "greenBg": "#2D4F3D",
+      "redBg": "#4F2D3D",
+      "surface0": "#313244",
+      "surface1": "#45475A",
+      "surface2": "#585B70"
+    },
+    "theme": {
+      "primary": "$blue",
+      "secondary": "$purple",
+      "accent": "$pink",
+      "error": "$red",
+      "warning": "$orange",
+      "success": "$green",
+      "info": "$cyan",
+
+      "text": "$white",
+      "textMuted": "$gray",
+      "textInverse": "$black",
+
+      "background": "$black",
+      "backgroundPanel": "$darkBg",
+      "backgroundElement": "$surface0",
+
+      "border": "$surface1",
+      "borderActive": "$purple",
+      "borderSubtle": "$surface0",
+
+      "diffAdded": "$green",
+      "diffRemoved": "$red",
+      "diffContext": "$gray",
+      "diffAddedBg": "$greenBg",
+      "diffRemovedBg": "$redBg",
+
+      "syntaxComment": "$gray",
+      "syntaxKeyword": "$purple",
+      "syntaxFunction": "$blue",
+      "syntaxString": "$green",
+      "syntaxNumber": "$orange",
+      "syntaxType": "$yellow",
+      "syntaxOperator": "$cyan",
+
+      "messageUser": "$blue",
+      "messageAssistant": "$purple",
+      "messageSystem": "$gray",
+
+      "statusPending": "$gray",
+      "statusRunning": "$yellow",
+      "statusSuccess": "$green",
+      "statusError": "$red",
+
+      "logo": "$purple",
+      "logoAccent": "$pink"
+    }
+  },
+  "light": {
+    "defs": {
+      "black": "#4C4F69",
+      "white": "#EFF1F5",
+      "gray": "#9CA0B0",
+      "red": "#D20F39",
+      "green": "#40A02B",
+      "yellow": "#DF8E1D",
+      "blue": "#1E66F5",
+      "purple": "#8839EF",
+      "cyan": "#179299",
+      "orange": "#FE640B",
+      "pink": "#EA76CB",
+      "darkGray": "#E6E9EF",
+      "lightGray": "#CCD0DA",
+      "darkBg": "#DCE0E8",
+      "greenBg": "#D4E8D4",
+      "redBg": "#E8D4D8",
+      "surface0": "#CCD0DA",
+      "surface1": "#BCC0CC",
+      "surface2": "#ACB0BE"
+    },
+    "theme": {
+      "primary": "$blue",
+      "secondary": "$purple",
+      "accent": "$pink",
+      "error": "$red",
+      "warning": "$orange",
+      "success": "$green",
+      "info": "$cyan",
+
+      "text": "$black",
+      "textMuted": "$gray",
+      "textInverse": "$white",
+
+      "background": "$white",
+      "backgroundPanel": "$darkBg",
+      "backgroundElement": "$darkGray",
+
+      "border": "$lightGray",
+      "borderActive": "$purple",
+      "borderSubtle": "$darkGray",
+
+      "diffAdded": "$green",
+      "diffRemoved": "$red",
+      "diffContext": "$gray",
+      "diffAddedBg": "$greenBg",
+      "diffRemovedBg": "$redBg",
+
+      "syntaxComment": "$gray",
+      "syntaxKeyword": "$purple",
+      "syntaxFunction": "$blue",
+      "syntaxString": "$green",
+      "syntaxNumber": "$orange",
+      "syntaxType": "$yellow",
+      "syntaxOperator": "$cyan",
+
+      "messageUser": "$blue",
+      "messageAssistant": "$purple",
+      "messageSystem": "$gray",
+
+      "statusPending": "$gray",
+      "statusRunning": "$yellow",
+      "statusSuccess": "$green",
+      "statusError": "$red",
+
+      "logo": "$purple",
+      "logoAccent": "$pink"
+    }
+  }
+}
+

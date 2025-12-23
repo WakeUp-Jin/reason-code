@@ -12,6 +12,15 @@ program
   .description('AI Agent CLI powered by Reason')
   .version('0.0.1')
 
+// 默认命令：启动 TUI
+program
+  .command('tui', { isDefault: true })
+  .description('Start the interactive TUI interface')
+  .action(async () => {
+    const { startTUI } = await import('./app.js')
+    await startTUI()
+  })
+
 program
   .command('chat')
   .description('Start a chat session with the AI agent')
@@ -59,6 +68,7 @@ program
     console.log(chalk.gray('  • Agent Engine'))
     console.log(chalk.gray('  • LLM Interface'))
     console.log(chalk.gray('  • Tool System'))
+    console.log(chalk.gray('  • Interactive TUI'))
     console.log('')
   })
 

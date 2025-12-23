@@ -1,0 +1,143 @@
+{
+  "name": "solarized",
+  "displayName": "Solarized",
+  "author": "Ethan Schoonover",
+  "version": "1.0.0",
+  "dark": {
+    "defs": {
+      "black": "#002B36",
+      "white": "#FDF6E3",
+      "gray": "#586E75",
+      "red": "#DC322F",
+      "green": "#859900",
+      "yellow": "#B58900",
+      "blue": "#268BD2",
+      "purple": "#6C71C4",
+      "cyan": "#2AA198",
+      "orange": "#CB4B16",
+      "darkGray": "#073642",
+      "lightGray": "#657B83",
+      "darkBg": "#001E26",
+      "greenBg": "#1D3D1D",
+      "redBg": "#3D1D1D",
+      "base0": "#839496",
+      "base1": "#93A1A1"
+    },
+    "theme": {
+      "primary": "$blue",
+      "secondary": "$purple",
+      "accent": "$cyan",
+      "error": "$red",
+      "warning": "$orange",
+      "success": "$green",
+      "info": "$cyan",
+
+      "text": "$base0",
+      "textMuted": "$gray",
+      "textInverse": "$black",
+
+      "background": "$black",
+      "backgroundPanel": "$darkBg",
+      "backgroundElement": "$darkGray",
+
+      "border": "$darkGray",
+      "borderActive": "$cyan",
+      "borderSubtle": "#073642",
+
+      "diffAdded": "$green",
+      "diffRemoved": "$red",
+      "diffContext": "$gray",
+      "diffAddedBg": "$greenBg",
+      "diffRemovedBg": "$redBg",
+
+      "syntaxComment": "$gray",
+      "syntaxKeyword": "$green",
+      "syntaxFunction": "$blue",
+      "syntaxString": "$cyan",
+      "syntaxNumber": "$purple",
+      "syntaxType": "$yellow",
+      "syntaxOperator": "$orange",
+
+      "messageUser": "$blue",
+      "messageAssistant": "$purple",
+      "messageSystem": "$gray",
+
+      "statusPending": "$gray",
+      "statusRunning": "$yellow",
+      "statusSuccess": "$green",
+      "statusError": "$red",
+
+      "logo": "$blue",
+      "logoAccent": "$cyan"
+    }
+  },
+  "light": {
+    "defs": {
+      "black": "#002B36",
+      "white": "#FDF6E3",
+      "gray": "#93A1A1",
+      "red": "#DC322F",
+      "green": "#859900",
+      "yellow": "#B58900",
+      "blue": "#268BD2",
+      "purple": "#6C71C4",
+      "cyan": "#2AA198",
+      "orange": "#CB4B16",
+      "darkGray": "#EEE8D5",
+      "lightGray": "#D4CBBF",
+      "darkBg": "#FCF4DC",
+      "greenBg": "#E8F0D8",
+      "redBg": "#F0D8D8",
+      "base0": "#657B83",
+      "base1": "#586E75"
+    },
+    "theme": {
+      "primary": "$blue",
+      "secondary": "$purple",
+      "accent": "$cyan",
+      "error": "$red",
+      "warning": "$orange",
+      "success": "$green",
+      "info": "$cyan",
+
+      "text": "$base0",
+      "textMuted": "$gray",
+      "textInverse": "$white",
+
+      "background": "$white",
+      "backgroundPanel": "$darkBg",
+      "backgroundElement": "$darkGray",
+
+      "border": "$lightGray",
+      "borderActive": "$cyan",
+      "borderSubtle": "$darkGray",
+
+      "diffAdded": "$green",
+      "diffRemoved": "$red",
+      "diffContext": "$gray",
+      "diffAddedBg": "$greenBg",
+      "diffRemovedBg": "$redBg",
+
+      "syntaxComment": "$gray",
+      "syntaxKeyword": "$green",
+      "syntaxFunction": "$blue",
+      "syntaxString": "$cyan",
+      "syntaxNumber": "$purple",
+      "syntaxType": "$yellow",
+      "syntaxOperator": "$orange",
+
+      "messageUser": "$blue",
+      "messageAssistant": "$purple",
+      "messageSystem": "$gray",
+
+      "statusPending": "$gray",
+      "statusRunning": "$yellow",
+      "statusSuccess": "$green",
+      "statusError": "$red",
+
+      "logo": "$blue",
+      "logoAccent": "$cyan"
+    }
+  }
+}
+

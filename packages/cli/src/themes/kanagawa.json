@@ -1,0 +1,139 @@
+{
+  "name": "kanagawa",
+  "displayName": "Kanagawa",
+  "author": "rebelot",
+  "version": "1.0.0",
+  "dark": {
+    "defs": {
+      "black": "#1F1F28",
+      "white": "#DCD7BA",
+      "gray": "#727169",
+      "red": "#E82424",
+      "green": "#98BB6C",
+      "yellow": "#D7A657",
+      "blue": "#7E9CD8",
+      "purple": "#957FB8",
+      "cyan": "#7FB4CA",
+      "orange": "#D27E99",
+      "darkGray": "#363646",
+      "lightGray": "#54546D",
+      "darkBg": "#2A2A37",
+      "greenBg": "#2D4F2D",
+      "redBg": "#4F2D2D"
+    },
+    "theme": {
+      "primary": "$blue",
+      "secondary": "$purple",
+      "accent": "$orange",
+      "error": "$red",
+      "warning": "$yellow",
+      "success": "$green",
+      "info": "#76946A",
+
+      "text": "$white",
+      "textMuted": "$gray",
+      "textInverse": "$black",
+
+      "background": "$black",
+      "backgroundPanel": "$darkBg",
+      "backgroundElement": "$darkGray",
+
+      "border": "$lightGray",
+      "borderActive": "$yellow",
+      "borderSubtle": "$darkGray",
+
+      "diffAdded": "$green",
+      "diffRemoved": "$red",
+      "diffContext": "$gray",
+      "diffAddedBg": "$greenBg",
+      "diffRemovedBg": "$redBg",
+
+      "syntaxComment": "$gray",
+      "syntaxKeyword": "$purple",
+      "syntaxFunction": "$blue",
+      "syntaxString": "$green",
+      "syntaxNumber": "$orange",
+      "syntaxType": "$cyan",
+      "syntaxOperator": "#C0A36E",
+
+      "messageUser": "$blue",
+      "messageAssistant": "$purple",
+      "messageSystem": "$gray",
+
+      "statusPending": "$gray",
+      "statusRunning": "$yellow",
+      "statusSuccess": "$green",
+      "statusError": "$red",
+
+      "logo": "$blue",
+      "logoAccent": "$purple"
+    }
+  },
+  "light": {
+    "defs": {
+      "black": "#54433A",
+      "white": "#F2E9DE",
+      "gray": "#9E9389",
+      "red": "#E82424",
+      "green": "#76946A",
+      "yellow": "#D7A657",
+      "blue": "#2D4F67",
+      "purple": "#957FB8",
+      "cyan": "#4E8CA2",
+      "orange": "#D27E99",
+      "darkGray": "#E3DCD2",
+      "lightGray": "#D4CBBF",
+      "darkBg": "#EAE4D7",
+      "greenBg": "#D4E4D4",
+      "redBg": "#E4D4D4"
+    },
+    "theme": {
+      "primary": "$blue",
+      "secondary": "$purple",
+      "accent": "$orange",
+      "error": "$red",
+      "warning": "$yellow",
+      "success": "$green",
+      "info": "$green",
+
+      "text": "$black",
+      "textMuted": "$gray",
+      "textInverse": "$white",
+
+      "background": "$white",
+      "backgroundPanel": "$darkBg",
+      "backgroundElement": "$darkGray",
+
+      "border": "$lightGray",
+      "borderActive": "$yellow",
+      "borderSubtle": "#DCD4C9",
+
+      "diffAdded": "$green",
+      "diffRemoved": "$red",
+      "diffContext": "$gray",
+      "diffAddedBg": "$greenBg",
+      "diffRemovedBg": "$redBg",
+
+      "syntaxComment": "$gray",
+      "syntaxKeyword": "$purple",
+      "syntaxFunction": "$blue",
+      "syntaxString": "$green",
+      "syntaxNumber": "$orange",
+      "syntaxType": "$cyan",
+      "syntaxOperator": "#C0A36E",
+
+      "messageUser": "$blue",
+      "messageAssistant": "$purple",
+      "messageSystem": "$gray",
+
+      "statusPending": "$gray",
+      "statusRunning": "$yellow",
+      "statusSuccess": "$green",
+      "statusError": "$red",
+
+      "logo": "$blue",
+      "logoAccent": "$purple"
+    }
+  }
+}
+

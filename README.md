@@ -202,7 +202,9 @@ bun run --cwd packages/cli dev info
 
 ## 许可证
 
-MIT
+Apache-2.0
+
+本项目采用 Apache License 2.0 开源协议。详见 [LICENSE](LICENSE) 文件。
 
 ## 作者
 
