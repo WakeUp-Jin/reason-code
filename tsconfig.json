@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022"],
+
+    // 适度严格模式：关闭strict，手动控制具体规则
+    "strict": false,
+
+    // 保留这些核心类型检查（推荐保留）
+    "noImplicitAny": false,              // 允许隐式any，提高灵活性
+    "strictNullChecks": true,            // 保留null检查，避免运行时错误
+    "strictFunctionTypes": true,         // 保留函数类型检查
+
+    // 放松的规则
+    "noImplicitThis": false,             // 允许隐式this
+    "strictPropertyInitialization": false, // 不强制属性初始化
+    "strictBindCallApply": false,        // 放松bind/call/apply检查
+
+    // 其他实用配置
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+
+    // 额外建议：允许未使用的变量和参数（开发阶段很有用）
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  }
+}
