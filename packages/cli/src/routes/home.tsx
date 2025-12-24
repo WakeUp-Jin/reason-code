@@ -102,7 +102,6 @@ export function Home() {
       alignItems="center"
       justifyContent="center"
       height="100%"
-      backgroundColor={colors.background}
     >
       <Logo />
       <InputHint />
