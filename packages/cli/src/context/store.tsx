@@ -1,88 +1,91 @@
-import React, { createContext, useContext, type ReactNode } from 'react'
-import { create } from 'zustand'
+import React, { createContext, useContext, type ReactNode } from 'react';
+import { create } from 'zustand';
 
 // Session 类型
 export interface Session {
-  id: string
-  title: string
-  createdAt: number
-  updatedAt: number
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 // Message 类型
 export interface Message {
-  id: string
-  sessionId: string
-  role: 'user' | 'assistant'
-  content: string
-  timestamp: number
-  isStreaming?: boolean
+  id: string;
+  sessionId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+  isStreaming?: boolean;
 }
 
 // Agent 类型
 export interface AgentInfo {
-  id: string
-  name: string
-  description: string
+  id: string;
+  name: string;
+  description: string;
 }
 
 // Model 类型
 export interface ModelInfo {
-  id: string
-  name: string
-  provider: string
+  id: string;
+  name: string;
+  provider: string;
 }
 
 // 配置类型
 export interface Config {
-  theme: string
-  mode: 'dark' | 'light'
-  currentAgent: string
-  currentModel: string
+  theme: string;
+  mode: 'dark' | 'light';
+  currentAgent: string;
+  currentModel: string;
 }
 
 // Store 状态类型
 interface AppState {
   // Session 相关
-  sessions: Session[]
-  currentSessionId: string | null
+  sessions: Session[];
+  currentSessionId: string | null;
 
   // Message 相关
-  messages: Record<string, Message[]>
+  messages: Record<string, Message[]>;
 
   // Agent 相关
-  agents: AgentInfo[]
-  currentAgent: string
+  agents: AgentInfo[];
+  currentAgent: string;
 
   // Model 相关
-  models: ModelInfo[]
-  currentModel: string
+  models: ModelInfo[];
+  currentModel: string;
 
   // 配置
-  config: Config
+  config: Config;
 
   // Session Actions
-  createSession: (title?: string) => Session
-  deleteSession: (id: string) => void
-  renameSession: (id: string, title: string) => void
-  switchSession: (id: string) => void
+  createSession: (title?: string) => Session;
+  deleteSession: (id: string) => void;
+  renameSession: (id: string, title: string) => void;
+  switchSession: (id: string) => void;
 
   // Message Actions
-  addMessage: (sessionId: string, message: Omit<Message, 'id' | 'timestamp'>) => Message
-  updateMessage: (sessionId: string, messageId: string, updates: Partial<Message>) => void
-  appendMessageContent: (sessionId: string, messageId: string, delta: string) => void
+  addMessage: (
+    sessionId: string,
+    message: Omit<Message, 'id' | 'timestamp' | 'sessionId'>
+  ) => Message;
+  updateMessage: (sessionId: string, messageId: string, updates: Partial<Message>) => void;
+  appendMessageContent: (sessionId: string, messageId: string, delta: string) => void;
 
   // Agent/Model Actions
-  setCurrentAgent: (agentId: string) => void
-  setCurrentModel: (modelId: string) => void
+  setCurrentAgent: (agentId: string) => void;
+  setCurrentModel: (modelId: string) => void;
 
   // Config Actions
-  updateConfig: (updates: Partial<Config>) => void
+  updateConfig: (updates: Partial<Config>) => void;
 }
 
 // 生成唯一 ID
 function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
 // 创建 Zustand Store
@@ -116,29 +119,28 @@ export const useAppStore = create<AppState>((set, get) => ({
       title: title || `Session ${get().sessions.length + 1}`,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-    }
+    };
 
     set((state) => ({
       sessions: [...state.sessions, session],
       currentSessionId: session.id,
       messages: { ...state.messages, [session.id]: [] },
-    }))
+    }));
 
-    return session
+    return session;
   },
 
   deleteSession: (id) => {
     set((state) => {
-      const { [id]: _, ...remainingMessages } = state.messages
-      const newSessions = state.sessions.filter((s) => s.id !== id)
+      const { [id]: _, ...remainingMessages } = state.messages;
+      const newSessions = state.sessions.filter((s) => s.id !== id);
       return {
         sessions: newSessions,
         messages: remainingMessages,
-        currentSessionId: state.currentSessionId === id
-          ? (newSessions[0]?.id || null)
-          : state.currentSessionId,
-      }
-    })
+        currentSessionId:
+          state.currentSessionId === id ? newSessions[0]?.id || null : state.currentSessionId,
+      };
+    });
   },
 
   renameSession: (id, title) => {
@@ -146,11 +148,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       sessions: state.sessions.map((s) =>
         s.id === id ? { ...s, title, updatedAt: Date.now() } : s
       ),
-    }))
+    }));
   },
 
   switchSession: (id) => {
-    set({ currentSessionId: id })
+    set({ currentSessionId: id });
   },
 
   // Message Actions
@@ -160,7 +162,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       sessionId,
       timestamp: Date.now(),
       ...messageData,
-    }
+    };
 
     set((state) => ({
       messages: {
@@ -170,9 +172,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       sessions: state.sessions.map((s) =>
         s.id === sessionId ? { ...s, updatedAt: Date.now() } : s
       ),
-    }))
+    }));
 
-    return message
+    return message;
   },
 
   updateMessage: (sessionId, messageId, updates) => {
@@ -183,7 +185,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           m.id === messageId ? { ...m, ...updates } : m
         ),
       },
-    }))
+    }));
   },
 
   appendMessageContent: (sessionId, messageId, delta) => {
@@ -194,62 +196,75 @@ export const useAppStore = create<AppState>((set, get) => ({
           m.id === messageId ? { ...m, content: m.content + delta } : m
         ),
       },
-    }))
+    }));
   },
 
   // Agent/Model Actions
   setCurrentAgent: (agentId) => {
-    set({ currentAgent: agentId })
+    set({ currentAgent: agentId });
   },
 
   setCurrentModel: (modelId) => {
-    set({ currentModel: modelId })
+    set({ currentModel: modelId });
   },
 
   // Config Actions
   updateConfig: (updates) => {
     set((state) => ({
       config: { ...state.config, ...updates },
-    }))
+    }));
   },
-}))
+}));
 
 // Context（用于 Provider 模式，虽然 Zustand 不需要，但保持一致性）
-const StoreContext = createContext<typeof useAppStore | null>(null)
+const StoreContext = createContext<typeof useAppStore | null>(null);
 
 interface StoreProviderProps {
-  children: ReactNode
+  children: ReactNode;
 }
 
 export function StoreProvider({ children }: StoreProviderProps) {
-  return (
-    <StoreContext.Provider value={useAppStore}>
-      {children}
-    </StoreContext.Provider>
-  )
+  return <StoreContext.Provider value={useAppStore}>{children}</StoreContext.Provider>;
 }
 
 // 导出 Hook
 export function useStore<T>(selector: (state: AppState) => T): T {
-  return useAppStore(selector)
+  return useAppStore(selector);
 }
 
 // 便捷 Hooks
 export function useCurrentSession(): Session | null {
   return useAppStore((state) => {
-    const id = state.currentSessionId
-    return id ? state.sessions.find((s) => s.id === id) || null : null
-  })
+    const id = state.currentSessionId;
+    return id ? state.sessions.find((s) => s.id === id) || null : null;
+  });
 }
 
 export function useCurrentMessages(): Message[] {
   return useAppStore((state) => {
-    const id = state.currentSessionId
-    return id ? state.messages[id] || [] : []
-  })
+    const id = state.currentSessionId;
+    return id ? state.messages[id] || [] : [];
+  });
 }
 
 export function useSessions(): Session[] {
-  return useAppStore((state) => state.sessions)
+  return useAppStore((state) => state.sessions);
 }
 
+// 获取已完成的消息（非流式）
+export function useCompletedMessages(): Message[] {
+  return useAppStore((state) => {
+    const id = state.currentSessionId;
+    const messages = id ? state.messages[id] || [] : [];
+    return messages.filter((m) => !m.isStreaming);
+  });
+}
+
+// 获取当前流式消息
+export function useStreamingMessage(): Message | null {
+  return useAppStore((state) => {
+    const id = state.currentSessionId;
+    const messages = id ? state.messages[id] || [] : [];
+    return messages.find((m) => m.isStreaming) || null;
+  });
+}

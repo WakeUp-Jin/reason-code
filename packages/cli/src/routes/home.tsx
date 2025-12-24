@@ -1,4 +1,3 @@
-import React from 'react'
 import { Box, Text, useInput, useApp } from 'ink'
 import { useTheme } from '../context/theme.js'
 import { useRoute } from '../context/route.js'
@@ -75,7 +74,6 @@ function InputHint() {
 }
 
 export function Home() {
-  const { colors } = useTheme()
   const { goToSession } = useRoute()
   const { exit } = useApp()
   const createSession = useAppStore((state) => state.createSession)

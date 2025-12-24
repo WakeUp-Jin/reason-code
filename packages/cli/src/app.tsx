@@ -1,43 +1,38 @@
-import React, { useEffect } from 'react'
-import { render, Box, Text } from 'ink'
-import { ThemeProvider } from './context/theme.js'
-import { StoreProvider } from './context/store.js'
-import { DialogProvider } from './context/dialog.js'
-import { ToastProvider } from './context/toast.js'
-import { RouteProvider, useRoute } from './context/route.js'
-import { Home } from './routes/home.js'
-import { Session } from './routes/session/index.js'
-import { useTerminalSize } from './util/useTerminalSize.js'
-import fs from 'fs'
-import path from 'path'
+import React, { useEffect, useRef } from 'react';
+import { render, Box } from 'ink';
+import { ThemeProvider } from './context/theme.js';
+import { StoreProvider, useAppStore } from './context/store.js';
+import { DialogProvider } from './context/dialog.js';
+import { ToastProvider } from './context/toast.js';
+import { RouteProvider, useRoute } from './context/route.js';
+import { Session } from './routes/session/index.js';
+import { useTerminalSize } from './util/useTerminalSize.js';
 
-const LOG_FILE = path.join(process.cwd(), 'debug-sidebar.log')
-
-function logToFile(message: string, data?: any) {
-  const timestamp = new Date().toISOString()
-  const logLine = `[${timestamp}] ${message} ${data ? JSON.stringify(data, null, 2) : ''}\n`
-  fs.appendFileSync(LOG_FILE, logLine)
-}
-
-// 主应用组件
+// 主应用组件 - 启动时自动创建 Session 并进入聊天界面
 function App() {
-  const route = useRoute()
-  const { columns: width, rows: height } = useTerminalSize()  // 使用自定义 hook
+  const { columns: width } = useTerminalSize();
+  const createSession = useAppStore((state) => state.createSession);
+  const currentSessionId = useAppStore((state) => state.currentSessionId);
+  const initialized = useRef(false);
 
+  // 启动时自动创建 Session
   useEffect(() => {
-    logToFile('🌐 App 组件渲染', { width, height })
-  }, [width, height])
+    if (!initialized.current && !currentSessionId) {
+      initialized.current = true;
+      createSession();
+    }
+  }, [createSession, currentSessionId]);
+
+  // 等待 Session 创建完成
+  if (!currentSessionId) {
+    return null;
+  }
 
   return (
-    <Box
-      key={`app-${width}-${height}`}  // 强制在尺寸变化时重新挂载整个应用树
-      flexDirection="column"
-      width={width}
-      height={height}
-    >
-      {route.current === 'home' ? <Home /> : <Session />}
+    <Box key={`app-${width}`} flexDirection="column" width={width}>
+      <Session />
     </Box>
-  )
+  );
 }
 
 // 根组件，包含所有 Provider
@@ -54,16 +49,30 @@ function Root() {
         </DialogProvider>
       </StoreProvider>
     </ThemeProvider>
-  )
+  );
+}
+
+// 清空终端（包括滚动缓冲区）
+function clearTerminal(): Promise<void> {
+  return new Promise((resolve) => {
+    // \x1b[2J - 清空屏幕
+    // \x1b[3J - 清空滚动缓冲区（这是关键！）
+    // \x1b[H  - 移动光标到左上角
+    process.stdout.write('\x1b[2J\x1b[3J\x1b[H', () => {
+      resolve();
+    });
+  });
 }
 
 // TUI 启动函数
 export async function startTUI(): Promise<void> {
+  // 启动前清空终端（包括滚动缓冲区）
+  await clearTerminal();
+
   return new Promise((resolve) => {
-    const { waitUntilExit } = render(<Root />)
-    waitUntilExit().then(resolve)
-  })
+    const { waitUntilExit } = render(<Root />);
+    waitUntilExit().then(resolve);
+  });
 }
 
-export { Root, App }
-
+export { Root, App };
