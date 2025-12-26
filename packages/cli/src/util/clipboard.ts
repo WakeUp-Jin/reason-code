@@ -3,6 +3,8 @@
  * 使用 OSC 52 序列实现终端剪贴板操作
  */
 
+import { logger } from './logger.js'
+
 /**
  * 检测终端是否支持 OSC 52
  */
@@ -65,7 +67,7 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 
     return true
   } catch (error) {
-    console.error('Failed to copy to clipboard:', error)
+    logger.error('Failed to copy to clipboard', { error })
     return false
   }
 }

@@ -9,6 +9,40 @@ export interface Session {
   updatedAt: number;
 }
 
+// Token 使用情况
+export interface TokenUsage {
+  inputTokens: number;   // 输入 token 数
+  outputTokens: number;  // 输出 token 数
+  totalTokens: number;   // 总 token 数
+}
+
+// 消息元数据
+export interface MessageMetadata {
+  // Token 信息（仅 assistant 消息有）
+  tokenUsage?: TokenUsage;
+
+  // 模型信息
+  model?: string;
+
+  // 成本信息（可选）
+  cost?: {
+    inputCost: number;   // 输入成本（USD）
+    outputCost: number;  // 输出成本（USD）
+    totalCost: number;   // 总成本（USD）
+  };
+
+  // 生成信息（可选）
+  generationInfo?: {
+    temperature?: number;   // 温度参数
+    maxTokens?: number;     // 最大 token 数
+    stopReason?: string;    // 停止原因
+    latency?: number;       // 响应延迟（ms）
+  };
+
+  // 其他自定义字段
+  [key: string]: any;
+}
+
 // Message 类型
 export interface Message {
   id: string;
@@ -17,6 +51,9 @@ export interface Message {
   content: string;
   timestamp: number;
   isStreaming?: boolean;
+
+  // 元数据
+  metadata?: MessageMetadata;
 }
 
 // Agent 类型
@@ -31,6 +68,18 @@ export interface ModelInfo {
   id: string;
   name: string;
   provider: string;
+
+  // Context 窗口大小（最大 token 数）
+  maxTokens: number;
+
+  // 定价（USD per 1M tokens）
+  pricing?: {
+    input: number;   // 输入价格
+    output: number;  // 输出价格
+  };
+
+  // 其他信息
+  description?: string;
 }
 
 // 配置类型
@@ -81,6 +130,15 @@ interface AppState {
 
   // Config Actions
   updateConfig: (updates: Partial<Config>) => void;
+
+  // Initialization from disk
+  initializeFromDisk: (data: {
+    sessions: Session[];
+    messages: Record<string, Message[]>;
+    currentSessionId: string | null;
+    currentAgent: string;
+    currentModel: string;
+  }) => void;
 }
 
 // 生成唯一 ID
@@ -100,16 +158,68 @@ export const useAppStore = create<AppState>((set, get) => ({
   ],
   currentAgent: 'default',
   models: [
-    { id: 'claude-sonnet-4', name: 'Claude Sonnet 4', provider: 'Anthropic' },
-    { id: 'gpt-4o', name: 'GPT-4o', provider: 'OpenAI' },
-    { id: 'gemini-pro', name: 'Gemini Pro', provider: 'Google' },
+    {
+      id: 'deepseek/deepseek-chat',
+      name: 'DeepSeek Chat',
+      provider: 'DeepSeek',
+      maxTokens: 64_000,
+      pricing: {
+        input: 0.14,   // $0.14 per 1M tokens
+        output: 0.28,  // $0.28 per 1M tokens
+      },
+      description: 'Fast and affordable chat model',
+    },
+    {
+      id: 'deepseek/deepseek-reasoner',
+      name: 'DeepSeek Reasoner',
+      provider: 'DeepSeek',
+      maxTokens: 64_000,
+      pricing: {
+        input: 0.55,   // $0.55 per 1M tokens
+        output: 2.19,  // $2.19 per 1M tokens
+      },
+      description: 'Advanced reasoning model (R1)',
+    },
+    {
+      id: 'claude-sonnet-4',
+      name: 'Claude Sonnet 4',
+      provider: 'Anthropic',
+      maxTokens: 200_000,
+      pricing: {
+        input: 3,    // $3 per 1M tokens
+        output: 15,  // $15 per 1M tokens
+      },
+      description: 'Most capable Claude model with 200K context',
+    },
+    {
+      id: 'gpt-4o',
+      name: 'GPT-4o',
+      provider: 'OpenAI',
+      maxTokens: 128_000,
+      pricing: {
+        input: 2.5,   // $2.5 per 1M tokens
+        output: 10,   // $10 per 1M tokens
+      },
+      description: 'Fast and capable GPT-4 model',
+    },
+    {
+      id: 'gemini-pro',
+      name: 'Gemini Pro',
+      provider: 'Google',
+      maxTokens: 1_000_000,
+      pricing: {
+        input: 0.5,   // $0.5 per 1M tokens
+        output: 1.5,  // $1.5 per 1M tokens
+      },
+      description: 'Long context Google model with 1M context',
+    },
   ],
-  currentModel: 'claude-sonnet-4',
+  currentModel: 'deepseek/deepseek-chat',
   config: {
     theme: 'kanagawa',
     mode: 'dark',
     currentAgent: 'default',
-    currentModel: 'claude-sonnet-4',
+    currentModel: 'deepseek/deepseek-chat',
   },
 
   // Session Actions
@@ -213,6 +323,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       config: { ...state.config, ...updates },
     }));
+  },
+
+  // Initialization from disk
+  initializeFromDisk: (data) => {
+    set({
+      sessions: data.sessions,
+      messages: data.messages,
+      currentSessionId: data.currentSessionId,
+      currentAgent: data.currentAgent,
+      currentModel: data.currentModel,
+      config: {
+        ...get().config,
+        currentAgent: data.currentAgent,
+        currentModel: data.currentModel,
+      },
+    });
   },
 }));
 

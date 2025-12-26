@@ -19,9 +19,11 @@
     "fuzzysort": "^3.1.0",
     "highlight.js": "^11.9.0",
     "ink": "^6.6.0",
+    "ink-scroll-list": "^0.3.3",
     "ink-text-input": "^6.0.0",
     "ora": "^8.0.0",
     "react": "^19.2.3",
+    "valibot": "^1.0.0",
     "zustand": "^4.4.7"
   },
   "devDependencies": {

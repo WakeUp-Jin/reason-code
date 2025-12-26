@@ -36,16 +36,13 @@ function Shortcuts() {
           <Text color={colors.textMuted}> New Session</Text>
         </Text>
         <Text>
-          <Text color={colors.primary} bold>Ctrl+P</Text>
-          <Text color={colors.textMuted}> Commands</Text>
-        </Text>
-        <Text>
-          <Text color={colors.primary} bold>Ctrl+S</Text>
-          <Text color={colors.textMuted}> Sessions</Text>
-        </Text>
-        <Text>
           <Text color={colors.primary} bold>Ctrl+C</Text>
           <Text color={colors.textMuted}> Exit</Text>
+        </Text>
+      </Box>
+      <Box marginTop={1}>
+        <Text color={colors.textMuted} dimColor>
+          Type / for commands
         </Text>
       </Box>
     </Box>

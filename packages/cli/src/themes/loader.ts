@@ -1,4 +1,5 @@
 import type { ThemeJSON, ThemeDefs, ThemeSemantic, ResolvedTheme } from './types.js'
+import { logger } from '../util/logger.js'
 
 // 内置主题
 import kanagawa from './kanagawa.json' with { type: 'json' }
@@ -28,7 +29,7 @@ function resolveColorRef(value: string, defs: ThemeDefs): string {
     if (refName in defs) {
       return defs[refName]
     }
-    console.warn(`Theme color reference not found: ${value}`)
+    logger.warn(`Theme color reference not found: ${value}`)
     return value
   }
   return value
@@ -55,7 +56,7 @@ export function loadTheme(name: string, mode: 'dark' | 'light'): ResolvedTheme |
   const themeJSON = BUILTIN_THEMES[name]
 
   if (!themeJSON) {
-    console.warn(`Theme not found: ${name}`)
+    logger.warn(`Theme not found: ${name}`)
     return null
   }
 

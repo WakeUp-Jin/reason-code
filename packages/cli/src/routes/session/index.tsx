@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Box, Text, Static } from 'ink';
 import { useTheme } from '../../context/theme.js';
 import {
@@ -23,6 +23,9 @@ export function Session() {
   const session = useCurrentSession();
   const completedMessages = useCompletedMessages();
   const streamingMessage = useStreamingMessage();
+
+  // 命令面板显示状态
+  const [isCommandPanelVisible, setIsCommandPanelVisible] = useState(false);
 
   // 如果没有当前会话，显示错误
   if (!session) {
@@ -89,8 +92,9 @@ export function Session() {
         borderRight={false}
         borderColor={colors.border || 'gray'}
       >
-        <InputArea />
-        <Footer />
+        <InputArea onCommandPanelChange={setIsCommandPanelVisible} />
+        {/* 仅在非命令面板模式下显示 Footer */}
+        {!isCommandPanelVisible && <Footer />}
       </Box>
     </>
   );

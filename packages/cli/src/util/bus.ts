@@ -3,6 +3,8 @@
  * 用于 CLI 内部组件间通信
  */
 
+import { logger } from './logger.js'
+
 type EventCallback<T = unknown> = (data: T) => void
 
 interface EventBus {
@@ -55,7 +57,7 @@ function createEventBus(): EventBus {
           try {
             callback(data)
           } catch (error) {
-            console.error(`Error in event listener for "${event}":`, error)
+            logger.error(`Error in event listener for "${event}"`, { error })
           }
         }
       }

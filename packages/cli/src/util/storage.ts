@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlink
 import { join } from 'path'
 import { homedir } from 'os'
 import type { Session, Message } from '../context/store.js'
+import { logger } from './logger.js'
 
 // 存储路径
 const STORAGE_DIR = join(homedir(), '.reason-cli')
@@ -11,7 +12,7 @@ const CONFIG_FILE = join(STORAGE_DIR, 'config.json')
 /**
  * 确保存储目录存在
  */
-function ensureStorageDir(): void {
+export function ensureStorageDir(): void {
   if (!existsSync(STORAGE_DIR)) {
     mkdirSync(STORAGE_DIR, { recursive: true })
   }
@@ -56,7 +57,7 @@ export function loadSession(sessionId: string): SessionData | null {
     const content = readFileSync(filePath, 'utf-8')
     return JSON.parse(content) as SessionData
   } catch (error) {
-    console.error(`Failed to load session ${sessionId}:`, error)
+    logger.error(`Failed to load session ${sessionId}`, { error })
     return null
   }
 }
@@ -77,7 +78,7 @@ export function deleteSession(sessionId: string): boolean {
     unlinkSync(filePath)
     return true
   } catch (error) {
-    console.error(`Failed to delete session ${sessionId}:`, error)
+    logger.error(`Failed to delete session ${sessionId}`, { error })
     return false
   }
 }
@@ -97,7 +98,7 @@ export function listSessions(): Session[] {
       const data = JSON.parse(content) as SessionData
       sessions.push(data.session)
     } catch (error) {
-      console.error(`Failed to read session file ${file}:`, error)
+      logger.error(`Failed to read session file ${file}`, { error })
     }
   }
 
@@ -122,7 +123,7 @@ export function loadAllSessions(): { sessions: Session[]; messages: Record<strin
       sessions.push(data.session)
       messages[data.session.id] = data.messages
     } catch (error) {
-      console.error(`Failed to read session file ${file}:`, error)
+      logger.error(`Failed to read session file ${file}`, { error })
     }
   }
 
@@ -172,7 +173,7 @@ export function loadConfig(): ConfigData {
     const content = readFileSync(CONFIG_FILE, 'utf-8')
     return { ...DEFAULT_CONFIG, ...JSON.parse(content) }
   } catch (error) {
-    console.error('Failed to load config:', error)
+    logger.error('Failed to load config', { error })
     return DEFAULT_CONFIG
   }
 }
