@@ -22,7 +22,7 @@ export function InputArea({ onCommandPanelChange }: InputAreaProps) {
   const { saveCurrentSession } = usePersistence();
 
   // Agent Hook
-  const { isReady, isLoading, error, sendMessage } = useAgent();
+  const { isLoading, error, sendMessage } = useAgent();
 
   // 命令面板状态
   const [commandPanelState, setCommandPanelState] = useState<{
@@ -49,9 +49,10 @@ export function InputArea({ onCommandPanelChange }: InputAreaProps) {
     saveCurrentSession();
 
     // 添加 AI 响应占位消息（显示加载状态）
+    // 注意：实际状态由 ExecutionStream 组件展示，这里只是占位
     const assistantMessage = addMessage(session.id, {
       role: 'assistant',
-      content: isReady ? 'Thinking...' : 'Initializing AI...',
+      content: '',
       isStreaming: true,
     });
 

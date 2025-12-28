@@ -43,17 +43,45 @@ export interface MessageMetadata {
   [key: string]: any;
 }
 
+// 消息角色类型
+export type MessageRole = 'user' | 'assistant' | 'tool' | 'thinking';
+
+// 工具调用状态
+export type ToolCallStatus = 'executing' | 'success' | 'error';
+
+// 工具调用信息（tool 消息专用）
+export interface ToolCallInfo {
+  toolName: string;
+  toolCategory: string;
+  params: Record<string, any>;
+  paramsSummary: string;
+  status: ToolCallStatus;
+  resultSummary?: string;
+  duration?: number;
+  error?: string;
+  // 工具调用前的思考内容（LLM 在调用工具前的 content）
+  thinkingContent?: string;
+}
+
 // Message 类型
 export interface Message {
   id: string;
   sessionId: string;
-  role: 'user' | 'assistant';
+  role: MessageRole;
   content: string;
   timestamp: number;
   isStreaming?: boolean;
 
   // 元数据
   metadata?: MessageMetadata;
+
+  // 工具调用信息（仅 role='tool' 时有）
+  toolCall?: ToolCallInfo;
+}
+
+// 消息更新类型（支持 toolCall 部分更新）
+export interface MessageUpdate extends Omit<Partial<Message>, 'toolCall'> {
+  toolCall?: Partial<ToolCallInfo>;
 }
 
 // Agent 类型
@@ -121,7 +149,14 @@ interface AppState {
     sessionId: string,
     message: Omit<Message, 'id' | 'timestamp' | 'sessionId'>
   ) => Message;
-  updateMessage: (sessionId: string, messageId: string, updates: Partial<Message>) => void;
+  /** 在指定消息前插入新消息（用于在 assistant 占位消息前插入 tool/thinking 消息） */
+  insertMessageBefore: (
+    sessionId: string,
+    beforeMessageId: string,
+    message: Omit<Message, 'id' | 'timestamp' | 'sessionId'>
+  ) => Message;
+  /** 更新消息，支持深度合并 toolCall 字段 */
+  updateMessage: (sessionId: string, messageId: string, updates: MessageUpdate) => void;
   appendMessageContent: (sessionId: string, messageId: string, delta: string) => void;
 
   // Agent/Model Actions
@@ -287,13 +322,64 @@ export const useAppStore = create<AppState>((set, get) => ({
     return message;
   },
 
+  insertMessageBefore: (sessionId, beforeMessageId, messageData) => {
+    const message: Message = {
+      id: generateId(),
+      sessionId,
+      timestamp: Date.now(),
+      ...messageData,
+    };
+
+    set((state) => {
+      const sessionMessages = state.messages[sessionId] || [];
+      const insertIndex = sessionMessages.findIndex((m) => m.id === beforeMessageId);
+
+      // 如果找到目标消息，在其前面插入；否则追加到末尾
+      const newMessages =
+        insertIndex >= 0
+          ? [
+              ...sessionMessages.slice(0, insertIndex),
+              message,
+              ...sessionMessages.slice(insertIndex),
+            ]
+          : [...sessionMessages, message];
+
+      return {
+        messages: {
+          ...state.messages,
+          [sessionId]: newMessages,
+        },
+        sessions: state.sessions.map((s) =>
+          s.id === sessionId ? { ...s, updatedAt: Date.now() } : s
+        ),
+      };
+    });
+
+    return message;
+  },
+
   updateMessage: (sessionId, messageId, updates) => {
     set((state) => ({
       messages: {
         ...state.messages,
-        [sessionId]: (state.messages[sessionId] || []).map((m) =>
-          m.id === messageId ? { ...m, ...updates } : m
-        ),
+        [sessionId]: (state.messages[sessionId] || []).map((m): Message => {
+          if (m.id !== messageId) return m;
+
+          // 深度合并 toolCall 字段
+          // 如果 m.toolCall 存在，合并后仍是完整的 ToolCallInfo
+          const newToolCall: ToolCallInfo | undefined =
+            updates.toolCall && m.toolCall
+              ? { ...m.toolCall, ...updates.toolCall }
+              : updates.toolCall
+                ? (updates.toolCall as ToolCallInfo)
+                : m.toolCall;
+
+          return {
+            ...m,
+            ...updates,
+            toolCall: newToolCall,
+          };
+        }),
       },
     }));
   },

@@ -1,16 +1,25 @@
 import React, { useEffect, useRef } from 'react';
 import { render, Box } from 'ink';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { ThemeProvider } from './context/theme.js';
 import { StoreProvider, useAppStore } from './context/store.js';
 import { ToastProvider } from './context/toast.js';
 import { RouteProvider, useRoute } from './context/route.js';
+import { ExecutionProvider } from './context/execution.js';
 import { Session } from './routes/session/index.js';
 import { useTerminalSize } from './util/useTerminalSize.js';
 import { registerCommands } from './component/command/index.js';
 import { logger } from './util/logger.js';
+import { logger as coreLogger } from '@reason-cli/core';
 import { loadAllData } from './persistence/loader.js';
 import { usePersistence } from './hooks/usePersistence.js';
 import { configManager } from './config/manager.js';
+
+// 获取项目根目录的绝对路径
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PROJECT_ROOT = join(__dirname, '..', '..', '..');
 
 // 主应用组件 - 启动时加载数据或创建新 Session
 function App() {
@@ -93,7 +102,9 @@ function Root() {
       <StoreProvider>
         <ToastProvider>
           <RouteProvider>
-            <App />
+            <ExecutionProvider>
+              <App />
+            </ExecutionProvider>
           </RouteProvider>
         </ToastProvider>
       </StoreProvider>
@@ -115,13 +126,25 @@ function clearTerminal(): Promise<void> {
 
 // TUI 启动函数
 export async function startTUI(): Promise<void> {
-  // 初始化日志系统
+  // 日志目录使用项目根目录的绝对路径
+  const coreLogsDir = join(PROJECT_ROOT, 'logs', 'core');
+
+  // 初始化 CLI 日志系统
   logger.createSession();
   logger.info('CLI starting', {
     platform: process.platform,
     nodeVersion: process.version,
     cwd: process.cwd(),
   });
+
+  // 配置并初始化 Core 日志系统（使用独立的 core 日志目录）
+  coreLogger.configure({
+    logsDir: coreLogsDir,
+    enabled: true,
+    minLevel: 'INFO',
+    bufferSize: 1, // 立即写入，确保日志不丢失
+  });
+  coreLogger.createSession();
 
   // 优雅关闭处理器
   const handleShutdown = (signal: string) => {
@@ -131,6 +154,7 @@ export async function startTUI(): Promise<void> {
     // 实际的保存会在 App 组件的 'exit' 事件监听器中处理
 
     logger.flush();
+    coreLogger.flush();
     process.exit(0);
   };
 
@@ -167,6 +191,7 @@ export async function startTUI(): Promise<void> {
     waitUntilExit().then(() => {
       logger.info('CLI exiting gracefully');
       logger.flush();
+      coreLogger.flush();
       resolve();
     });
   });

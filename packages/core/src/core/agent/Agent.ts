@@ -10,6 +10,7 @@ import { createLLMService } from '../llm/factory.js';
 import { executeToolLoop } from '../llm/utils/executeToolLoop.js';
 import { eventBus } from '../../evaluation/EventBus.js';
 import { SIMPLE_AGENT_PROMPT } from '../promptManager/index.js';
+import { ExecutionStreamManager } from '../execution/index.js';
 
 /**
  * Agent 配置
@@ -63,6 +64,7 @@ export class Agent {
   private contextManager: ContextManager;
   private toolManager: ToolManager;
   private initialized = false;
+  private executionStream: ExecutionStreamManager;
 
   constructor(config: AgentConfig) {
     this.config = {
@@ -73,6 +75,7 @@ export class Agent {
     };
     this.contextManager = new ContextManager();
     this.toolManager = new ToolManager();
+    this.executionStream = new ExecutionStreamManager();
   }
 
   /**
@@ -133,6 +136,9 @@ export class Agent {
     // 发射 Agent 调用事件
     eventBus.emit('agent:call', { agentName: this.config.name! });
 
+    // 启动执行流
+    this.executionStream.start();
+
     try {
       // 设置用户输入
       this.contextManager.setUserInput(userInput);
@@ -145,8 +151,12 @@ export class Agent {
         {
           maxLoops: this.config.maxLoops,
           agentName: this.config.name,
+          executionStream: this.executionStream,
         }
       );
+
+      // 完成执行流
+      this.executionStream.complete();
 
       // 从事件系统获取收集的数据
       const collected = eventBus.getData();
@@ -160,6 +170,9 @@ export class Agent {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // 执行流错误
+      this.executionStream.error(errorMessage);
 
       // 从事件系统获取收集的数据
       const collected = eventBus.getData();
@@ -203,5 +216,13 @@ export class Agent {
       provider: this.config.provider,
       model: this.config.model,
     };
+  }
+
+  /**
+   * 获取执行流管理器
+   * 用于 CLI 层订阅执行状态更新
+   */
+  getExecutionStream(): ExecutionStreamManager {
+    return this.executionStream;
   }
 }

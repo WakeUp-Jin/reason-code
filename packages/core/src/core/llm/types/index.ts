@@ -1,3 +1,5 @@
+import type { ExecutionStreamManager } from '../../execution/index.js';
+
 /** 图片数据 */
 export interface ImageData {
   url?: string;
@@ -71,6 +73,8 @@ export interface EventManager {
 export interface LLMResponse {
   /** 响应内容 */
   content: string;
+  /** 推理模型的思考内容（如 DeepSeek Reasoner 的 reasoning_content） */
+  reasoningContent?: string;
   /** 工具调用列表 */
   toolCalls?: ToolCall[];
   /** 结束原因 */
@@ -127,6 +131,8 @@ export interface ToolLoopConfig {
   maxLoops?: number;
   /** Agent 名称 */
   agentName?: string;
+  /** 执行流管理器 */
+  executionStream?: ExecutionStreamManager;
 }
 
 /** LLM Service 核心接口 */

@@ -9,6 +9,7 @@ import { ILLMService, ToolLoopResult } from '../llm/types/index.js';
 import { executeToolLoop } from '../llm/utils/executeToolLoop.js';
 import { eventBus } from '../../evaluation/EventBus.js';
 import { SIMPLE_AGENT_PROMPT } from '../promptManager/index.js';
+import { logger } from '../../utils/logger.js';
 
 /**
  * Agent 执行结果
@@ -112,7 +113,7 @@ export class SimpleAgent {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`Agent 执行失败: ${errorMessage}`);
+      logger.error(`Agent execution failed`, { agentName: this.config.name, error: errorMessage });
 
       // 从事件系统获取收集的数据
       const collected = eventBus.getData();

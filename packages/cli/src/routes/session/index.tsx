@@ -1,17 +1,23 @@
 import React, { useState } from 'react';
 import { Box, Text, Static } from 'ink';
 import { useTheme } from '../../context/theme.js';
+import { useExecution } from '../../context/execution.js';
 import {
   useCurrentSession,
   useCompletedMessages,
   useStreamingMessage,
+  useAppStore,
 } from '../../context/store.js';
 import type { Message } from '../../context/store.js';
 import { Header } from './header.js';
 import { Footer } from './footer.js';
 import { UserMessage } from '../../component/message-area/user-message.js';
 import { AssistantMessage } from '../../component/message-area/assistant-message.js';
+import { ToolMessage } from '../../component/message-area/tool-message.js';
+import { ThinkingMessage } from '../../component/message-area/thinking-message.js';
 import { InputArea } from './inputArea.js';
+import { ExecutionStream } from '../../component/execution/index.js';
+import { useExecutionMessages } from '../../hooks/useExecutionMessages.js';
 
 // Static 区域的 item 类型
 type StaticItem =
@@ -20,12 +26,20 @@ type StaticItem =
 
 export function Session() {
   const { colors } = useTheme();
+  const { isExecuting } = useExecution();
   const session = useCurrentSession();
   const completedMessages = useCompletedMessages();
   const streamingMessage = useStreamingMessage();
+  const currentSessionId = useAppStore((state) => state.currentSessionId);
 
   // 命令面板显示状态
   const [isCommandPanelVisible, setIsCommandPanelVisible] = useState(false);
+
+  // 监听执行事件，自动创建 tool/thinking 消息
+  useExecutionMessages({
+    sessionId: currentSessionId,
+    assistantPlaceholderId: streamingMessage?.id || null,
+  });
 
   // 如果没有当前会话，显示错误
   if (!session) {
@@ -59,20 +73,38 @@ export function Session() {
               </Box>
             );
           }
-          // 消息项
+          // 消息项 - 根据 role 选择组件
+          const renderMessage = () => {
+            switch (item.message.role) {
+              case 'user':
+                return <UserMessage message={item.message} />;
+              case 'assistant':
+                return <AssistantMessage message={item.message} />;
+              case 'tool':
+                return <ToolMessage message={item.message} />;
+              case 'thinking':
+                return <ThinkingMessage message={item.message} />;
+              default:
+                return null;
+            }
+          };
+
           return (
             <Box key={item.id} paddingLeft={2} paddingRight={2}>
-              {item.message.role === 'user' ? (
-                <UserMessage message={item.message} />
-              ) : (
-                <AssistantMessage message={item.message} />
-              )}
+              {renderMessage()}
             </Box>
           );
         }}
       </Static>
 
-      {/* 动态区域 - 流式消息 + 输入框 + Footer */}
+      {/* 动态区域 - 执行流 + 流式消息 + 输入框 + Footer */}
+      {/* 执行流展示 */}
+      {isExecuting && (
+        <Box paddingLeft={2} paddingRight={2}>
+          <ExecutionStream />
+        </Box>
+      )}
+
       {streamingMessage && (
         <Box paddingLeft={2} paddingRight={2}>
           <AssistantMessage message={streamingMessage} />

@@ -13,7 +13,7 @@ import { sleep } from '../utils/helpers.js';
 /**
  * DeepSeek LLM 服务
  * 使用 OpenAI SDK（DeepSeek 兼容 OpenAI API）
- * 
+ *
  * 提供两种使用方式：
  * 1. complete() - 上下文补全（推荐）
  * 2. generate() - 内置工具调用循环（可选）
@@ -52,11 +52,7 @@ export class DeepSeekService implements ILLMService {
    * @param options - 生成参数（temperature, maxTokens 等）
    * @returns 模型响应（包含内容、工具调用、使用统计）
    */
-  async complete(
-    messages: any[],
-    tools?: any[],
-    options?: LLMChatOptions
-  ): Promise<LLMResponse> {
+  async complete(messages: any[], tools?: any[], options?: LLMChatOptions): Promise<LLMResponse> {
     let attempt = 0;
 
     while (attempt < this.maxRetries) {
@@ -73,7 +69,7 @@ export class DeepSeekService implements ILLMService {
           tools: tools && tools.length > 0 ? tools : undefined,
           tool_choice: options?.toolChoice,
           temperature: options?.temperature,
-          max_tokens: options?.maxTokens,
+          max_tokens: options?.maxTokens || 8 * 1024,
           top_p: options?.topP,
           frequency_penalty: options?.frequencyPenalty,
           presence_penalty: options?.presencePenalty,
@@ -86,8 +82,12 @@ export class DeepSeekService implements ILLMService {
           throw new Error('DeepSeek API 返回空响应');
         }
 
+        // 提取 reasoning_content（推理模型专用字段）
+        const reasoningContent = (message as any).reasoning_content;
+
         const result: LLMResponse = {
           content: message.content || '',
+          reasoningContent: reasoningContent || undefined,
           toolCalls: message.tool_calls as any,
           finishReason: response.choices[0]?.finish_reason,
           usage: response.usage
@@ -105,9 +105,7 @@ export class DeepSeekService implements ILLMService {
 
         return result;
       } catch (error: any) {
-        logger.error(
-          `DeepSeek API 调用失败 (${attempt}/${this.maxRetries}): ${error.message}`
-        );
+        logger.error(`DeepSeek API 调用失败 (${attempt}/${this.maxRetries}): ${error.message}`);
 
         if (attempt >= this.maxRetries) {
           throw new Error(`DeepSeek API 调用失败: ${error.message}`);
@@ -158,15 +156,9 @@ export class DeepSeekService implements ILLMService {
    * @param imageData - 可选的图片数据
    * @param _stream - 是否流式输出（暂未实现）
    */
-  async generate(
-    userInput: string,
-    imageData?: ImageData,
-    _stream?: boolean
-  ): Promise<string> {
+  async generate(userInput: string, imageData?: ImageData, _stream?: boolean): Promise<string> {
     if (!this.toolManager) {
-      throw new Error(
-        'generate() 方法需要 toolManager，请在构造时传入或使用 chat() 方法'
-      );
+      throw new Error('generate() 方法需要 toolManager，请在构造时传入或使用 chat() 方法');
     }
 
     // 初始化消息列表
@@ -195,9 +187,7 @@ export class DeepSeekService implements ILLMService {
     messages.push(userMessage);
 
     // 获取可用工具
-    const availableTools = await this.toolManager.getToolsForProvider(
-      'deepseek'
-    );
+    const availableTools = await this.toolManager.getToolsForProvider('deepseek');
 
     // 工具调用循环
     let iteration = 0;
@@ -238,10 +228,7 @@ export class DeepSeekService implements ILLMService {
 
         try {
           const args = JSON.parse(toolCall.function.arguments);
-          const result = await this.toolManager.executeTool(
-            toolCall.function.name,
-            args
-          );
+          const result = await this.toolManager.executeTool(toolCall.function.name, args);
 
           logger.info(`✅ 工具执行成功: ${JSON.stringify(result).slice(0, 200)}`);
 
@@ -289,4 +276,3 @@ export class DeepSeekService implements ILLMService {
     throw new Error('流式响应暂未实现');
   }
 }
-

@@ -14,6 +14,7 @@ import {
   SUB_AGENT_A_PROMPT,
   SUB_AGENT_B_PROMPT,
 } from '../promptManager/index.js';
+import { logger } from '../../utils/logger.js';
 
 /**
  * 子Agent执行结果
@@ -74,8 +75,8 @@ export class SubAgent {
    * @param instruction - 主Agent下发的指令
    */
   async run(instruction: string): Promise<SubAgentResult> {
-    console.log(`\n🤖 子Agent [${this.name}] 开始执行...`);
-    console.log(`📋 指令: ${instruction}`);
+    logger.info(`SubAgent started`, { agentName: this.name });
+    logger.debug(`SubAgent instruction`, { instruction });
 
     // 发射子Agent调用事件
     eventBus.emit('agent:call', { agentName: this.name });
@@ -110,7 +111,7 @@ export class SubAgent {
         }
       );
 
-      console.log(`✅ 子Agent [${this.name}] 执行完成`);
+      logger.info(`SubAgent completed`, { agentName: this.name });
 
       return {
         agentName: this.name,
@@ -120,7 +121,7 @@ export class SubAgent {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`❌ 子Agent [${this.name}] 执行失败: ${errorMessage}`);
+      logger.error(`SubAgent failed`, { agentName: this.name, error: errorMessage });
 
       return {
         agentName: this.name,
@@ -183,8 +184,8 @@ export class MainAgent {
     // 发射主Agent调用事件
     eventBus.emit('agent:call', { agentName: this.name });
 
-    console.log(`\n🎯 主Agent [${this.name}] 开始处理任务...`);
-    console.log(`📝 用户输入: ${userInput}`);
+    logger.info(`MainAgent started`, { agentName: this.name });
+    logger.debug(`MainAgent user input`, { userInput });
 
     const subAgentResults: SubAgentResult[] = [];
 
@@ -217,7 +218,7 @@ export class MainAgent {
       // 3. 主Agent汇总结果
       const finalResponse = await this.summarizeResults(userInput);
 
-      console.log(`\n✅ 主Agent [${this.name}] 任务完成`);
+      logger.info(`MainAgent completed`, { agentName: this.name });
 
       // 从事件系统获取收集的数据
       const collected = eventBus.getData();
@@ -231,7 +232,7 @@ export class MainAgent {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`❌ 主Agent [${this.name}] 执行失败: ${errorMessage}`);
+      logger.error(`MainAgent failed`, { agentName: this.name, error: errorMessage });
 
       // 从事件系统获取收集的数据
       const collected = eventBus.getData();
@@ -252,7 +253,7 @@ export class MainAgent {
    * 主Agent不使用工具，直接调用LLM进行汇总
    */
   private async summarizeResults(userInput: string): Promise<string> {
-    console.log(`\n📊 主Agent 正在汇总子Agent结果...`);
+    logger.debug(`MainAgent summarizing results`);
 
     // 构建汇总上下文
     const contextManager = new ContextManager();

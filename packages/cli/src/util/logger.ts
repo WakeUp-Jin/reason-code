@@ -1,5 +1,12 @@
 import { appendFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'fs'
-import { join } from 'path'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+// 获取项目根目录的绝对路径
+// CLI 包位于 packages/cli/src/util/logger.ts，向上 4 层到达项目根目录
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..')
 
 /**
  * 日志级别
@@ -23,7 +30,7 @@ const DEFAULT_CONFIG: LoggerConfig = {
   enabled: true,
   minLevel: 'INFO',
   retentionDays: 7,
-  bufferSize: 100,
+  bufferSize: 1, // 立即写入，确保日志不丢失
 }
 
 /**
@@ -74,8 +81,8 @@ class Logger {
    * 私有构造函数（单例模式）
    */
   private constructor() {
-    // 日志目录在项目根目录
-    this.logsDir = join(process.cwd(), 'logs')
+    // 日志目录使用项目根目录的绝对路径
+    this.logsDir = join(PROJECT_ROOT, 'logs', 'cli')
   }
 
   /**
@@ -141,6 +148,8 @@ class Logger {
    */
   error(message: string, context?: any): void {
     this.write('ERROR', message, context)
+    // ERROR 级别立即 flush，确保错误日志不丢失
+    this.flush()
   }
 
   /**

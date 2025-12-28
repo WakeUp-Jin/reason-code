@@ -3,6 +3,12 @@ import { Box } from 'ink';
 import { useStreamingMessage } from '../../context/store.js';
 import { AssistantMessage } from './assistant-message.js';
 
+// 导出组件
+export { UserMessage } from './user-message.js';
+export { AssistantMessage } from './assistant-message.js';
+export { ToolMessage } from './tool-message.js';
+export { ThinkingMessage } from './thinking-message.js';
+
 /**
  * 消息区域组件 - 只渲染当前流式消息
  *

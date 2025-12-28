@@ -6,6 +6,7 @@ import { SystemPromptContext } from "./modules/SystemPromptContext.js";
 import { StructuredOutputContext } from "./modules/StructuredOutputContext.js";
 import { RelevantContext } from "./modules/RelevantContext.js";
 import { ExecutionHistoryContext } from "./modules/ExecutionHistoryContext.js";
+import { logger } from "../../utils/logger.js";
 
 /**
  * 上下文管理器
@@ -436,16 +437,17 @@ export class ContextManager {
   debug(): void {
     this.ensureInitialized();
 
-    console.log("=== ContextManager 状态 ===");
-    console.log(`已初始化: ${this.initialized}`);
-    console.log(`总计: ${this.getStats().total} 项`);
-    console.log("\n各类型统计:");
-
+    const stats = this.getStats();
+    const contextDetails: Record<string, number> = {};
     this.contexts.forEach((context, type) => {
-      console.log(`  ${type}: ${context.getCount()} 项`);
+      contextDetails[type] = context.getCount();
     });
 
-    console.log("========================\n");
+    logger.debug("ContextManager state", {
+      initialized: this.initialized,
+      total: stats.total,
+      contexts: contextDetails,
+    });
   }
 
   /**

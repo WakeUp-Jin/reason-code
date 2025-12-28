@@ -9,6 +9,8 @@ import { ToolManager } from '../../tool/ToolManager.js';
 import { ContextType, Message } from '../../context/types.js';
 import { eventBus } from '../../../evaluation/EventBus.js';
 import { deepParseArgs, sleep } from './helpers.js';
+import { generateSummary, generateParamsSummary } from '../../execution/index.js';
+import { logger } from '../../../utils/logger.js';
 
 /**
  * 执行工具循环
@@ -33,13 +35,17 @@ export async function executeToolLoop(
 ): Promise<ToolLoopResult> {
   const maxLoops = config?.maxLoops ?? 10;
   const agentName = config?.agentName ?? 'simple_agent';
+  const executionStream = config?.executionStream;
   let loopCount = 0;
 
-  console.log(`开始工具循环，最大循环次数: ${maxLoops}`);
+  logger.info(`Tool loop started`, { maxLoops });
 
   while (loopCount < maxLoops) {
     loopCount++;
-    console.log(`🔄 工具循环 ${loopCount}/${maxLoops}`);
+    logger.debug(`Tool loop iteration`, { loopCount, maxLoops });
+
+    // 更新执行流循环计数
+    executionStream?.incrementLoopCount();
 
     try {
       // 1. 获取当前上下文
@@ -48,10 +54,23 @@ export async function executeToolLoop(
       // 2. 获取格式化的工具定义
       const tools = toolManager.getFormattedTools();
 
-      console.log(`调用 LLM: ${messages.length} 条消息, ${tools.length} 个工具`);
+      // 开始思考
+      executionStream?.startThinking();
 
       // 3. 调用 LLM
       const response = await llmService.complete(messages, tools);
+
+      // 完成思考 - 传递推理模型的 reasoningContent（如果有）
+      executionStream?.completeThinking(response.reasoningContent);
+
+      // 更新 Token 统计
+      if (response.usage) {
+        executionStream?.updateStats({
+          inputTokens: response.usage.promptTokens,
+          outputTokens: response.usage.completionTokens,
+        });
+      }
+      logger.info(`LLM的完整输出：`, response);
 
       // 4. 判断是否有工具调用
       if (
@@ -59,11 +78,11 @@ export async function executeToolLoop(
         response.toolCalls &&
         response.toolCalls.length > 0
       ) {
-        console.log(`检测到 ${response.toolCalls.length} 个工具调用`);
+        logger.info(`Tool calls detected`, { count: response.toolCalls.length });
 
         // 记录 LLM 的思考内容（如果有）
         if (response.content) {
-          console.log(`💭 LLM 思考: ${response.content.slice(0, 100)}...`);
+          logger.debug(`LLM thinking`, { content: response.content.slice(0, 100) });
         }
 
         // 5. 构建 assistant 消息（包含工具调用）
@@ -77,6 +96,10 @@ export async function executeToolLoop(
         contextManager.add(assistantMessage, ContextType.TOOL_MESSAGE_SEQUENCE);
 
         // 7. 执行所有工具调用
+        // 只在第一个工具调用时传递 thinkingContent（LLM 的思考内容）
+        const thinkingContent = response.content?.trim() || undefined;
+        let isFirstToolCall = true;
+
         for (const toolCall of response.toolCalls) {
           const toolName = toolCall.function.name;
 
@@ -87,7 +110,7 @@ export async function executeToolLoop(
               : {};
             const args = deepParseArgs(rawArgs);
 
-            console.log(`🔧 执行工具: ${toolName}`);
+            logger.info(`Executing tool`, { toolName });
 
             // 触发工具调用事件（用于评估系统）
             eventBus.emit('tool:call', {
@@ -95,11 +118,31 @@ export async function executeToolLoop(
               toolName,
             });
 
+            // 启动执行流工具调用 - 第一个工具调用携带 thinkingContent
+            const toolCallRecord = executionStream?.startToolCall({
+              id: toolCall.id,
+              toolName,
+              toolCategory: 'builtin',
+              params: args,
+              paramsSummary: generateParamsSummary(toolName, args),
+              thinkingContent: isFirstToolCall ? thinkingContent : undefined,
+            });
+            isFirstToolCall = false;
+
             // 执行工具
             const result = await toolManager.execute(toolName, args);
             const resultString = JSON.stringify(result);
 
-            console.log(`✅ 工具结果: ${resultString.slice(0, 200)}...`);
+            logger.debug(`Tool result`, { toolName, resultPreview: resultString.slice(0, 200) });
+
+            // 完成执行流工具调用
+            if (toolCallRecord) {
+              executionStream?.completeToolCall(
+                toolCall.id,
+                result,
+                generateSummary(toolName, args, result)
+              );
+            }
 
             // 8. 构建 tool 消息
             const toolMessage: Message = {
@@ -115,7 +158,13 @@ export async function executeToolLoop(
             // 等待一下避免请求过快
             await sleep(500);
           } catch (error) {
-            console.error(`❌ 工具执行失败: ${toolName}`, error);
+            logger.error(`Tool execution failed`, { toolName, error });
+
+            // 执行流工具调用错误
+            executionStream?.errorToolCall(
+              toolCall.id,
+              error instanceof Error ? error.message : String(error)
+            );
 
             // 将错误信息作为工具结果返回
             const errorMessage: Message = {
@@ -136,8 +185,8 @@ export async function executeToolLoop(
       }
 
       // 10. 没有工具调用，返回最终结果
-      console.log(`✅ 工具循环完成，循环次数: ${loopCount}`);
-      console.log(`最终结果: ${response.content?.slice(0, 200)}...`);
+      logger.info(`Tool loop completed`, { loopCount });
+      logger.debug(`Final result`, { contentPreview: response.content?.slice(0, 200) });
 
       // 添加最终的 assistant 消息
       const finalMessage: Message = {
@@ -152,7 +201,7 @@ export async function executeToolLoop(
         loopCount,
       };
     } catch (error) {
-      console.error(`❌ LLM 调用失败 (循环 ${loopCount}):`, error);
+      logger.error(`LLM call failed`, { loopCount, error });
 
       return {
         success: false,
@@ -163,7 +212,7 @@ export async function executeToolLoop(
   }
 
   // 超过最大循环次数
-  console.warn(`⚠️ 超过最大循环次数 (${maxLoops})`);
+  logger.warn(`Max loop count exceeded`, { maxLoops });
   return {
     success: false,
     error: `超过最大循环次数 (${maxLoops})`,

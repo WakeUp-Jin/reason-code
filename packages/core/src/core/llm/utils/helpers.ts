@@ -1,5 +1,6 @@
 import { LLMConfig } from '../types/index.js';
 import { config as envConfig, getLLMKeyByProvider } from '../../../config/env.js';
+import { logger } from '../../../utils/logger.js';
 
 /**
  * 提取 API Key
@@ -113,22 +114,21 @@ export function deepParseArgs(args: any): any {
       // 第一次尝试：直接解析
       try {
         const parsed = JSON.parse(trimmed);
-        console.log('[deepParseArgs] ✅ 第一次尝试解析成功');
+        logger.debug('deepParseArgs: First attempt succeeded');
         return deepParseArgs(parsed);
       } catch (e) {
-        console.log('[deepParseArgs] ❌ 第一次尝试解析失败:', (e as Error).message);
-        console.log('[deepParseArgs] 字符串前100字符:', trimmed.substring(0, 100));
+        logger.debug('deepParseArgs: First attempt failed', { error: (e as Error).message });
 
         // 第二次尝试：处理 Claude 模型返回的双重转义问题
         // 将 \\n 转换为 \n，\\\" 转换为 \"
         try {
           const unescaped = trimmed.replace(/\\\\n/g, '\\n').replace(/\\\\"/g, '\\"');
-          console.log('[deepParseArgs] 尝试处理双重转义后解析...');
+          logger.debug('deepParseArgs: Trying with unescaped string');
           const parsed = JSON.parse(unescaped);
-          console.log('[deepParseArgs] ✅ 第二次尝试（处理转义后）解析成功');
+          logger.debug('deepParseArgs: Second attempt succeeded');
           return deepParseArgs(parsed);
         } catch (e2) {
-          console.log('[deepParseArgs] ❌ 第二次尝试也失败:', (e2 as Error).message);
+          logger.debug('deepParseArgs: Second attempt also failed', { error: (e2 as Error).message });
           // 都失败了，返回原始字符串
           return args;
         }

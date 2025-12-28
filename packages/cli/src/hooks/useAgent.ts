@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Agent } from '@reason-cli/core';
 import { configManager } from '../config/manager.js';
 import { logger } from '../util/logger.js';
+import { useExecution } from '../context/execution.js';
 
 interface UseAgentReturn {
   /** Agent 是否已初始化 */
@@ -42,6 +43,7 @@ export function useAgent(): UseAgentReturn {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentModel, setCurrentModel] = useState<{ provider: string; model: string } | null>(null);
+  const { bindManager } = useExecution();
 
   // 初始化 Agent
   useEffect(() => {
@@ -72,6 +74,10 @@ export function useAgent(): UseAgentReturn {
         await agent.init();
 
         agentRef.current = agent;
+
+        // 绑定执行流管理器
+        bindManager(agent.getExecutionStream());
+
         setCurrentModel({ provider, model });
         setIsReady(true);
         logger.info(`Agent initialized with ${provider}/${model}`);
@@ -85,7 +91,7 @@ export function useAgent(): UseAgentReturn {
     };
 
     initAgent();
-  }, []);
+  }, [bindManager]);
 
   // 发送消息
   const sendMessage = useCallback(async (message: string): Promise<string | null> => {
