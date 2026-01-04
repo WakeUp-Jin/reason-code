@@ -1,7 +1,7 @@
 import React from 'react'
 import { Box, Text } from 'ink'
 import hljs from 'highlight.js'
-import { useTheme } from '../context/theme.js'
+import { useTheme, type ThemeColors } from '../context/theme.js'
 
 export interface CodeBlockProps {
   code: string
@@ -13,7 +13,7 @@ export interface CodeBlockProps {
 /**
  * 将 highlight.js 的类名映射到主题颜色
  */
-function getColorForClass(className: string, colors: Record<string, string>): string {
+function getColorForClass(className: string, colors: Record<string, string> | ThemeColors): string {
   const classMap: Record<string, string> = {
     'hljs-comment': colors.syntaxComment,
     'hljs-quote': colors.syntaxComment,
@@ -54,7 +54,7 @@ function getColorForClass(className: string, colors: Record<string, string>): st
  */
 function parseHighlightedCode(
   html: string,
-  colors: Record<string, string>
+  colors: Record<string, string> | ThemeColors
 ): React.ReactNode[] {
   const result: React.ReactNode[] = []
   let key = 0

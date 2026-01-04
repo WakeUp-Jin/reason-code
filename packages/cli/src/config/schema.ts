@@ -33,6 +33,8 @@ export type AgentConfig = v.InferOutput<typeof AgentConfigSchema>;
 export const UIConfigSchema = v.object({
   theme: v.optional(v.string(), 'kanagawa'), // 主题名称
   mode: v.optional(v.picklist(['dark', 'light']), 'dark'), // 亮色/暗色模式
+  currency: v.optional(v.picklist(['CNY', 'USD']), 'CNY'), // 货币类型
+  exchangeRate: v.optional(v.pipe(v.number(), v.minValue(0.01)), 7.2), // 汇率（CNY to USD）
 });
 
 export type UIConfig = v.InferOutput<typeof UIConfigSchema>;

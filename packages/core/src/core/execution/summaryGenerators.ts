@@ -11,15 +11,23 @@ import type { SummaryGeneratorRegistry } from './types.js';
 export const defaultSummaryGenerators: SummaryGeneratorRegistry = {
   // 读取文件
   ReadFile: (_, params, result) => {
-    const lines = result?.lines || result?.content?.split('\n').length || 0;
-    const path = params.file_path || params.path || 'file';
-    return `Read ${lines} lines from ${path}`;
+    // 优先使用 lineCount，回退到 lines，最后计算 content 行数
+    const lines =
+      result?.lineCount ??
+      result?.lines ??
+      (result?.content ? result.content.split('\n').length : 0);
+    const filePath = params.file_path || params.path || params.filePath || 'file';
+    return `Read ${lines} lines from ${filePath}`;
   },
 
   Read: (_, params, result) => {
-    const lines = result?.lines || result?.content?.split('\n').length || 0;
-    const path = params.file_path || params.path || 'file';
-    return `Read ${lines} lines from ${path}`;
+    // 优先使用 lineCount，回退到 lines，最后计算 content 行数
+    const lines =
+      result?.lineCount ??
+      result?.lines ??
+      (result?.content ? result.content.split('\n').length : 0);
+    const filePath = params.file_path || params.path || params.filePath || 'file';
+    return `Read ${lines} lines from ${filePath}`;
   },
 
   // Glob 搜索
@@ -43,26 +51,30 @@ export const defaultSummaryGenerators: SummaryGeneratorRegistry = {
 
   // 写入文件
   WriteFile: (_, params) => {
-    const path = params.file_path || params.path || 'file';
-    return `Wrote to ${path}`;
+    const filePath = params.file_path || params.path || params.filePath || 'file';
+    return `Wrote to ${filePath}`;
   },
 
   Write: (_, params) => {
-    const path = params.file_path || params.path || 'file';
-    return `Wrote to ${path}`;
+    const filePath = params.file_path || params.path || params.filePath || 'file';
+    return `Wrote to ${filePath}`;
   },
 
   // 编辑文件
   Edit: (_, params) => {
-    const path = params.file_path || params.path || 'file';
-    return `Edited ${path}`;
+    const filePath = params.file_path || params.path || params.filePath || 'file';
+    return `Edited ${filePath}`;
   },
 
   // 列出文件
   ListFiles: (_, params, result) => {
-    const count = Array.isArray(result) ? result.length : 0;
-    const path = params.path || params.directory || '.';
-    return `Listed ${count} items in ${path}`;
+    // 支持对象形式 {totalCount, files} 和数组形式
+    const count =
+      result?.totalCount ??
+      result?.files?.length ??
+      (Array.isArray(result) ? result.length : 0);
+    const dirPath = params.path || params.directory || '.';
+    return `Listed ${count} items in ${dirPath}`;
   },
 
   // 默认
@@ -100,7 +112,7 @@ export function generateParamsSummary(
     case 'Write':
     case 'WriteFile':
     case 'Edit':
-      return params.file_path || params.path || '';
+      return params.file_path || params.path || params.filePath || '';
 
     case 'Glob':
       return params.pattern || '';

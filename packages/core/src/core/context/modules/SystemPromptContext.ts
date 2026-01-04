@@ -1,43 +1,45 @@
 import { BaseContext } from '../base/BaseContext.js';
-import { ContextType, SystemPromptItem } from '../types.js';
+import { ContextType, Message } from '../types.js';
 
 /**
  * 系统提示词上下文管理类
- * 负责管理系统级提示词，支持多段提示词和优先级
+ * 负责管理系统级提示词
  */
-export class SystemPromptContext extends BaseContext<SystemPromptItem> {
+export class SystemPromptContext extends BaseContext<string> {
   constructor() {
     super(ContextType.SYSTEM_PROMPT);
   }
 
   /**
-   * 格式化为单一系统消息
-   * 合并所有启用的提示词，按优先级排序
+   * 格式化为系统消息数组
    */
-  format(): any[] {
-    if (this.items.length === 0) {
+  format(): Message[] {
+    if (this.isEmpty()) {
       return [];
     }
-  
-    // item.content 就是字符串
-    const combinedContent = this.items.map((item) => item.content).join('\n\n');
-  
+
     return [
       {
         role: 'system',
-        content: combinedContent,
+        content: this.items.join('\n\n'),
       },
     ];
   }
 
   /**
-   * 格式化为普通字符串（用于合并到系统消息中）
-   * @returns 合并后的提示词文本，或 null
+   * 获取合并后的提示词文本
    */
-  formatNormal(): string | null {
-    if (this.items.length === 0) {
-      return null;
+  getPrompt(): string {
+    return this.items.join('\n\n');
+  }
+
+  /**
+   * 设置提示词（清空现有并添加新的）
+   */
+  setPrompt(prompt: string): void {
+    this.clear();
+    if (prompt) {
+      this.add(prompt);
     }
-    return this.items.map((item) => item.content).join('\n\n');
   }
 }

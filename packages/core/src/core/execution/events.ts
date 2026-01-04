@@ -3,11 +3,8 @@
  * 用于 Core 层与 CLI 层之间的事件通信
  */
 
-import type {
-  ExecutionState,
-  ToolCallRecord,
-  ExecutionStats
-} from './types.js';
+import type { ExecutionState, ToolCallRecord, ExecutionStats } from './types.js';
+import type { ConfirmDetails } from '../tool/types.js';
 
 /**
  * 执行流事件类型
@@ -27,11 +24,29 @@ export type ExecutionEvent =
   | { type: 'thinking:delta'; delta: string }
   | { type: 'thinking:complete'; content: string }
 
+  // Assistant 消息事件（用于同步包含 tool_calls 的消息）
+  | {
+      type: 'assistant:message';
+      content: string;
+      tool_calls: Array<{
+        id: string;
+        type: 'function';
+        function: { name: string; arguments: string };
+      }>;
+    }
+
   // 工具事件
   | { type: 'tool:start'; toolCall: ToolCallRecord }
   | { type: 'tool:output'; toolCallId: string; output: string }
   | { type: 'tool:complete'; toolCall: ToolCallRecord }
   | { type: 'tool:error'; toolCallId: string; error: string }
+  | {
+      type: 'tool:awaiting_approval';
+      toolCallId: string;
+      toolName: string;
+      confirmDetails: ConfirmDetails;
+    }
+  | { type: 'tool:cancelled'; toolCallId: string; reason: string }
 
   // 流式输出事件
   | { type: 'content:delta'; delta: string }

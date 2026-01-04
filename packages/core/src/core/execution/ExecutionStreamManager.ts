@@ -11,6 +11,7 @@ import {
   type ToolCallRecord,
   type ExecutionStats,
 } from './types.js';
+import type { ConfirmDetails } from '../tool/types.js';
 
 // 状态短语池
 const STATUS_PHRASES = [
@@ -76,7 +77,7 @@ export class ExecutionStreamManager {
   }
 
   private emit(event: ExecutionEvent): void {
-    this.handlers.forEach(handler => handler(event));
+    this.handlers.forEach((handler) => handler(event));
     // Web 端流式传输回调
     this.onStream?.(event);
   }
@@ -118,11 +119,14 @@ export class ExecutionStreamManager {
     this.snapshot.statusPhrase = STATUS_PHRASES[this.phraseIndex]!;
 
     // 每 3-5 秒随机切换短语
-    this.phraseInterval = setInterval(() => {
-      this.phraseIndex = (this.phraseIndex + 1) % STATUS_PHRASES.length;
-      this.snapshot.statusPhrase = STATUS_PHRASES[this.phraseIndex]!;
-      this.emitStateChange();
-    }, 3000 + Math.random() * 2000);
+    this.phraseInterval = setInterval(
+      () => {
+        this.phraseIndex = (this.phraseIndex + 1) % STATUS_PHRASES.length;
+        this.snapshot.statusPhrase = STATUS_PHRASES[this.phraseIndex]!;
+        this.emitStateChange();
+      },
+      3000 + Math.random() * 2000
+    );
   }
 
   private stopPhraseRotation(): void {
@@ -165,16 +169,33 @@ export class ExecutionStreamManager {
       this.snapshot.thinking.isComplete = true;
       this.emit({
         type: 'thinking:complete',
-        content: this.snapshot.thinking.content
+        content: this.snapshot.thinking.content,
       });
     }
   }
 
   // ==================== 工具调用 ====================
 
-  startToolCall(
-    toolCall: Omit<ToolCallRecord, 'status' | 'startTime'>
-  ): ToolCallRecord {
+  /**
+   * 通知 CLI 层添加 assistant 消息（包含 tool_calls）
+   * 当 LLM 返回工具调用时，需要保存完整的 assistant 消息以确保历史加载时消息序列合法
+   */
+  addAssistantMessage(
+    content: string,
+    toolCalls: Array<{
+      id: string;
+      type: 'function';
+      function: { name: string; arguments: string };
+    }>
+  ): void {
+    this.emit({
+      type: 'assistant:message',
+      content,
+      tool_calls: toolCalls,
+    });
+  }
+
+  startToolCall(toolCall: Omit<ToolCallRecord, 'status' | 'startTime'>): ToolCallRecord {
     const record: ToolCallRecord = {
       ...toolCall,
       status: ToolCallStatus.Executing,
@@ -198,11 +219,7 @@ export class ExecutionStreamManager {
     }
   }
 
-  completeToolCall(
-    toolCallId: string,
-    result: any,
-    resultSummary: string
-  ): void {
+  completeToolCall(toolCallId: string, result: any, resultSummary: string): void {
     if (this.snapshot.currentToolCall?.id === toolCallId) {
       const record = this.snapshot.currentToolCall;
       record.status = ToolCallStatus.Success;
@@ -235,6 +252,45 @@ export class ExecutionStreamManager {
     }
   }
 
+  /**
+   * 工具等待用户确认
+   * 当工具需要用户批准时调用
+   */
+  awaitingApproval(toolCallId: string, toolName: string, confirmDetails: ConfirmDetails): void {
+    this.snapshot.state = ExecutionState.WaitingConfirm;
+    this.emit({
+      type: 'tool:awaiting_approval',
+      toolCallId,
+      toolName,
+      confirmDetails,
+    });
+    this.emitStateChange();
+  }
+
+  /**
+   * 工具调用被取消
+   * 当用户拒绝或取消工具执行时调用
+   */
+  cancelToolCall(toolCallId: string, reason: string): void {
+    if (this.snapshot.currentToolCall?.id === toolCallId) {
+      const record = this.snapshot.currentToolCall;
+      record.status = ToolCallStatus.Cancelled;
+      record.endTime = Date.now();
+      record.duration = record.endTime - record.startTime;
+      record.error = reason;
+
+      this.snapshot.toolCallHistory.push(record);
+      this.snapshot.currentToolCall = undefined;
+      this.snapshot.state = ExecutionState.Thinking;
+
+      this.emit({ type: 'tool:cancelled', toolCallId, reason });
+      this.emitStateChange();
+    } else {
+      // 如果还没有 startToolCall，直接发送取消事件
+      this.emit({ type: 'tool:cancelled', toolCallId, reason });
+    }
+  }
+
   // ==================== 流式输出 ====================
 
   appendContent(delta: string): void {
@@ -246,7 +302,7 @@ export class ExecutionStreamManager {
   completeContent(): void {
     this.emit({
       type: 'content:complete',
-      content: this.snapshot.streamingContent
+      content: this.snapshot.streamingContent,
     });
   }
 
@@ -278,9 +334,7 @@ export class ExecutionStreamManager {
       currentToolCall: this.snapshot.currentToolCall
         ? { ...this.snapshot.currentToolCall }
         : undefined,
-      thinking: this.snapshot.thinking
-        ? { ...this.snapshot.thinking }
-        : undefined,
+      thinking: this.snapshot.thinking ? { ...this.snapshot.thinking } : undefined,
     };
   }
 

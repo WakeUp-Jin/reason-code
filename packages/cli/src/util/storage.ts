@@ -134,51 +134,6 @@ export function loadAllSessions(): { sessions: Session[]; messages: Record<strin
 }
 
 /**
- * 配置数据结构
- */
-export interface ConfigData {
-  theme: string
-  mode: 'dark' | 'light'
-  lastSessionId?: string
-}
-
-const DEFAULT_CONFIG: ConfigData = {
-  theme: 'kanagawa',
-  mode: 'dark',
-}
-
-/**
- * 保存配置
- */
-export function saveConfig(config: Partial<ConfigData>): void {
-  ensureStorageDir()
-
-  const currentConfig = loadConfig()
-  const newConfig = { ...currentConfig, ...config }
-
-  writeFileSync(CONFIG_FILE, JSON.stringify(newConfig, null, 2), 'utf-8')
-}
-
-/**
- * 加载配置
- */
-export function loadConfig(): ConfigData {
-  ensureStorageDir()
-
-  if (!existsSync(CONFIG_FILE)) {
-    return DEFAULT_CONFIG
-  }
-
-  try {
-    const content = readFileSync(CONFIG_FILE, 'utf-8')
-    return { ...DEFAULT_CONFIG, ...JSON.parse(content) }
-  } catch (error) {
-    logger.error('Failed to load config', { error })
-    return DEFAULT_CONFIG
-  }
-}
-
-/**
  * 获取存储路径
  */
 export function getStoragePath(): string {

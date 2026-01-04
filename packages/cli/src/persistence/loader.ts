@@ -30,21 +30,10 @@ export function loadAllData(): LoadedData {
   // 2. 加载所有会话和消息
   const { sessions, messages } = loadAllSessions();
 
-  // 3. 确定当前会话 ID
-  let currentSessionId: string | null = null;
+  // 3. 不恢复任何会话，总是创建新会话
+  const currentSessionId: string | null = null;
 
-  if (sessions.length > 0) {
-    // 优先使用配置中保存的 lastSessionId
-    const lastSessionId = config.session.lastSessionId;
-    if (lastSessionId && sessions.find((s) => s.id === lastSessionId)) {
-      currentSessionId = lastSessionId;
-    } else {
-      // 否则使用最新的会话
-      currentSessionId = sessions[0].id;
-    }
-  }
-
-  logger.info(`Loaded ${sessions.length} sessions, current session: ${currentSessionId || 'none'}`);
+  logger.info(`Loaded ${sessions.length} sessions, current session: none (will create new)`);
 
   return {
     config,

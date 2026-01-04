@@ -16,6 +16,103 @@ export interface ToolParameterSchema {
   default?: any;
 }
 
+// ============================================================
+// 工具权限验证系统类型定义
+// ============================================================
+
+/**
+ * 批准模式枚举
+ * 控制工具执行前的确认行为
+ */
+export enum ApprovalMode {
+  /** 默认模式：写入工具需要确认 */
+  DEFAULT = 'default',
+  /** 自动编辑模式：编辑类工具自动批准 */
+  AUTO_EDIT = 'autoEdit',
+  /** YOLO 模式：所有工具自动批准（危险） */
+  YOLO = 'yolo',
+}
+
+/**
+ * 确认结果类型
+ */
+export type ConfirmOutcome = 'once' | 'always' | 'cancel';
+
+/**
+ * 确认详情接口
+ * 当工具需要用户确认时返回此对象
+ */
+export interface ConfirmDetails {
+  /** 确认类型：info=写入新文件, edit=编辑文件, exec=执行命令 */
+  type: 'edit' | 'exec' | 'info';
+  /** 面板标题（如 "Overwrite file", "Edit file", "Bash command"） */
+  panelTitle?: string;
+  /** 文件路径（显示在顶部标题栏） */
+  filePath?: string;
+  /** 文件名（Write 组件边框内第一行显示，如 "test.js"） */
+  fileName?: string;
+  /** 内容预览 */
+  contentPreview?: string;
+  /** 命令（exec 类型） */
+  command?: string;
+  /** 额外描述信息 */
+  message?: string;
+  /** 确认回调 */
+  onConfirm?: (outcome: ConfirmOutcome) => Promise<void>;
+}
+
+/**
+ * 调度器工具调用状态
+ */
+export type SchedulerToolCallStatus =
+  | 'validating'
+  | 'scheduled'
+  | 'awaiting_approval'
+  | 'executing'
+  | 'success'
+  | 'error'
+  | 'cancelled';
+
+/**
+ * 调度器工具调用请求信息
+ */
+export interface SchedulerToolCallRequest {
+  /** 调用 ID */
+  callId: string;
+  /** 工具名称 */
+  toolName: string;
+  /** 工具参数（已解析，可选） */
+  args?: Record<string, any>;
+  /** 原始参数字符串（可选，用于内部解析） */
+  rawArgs?: string;
+  /** 工具分类 */
+  toolCategory?: string;
+  /** 参数摘要（用于显示） */
+  paramsSummary?: string;
+  /** LLM 思考内容（第一个工具调用时传递） */
+  thinkingContent?: string;
+}
+
+/**
+ * 调度器工具调用状态记录
+ */
+export interface SchedulerToolCallRecord {
+  /** 调用请求 */
+  request: SchedulerToolCallRequest;
+  /** 当前状态 */
+  status: SchedulerToolCallStatus;
+  /** 开始时间 */
+  startTime?: number;
+  /** 确认详情（等待确认时） */
+  confirmDetails?: ConfirmDetails;
+  /** 执行结果（成功时） */
+  result?: any;
+  /** 错误信息（失败时） */
+  error?: string;
+  /** 执行时长（毫秒） */
+  durationMs?: number;
+}
+
 /**
  * 工具上下文
  */
@@ -58,6 +155,19 @@ export interface InternalTool<TArgs = any, TResult = any> {
   isEnabled?: () => Promise<boolean>; // 是否启用
   isReadOnly?: () => boolean; // 是否只读
   isConcurrencySafe?: () => boolean; // 是否并发安全
+
+  /**
+   * 检查是否需要用户确认执行
+   * @param args - 工具参数
+   * @param approvalMode - 当前批准模式
+   * @param context - 工具上下文
+   * @returns false 表示不需要确认，ConfirmDetails 表示需要确认
+   */
+  shouldConfirmExecute?: (
+    args: TArgs,
+    approvalMode: ApprovalMode,
+    context?: InternalToolContext
+  ) => Promise<ConfirmDetails | false>;
 }
 
 /**
@@ -83,4 +193,3 @@ export function formatToolForLLM(tool: InternalTool): FormattedToolDefinition {
     parameters: tool.parameters,
   };
 }
-

@@ -4,6 +4,7 @@ import { Prompt } from '../../component/prompt';
 import { useStore, useAppStore } from '../../context/store';
 import { useCurrentSession } from '../../context/store';
 import { commandRegistry, CommandPanel } from '../../component/command/index.js';
+import { PanelToolConfirm } from '../../component/panel/panel-tool-confirm.js';
 import { logger } from '../../util/logger.js';
 import { usePersistence } from '../../hooks/usePersistence.js';
 import { useAgent } from '../../hooks/useAgent.js';
@@ -22,7 +23,7 @@ export function InputArea({ onCommandPanelChange }: InputAreaProps) {
   const { saveCurrentSession } = usePersistence();
 
   // Agent Hook
-  const { isLoading, error, sendMessage } = useAgent();
+  const { isLoading, error, sendMessage, pendingConfirm, handleConfirm } = useAgent();
 
   // 命令面板状态
   const [commandPanelState, setCommandPanelState] = useState<{
@@ -31,6 +32,7 @@ export function InputArea({ onCommandPanelChange }: InputAreaProps) {
   } | null>(null);
 
   // 当命令面板状态变化时，通知父组件
+  // 注意：pendingConfirm 不应该触发此回调，因为它会导致 Static 组件重新打印
   useEffect(() => {
     onCommandPanelChange?.(commandPanelState !== null);
   }, [commandPanelState, onCommandPanelChange]);
@@ -61,11 +63,26 @@ export function InputArea({ onCommandPanelChange }: InputAreaProps) {
 
     // 更新 AI 响应
     if (response) {
+      logger.info('📝 Updating assistant message content', {
+        messageId: assistantMessage.id,
+        contentLength: response.length,
+      });
+
       updateMessage(session.id, assistantMessage.id, {
         content: response,
         isStreaming: false,
       });
+
+      logger.info('✅ Assistant message updated, preparing to save', {
+        sessionId: session.id,
+        messageId: assistantMessage.id,
+      });
     } else {
+      logger.error('❌ No response from Agent', {
+        error: error,
+        messageId: assistantMessage.id,
+      });
+
       updateMessage(session.id, assistantMessage.id, {
         content: error || 'Failed to get response from AI.',
         isStreaming: false,
@@ -73,7 +90,9 @@ export function InputArea({ onCommandPanelChange }: InputAreaProps) {
     }
 
     // AI 响应后保存
+    logger.info('💾 Saving session after AI response...');
     saveCurrentSession();
+    logger.info('✅ Session saved successfully');
   };
 
   // 处理命令执行
@@ -108,8 +127,15 @@ export function InputArea({ onCommandPanelChange }: InputAreaProps) {
 
   return (
     <Box flexDirection="column" flexShrink={0}>
-      {commandPanelState ? (
-        // 功能面板模式
+      {/* 工具确认面板优先级最高 */}
+      {pendingConfirm ? (
+        <PanelToolConfirm
+          toolName={pendingConfirm.toolName}
+          details={pendingConfirm.details}
+          onConfirm={handleConfirm}
+        />
+      ) : commandPanelState ? (
+        // 命令面板模式
         <CommandPanel
           command={commandPanelState.command}
           panel={commandPanelState.panel}

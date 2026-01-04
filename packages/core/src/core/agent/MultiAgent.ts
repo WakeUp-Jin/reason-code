@@ -3,11 +3,10 @@
  * 演示主Agent协调多个子Agent完成任务的架构
  */
 
-import { ContextManager, ContextType, Message } from '../context/index.js';
+import { ContextManager, Message } from '../context/index.js';
 import { ToolManager } from '../tool/ToolManager.js';
 import { ILLMService } from '../llm/types/index.js';
 import { executeToolLoop } from '../llm/utils/executeToolLoop.js';
-import { ExecutionHistoryContext } from '../context/modules/ExecutionHistoryContext.js';
 import { eventBus } from '../../evaluation/EventBus.js';
 import {
   MAIN_AGENT_PROMPT,
@@ -84,13 +83,9 @@ export class SubAgent {
     try {
       // 初始化上下文管理器
       const contextManager = new ContextManager();
-      await contextManager.init();
 
       // 设置系统提示词
-      contextManager.add(
-        this.systemPrompt,
-        ContextType.SYSTEM_PROMPT
-      );
+      contextManager.setSystemPrompt(this.systemPrompt);
 
       // 设置用户输入（来自主Agent的指令）
       contextManager.setUserInput(instruction);
@@ -148,25 +143,16 @@ export class MainAgent {
   private systemPrompt: string;
   private subAgentA: SubAgent;
   private subAgentB: SubAgent;
-  private contextManager: ContextManager;
+  private executionHistory: string[] = [];
 
   constructor(llmService: ILLMService, name: string = 'main_agent') {
     this.name = name;
     this.llmService = llmService;
     this.systemPrompt = MAIN_AGENT_PROMPT;
-    this.contextManager = new ContextManager();
 
     // 初始化两个子Agent
-    this.subAgentA = new SubAgent(
-      'researcher',
-      llmService,
-      SUB_AGENT_A_PROMPT
-    );
-    this.subAgentB = new SubAgent(
-      'executor',
-      llmService,
-      SUB_AGENT_B_PROMPT
-    );
+    this.subAgentA = new SubAgent('researcher', llmService, SUB_AGENT_A_PROMPT);
+    this.subAgentB = new SubAgent('executor', llmService, SUB_AGENT_B_PROMPT);
   }
 
   /**
@@ -174,9 +160,8 @@ export class MainAgent {
    * @param userInput - 用户输入
    */
   async run(userInput: string): Promise<MainAgentResult> {
-    
-    // 初始化上下文管理器
-    this.contextManager.init();
+    // 清空执行历史
+    this.executionHistory = [];
 
     // 重置事件收集器
     eventBus.reset();
@@ -195,12 +180,12 @@ export class MainAgent {
       const resultA = await this.subAgentA.run(instructionA);
       subAgentResults.push(resultA);
 
-      let executionHistoryA = `
+      const executionHistoryA = `
       子Agent执行完成-${this.subAgentA.getName()}:
       主Agent指令: ${instructionA}
       输出: ${resultA.result}
       `;
-      this.contextManager.add(executionHistoryA, ContextType.EXECUTION_HISTORY);
+      this.executionHistory.push(executionHistoryA);
 
       // 2. 调用子Agent B（执行者）
       const instructionB = `基于以下用户需求，请提供具体的执行方案：\n${userInput}`;
@@ -208,12 +193,12 @@ export class MainAgent {
       subAgentResults.push(resultB);
 
       // 记录子Agent B的执行结果
-      let executionHistoryB = `
+      const executionHistoryB = `
       子Agent执行完成-${this.subAgentB.getName()}:
       主Agent指令: ${instructionB}
       输出: ${resultB.result}
       `;
-      this.contextManager.add(executionHistoryB, ContextType.EXECUTION_HISTORY);
+      this.executionHistory.push(executionHistoryB);
 
       // 3. 主Agent汇总结果
       const finalResponse = await this.summarizeResults(userInput);
@@ -257,14 +242,14 @@ export class MainAgent {
 
     // 构建汇总上下文
     const contextManager = new ContextManager();
-    await contextManager.init();
 
     // 设置系统提示词
-    contextManager.add(
-      this.systemPrompt,
-      ContextType.SYSTEM_PROMPT
-    );
+    contextManager.setSystemPrompt(this.systemPrompt);
 
+    // 将执行历史添加到系统提示词
+    if (this.executionHistory.length > 0) {
+      contextManager.addSystemPrompt('\n\n【子Agent执行历史】\n' + this.executionHistory.join('\n'));
+    }
 
     // 设置汇总指令
     const summarizeInstruction = `基于上述子Agent的研究分析和执行方案，请为用户提供一个综合性的最终答复。
@@ -286,7 +271,10 @@ export class MainAgent {
    * 获取执行历史
    */
   getExecutionHistory(): Message[] {
-    return this.contextManager.get(ContextType.EXECUTION_HISTORY);
+    return this.executionHistory.map((content) => ({
+      role: 'system' as const,
+      content,
+    }));
   }
 
   getName(): string {

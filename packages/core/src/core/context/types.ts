@@ -1,62 +1,18 @@
 /**
  * 上下文管理系统的核心类型定义
+ * 简化为 3 种核心上下文类型
  */
 
 /**
- * 上下文类型枚举
+ * 上下文类型枚举（简化为 3 种）
  */
 export enum ContextType {
-  /** 会话历史上下文 */
-  CONVERSATION_HISTORY = 'conversation_history',
-  /** 工具消息序列上下文 */
-  TOOL_MESSAGE_SEQUENCE = 'tool_message_sequence',
-  /** 用户记忆上下文 */
-  MEMORY = 'memory',
   /** 系统提示词上下文 */
   SYSTEM_PROMPT = 'system_prompt',
-  /** 结构化输出上下文 */
-  STRUCTURED_OUTPUT = 'structured_output',
-  /** 相关上下文 */
-  RELEVANT_CONTEXT = 'relevant_context',
-  /** 执行历史上下文 */
-  EXECUTION_HISTORY = 'execution_history',
-}
-
-/**
- * 单个上下文项的结构
- */
-export interface ContextItem<T = any> {
-  /** 上下文内容 */
-  content: T;
-  /** 上下文类型 */
-  type: ContextType;
-  /** 元数据 */
-  metadata?: Record<string, any>;
-  /** 时间戳 */
-  timestamp: number;
-  /** 唯一标识（可选） */
-  id?: string;
-}
-
-/**
- * 统计信息结构
- */
-export interface ContextStats {
-  /** 总计数量 */
-  total: number;
-  /** 按类型分组的数量 */
-  byType: Record<string, number>;
-  /** 总 token 数（预留） */
-  tokenCount?: number;
-}
-
-/**
- * 图片数据
- */
-export interface ImageData {
-  url?: string;
-  base64?: string;
-  mimeType?: string;
+  /** 会话历史上下文 */
+  HISTORY = 'history',
+  /** 当前运行记录上下文 */
+  CURRENT_TURN = 'current_turn',
 }
 
 /**
@@ -65,132 +21,74 @@ export interface ImageData {
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 
 /**
- * 标准消息结构（用于 LLM API 调用）
+ * 工具调用结构
+ */
+export interface ToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+/**
+ * 标准消息结构（与 LLM API 对齐）
  */
 export interface Message {
   role: MessageRole;
   content: string;
-  tool_calls?: any[];
+  tool_calls?: ToolCall[];
   tool_call_id?: string;
   name?: string;
 }
 
 /**
- * 会话消息结构
+ * 上下文检查结果
  */
-export interface ConversationMessage {
-  role: MessageRole;
-  content: string;
-  imageData?: ImageData;
-  toolCalls?: any[];
+export interface ContextCheckResult {
+  /** 是否通过检查 */
+  passed: boolean;
+  /** 当前 token 数 */
+  currentTokens: number;
+  /** 模型限制 */
+  modelLimit: number;
+  /** 使用百分比 */
+  usagePercent: number;
+  /** 错误信息 */
+  error?: string;
 }
 
 /**
- * 用户记忆项结构
+ * 压缩结果
  */
-export interface MemoryItem {
-  /** 记忆键 */
-  key: string;
-  /** 记忆值 */
-  value: any;
-  /** 描述 */
-  description?: string;
-  /** 优先级 */
-  priority?: number;
+export interface CompressionResult {
+  /** 是否执行了压缩 */
+  compressed: boolean;
+  /** 原始消息数 */
+  originalCount: number;
+  /** 压缩后消息数 */
+  compressedCount: number;
+  /** 原始 token 数 */
+  originalTokens: number;
+  /** 压缩后 token 数 */
+  compressedTokens: number;
+  /** 摘要内容 */
+  summary?: string;
 }
 
 /**
- * 系统提示词项结构
+ * 工具输出处理结果
  */
-export interface SystemPromptItem {
-  /** 提示词内容 */
-  content: string;
-  /** 优先级（数字越小优先级越高） */
-  priority?: number;
-  /** 是否启用 */
-  enabled?: boolean;
-}
-
-/**
- * 结构化输出 Schema
- */
-export interface StructuredOutputSchema {
-  /** Schema 类型（如 json_schema） */
-  type: string;
-  /** Schema 定义 */
-  schema: Record<string, any>;
-  /** 输出格式（json、yaml 等） */
-  format?: string;
-  /** 是否严格模式 */
-  strict?: boolean;
-}
-
-/**
- * 基础上下文接口
- * 所有具体上下文模块必须实现的方法
- */
-export interface IContext<T = any> {
-  /** 上下文类型 */
-  readonly type: ContextType;
-
-  /**
-   * 添加上下文项
-   * @param content - 内容
-   * @param metadata - 元数据
-   */
-  add(content: T, metadata?: Record<string, any>): void;
-
-  /**
-   * 获取所有上下文项
-   */
-  getAll(): ContextItem<T>[];
-
-  /**
-   * 获取指定索引的上下文项
-   * @param index - 索引
-   */
-  get(index: number): ContextItem<T> | undefined;
-
-  /**
-   * 清空所有上下文
-   */
-  clear(): void;
-
-  /**
-   * 获取上下文数量
-   */
-  getCount(): number;
-
-  /**
-   * 检查是否为空
-   */
-  isEmpty(): boolean;
-
-  /**
-   * 格式化为特定格式（由子类实现）
-   */
-  format(): any[];
-
-  /**
-   * 移除最后一项
-   */
-  removeLast(): void;
-
-  /**
-   * 更新指定索引的上下文项
-   * @param index - 索引
-   * @param content - 新内容
-   * @param metadata - 新元数据
-   */
-  update(index: number, content: T, metadata?: Record<string, any>): void;
-
-  /**
-   * 转换为 JSON
-   */
-  toJSON(): string;
-
-  /**
-   * 从 JSON 恢复
-   */
-  fromJSON(json: string): void;
+export interface ToolOutputProcessResult {
+  /** 处理后的输出 */
+  output: string;
+  /** 是否被总结 */
+  summarized: boolean;
+  /** 是否被截断 */
+  truncated: boolean;
+  /** 原始 token 数 */
+  originalTokens: number;
+  /** 处理后 token 数 */
+  processedTokens: number;
 }

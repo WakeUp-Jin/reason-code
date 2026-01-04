@@ -48,18 +48,20 @@ function App() {
       const loadedData = loadAllData();
 
       if (loadedData.sessions.length > 0) {
-        // 有历史数据，恢复状态
+        // 有历史数据，加载到内存（但不恢复旧会话）
         initializeFromDisk({
           sessions: loadedData.sessions,
           messages: loadedData.messages,
-          currentSessionId: loadedData.currentSessionId,
+          currentSessionId: null, // 不恢复旧会话
           currentAgent: loadedData.config.agent.current,
           currentModel: loadedData.config.model.current,
+          currency: loadedData.config.ui.currency,
+          exchangeRate: loadedData.config.ui.exchangeRate,
         });
-      } else {
-        // 没有历史数据，创建新会话
-        createSession();
       }
+
+      // 总是创建新会话
+      createSession();
     }
   }, [createSession, initializeFromDisk]);
 

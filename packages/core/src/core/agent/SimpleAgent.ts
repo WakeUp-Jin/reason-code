@@ -3,9 +3,9 @@
  * 使用 ContextManager + ToolManager + LLMService 实现基本的工具调用循环
  */
 
-import { ContextManager, ContextType } from '../context/index.js';
+import { ContextManager } from '../context/index.js';
 import { ToolManager } from '../tool/ToolManager.js';
-import { ILLMService, ToolLoopResult } from '../llm/types/index.js';
+import { ILLMService } from '../llm/types/index.js';
 import { executeToolLoop } from '../llm/utils/executeToolLoop.js';
 import { eventBus } from '../../evaluation/EventBus.js';
 import { SIMPLE_AGENT_PROMPT } from '../promptManager/index.js';
@@ -78,14 +78,8 @@ export class SimpleAgent {
     eventBus.emit('agent:call', { agentName: this.config.name });
 
     try {
-      // 初始化上下文管理器
-      await this.contextManager.init();
-
       // 设置系统提示词
-      this.contextManager.add(
-        this.config.systemPrompt,
-        ContextType.SYSTEM_PROMPT
-      );
+      this.contextManager.setSystemPrompt(this.config.systemPrompt);
 
       // 设置用户输入
       this.contextManager.setUserInput(userInput);
@@ -100,6 +94,9 @@ export class SimpleAgent {
           agentName: this.config.name,
         }
       );
+
+      // 完成当前轮次（归档到历史）
+      this.contextManager.finishTurn();
 
       // 从事件系统获取收集的数据
       const collected = eventBus.getData();

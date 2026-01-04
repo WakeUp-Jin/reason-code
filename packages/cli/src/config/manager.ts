@@ -81,11 +81,37 @@ export class ConfigManager {
 
   /**
    * 保存配置文件
+   * 智能合并策略：
+   * - session, ui, model, agent: 使用内存中的最新值（程序会修改）
+   * - providers: 完全使用磁盘文件中的值（只由用户手动管理）
    */
   saveConfig(): void {
     try {
-      // 移除环境变量的实际值，保留引用格式
-      const configToSave = this.stripEnvValues(this.config);
+      let configToSave: ReasonCliConfig;
+
+      // 如果配置文件已存在，智能合并
+      if (existsSync(CONFIG_FILE)) {
+        const existingContent = readFileSync(CONFIG_FILE, 'utf-8');
+        const diskConfig = JSON.parse(existingContent) as ReasonCliConfig;
+
+        // 合并配置：
+        // - providers 使用磁盘上的值（完全以文件为准）
+        // - 其他字段使用内存中的最新值
+        configToSave = {
+          ...diskConfig,                    // 以磁盘配置为基础
+          session: this.config.session,     // 覆盖 session（程序会修改）
+          ui: this.config.ui,               // 覆盖 ui（程序会修改）
+          model: this.config.model,         // 覆盖 model（程序会修改）
+          agent: this.config.agent,         // 覆盖 agent（程序会修改）
+          providers: diskConfig.providers,  // ✅ 保留磁盘上的 providers（完全不改）
+        };
+
+        logger.debug('Config merged with existing file (providers preserved from disk)');
+      } else {
+        // 配置文件不存在，使用默认配置
+        configToSave = DEFAULT_CONFIG;
+        logger.debug('Using default config for new file');
+      }
 
       // 写入文件
       writeFileSync(CONFIG_FILE, JSON.stringify(configToSave, null, 2), 'utf-8');
@@ -117,28 +143,6 @@ export class ConfigManager {
   resetConfig(): void {
     this.config = DEFAULT_CONFIG;
     this.saveConfig();
-  }
-
-  /**
-   * 移除配置中的环境变量实际值，保留引用格式
-   * 例如：将 "sk-ant-xxx" 转换回 "${ANTHROPIC_API_KEY}"
-   */
-  private stripEnvValues(config: ReasonCliConfig): ReasonCliConfig {
-    const result = JSON.parse(JSON.stringify(config)) as ReasonCliConfig;
-
-    // 处理 providers 中的 API keys
-    for (const providerName in result.providers) {
-      const provider = result.providers[providerName];
-      if (provider && provider.apiKey) {
-        // 如果 API key 不是环境变量引用格式，转换为引用
-        if (!provider.apiKey.startsWith('${')) {
-          const envVarName = `${providerName.toUpperCase()}_API_KEY`;
-          provider.apiKey = `\${${envVarName}}`;
-        }
-      }
-    }
-
-    return result;
   }
 }
 

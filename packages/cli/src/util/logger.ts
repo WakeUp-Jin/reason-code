@@ -1,26 +1,26 @@
-import { appendFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'fs'
-import { join, dirname } from 'path'
-import { fileURLToPath } from 'url'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
 // 获取项目根目录的绝对路径
 // CLI 包位于 packages/cli/src/util/logger.ts，向上 4 层到达项目根目录
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
-const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..')
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
 
 /**
  * 日志级别
  */
-export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
+export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
 
 /**
  * Logger 配置
  */
 export interface LoggerConfig {
-  enabled: boolean // 是否启用日志
-  minLevel: LogLevel // 最小日志级别
-  retentionDays: number // 保留天数（0 = 永不清理）
-  bufferSize: number // 缓冲区大小（条数）
+  enabled: boolean; // 是否启用日志
+  minLevel: LogLevel; // 最小日志级别
+  retentionDays: number; // 保留天数（0 = 永不清理）
+  bufferSize: number; // 缓冲区大小（条数）
 }
 
 /**
@@ -29,9 +29,9 @@ export interface LoggerConfig {
 const DEFAULT_CONFIG: LoggerConfig = {
   enabled: true,
   minLevel: 'INFO',
-  retentionDays: 7,
+  retentionDays: 3,
   bufferSize: 1, // 立即写入，确保日志不丢失
-}
+};
 
 /**
  * 日志级别权重（用于比较）
@@ -41,7 +41,7 @@ const LOG_LEVELS: Record<LogLevel, number> = {
   INFO: 1,
   WARN: 2,
   ERROR: 3,
-}
+};
 
 /**
  * Logger 工具类 - 文件日志系统
@@ -70,19 +70,19 @@ const LOG_LEVELS: Record<LogLevel, number> = {
  * ```
  */
 class Logger {
-  private static instance: Logger
-  private currentLogFile: string | null = null
-  private currentSessionId: string | null = null
-  private buffer: string[] = []
-  private config: LoggerConfig = { ...DEFAULT_CONFIG }
-  private logsDir: string
+  private static instance: Logger;
+  private currentLogFile: string | null = null;
+  private currentSessionId: string | null = null;
+  private buffer: string[] = [];
+  private config: LoggerConfig = { ...DEFAULT_CONFIG };
+  private logsDir: string;
 
   /**
    * 私有构造函数（单例模式）
    */
   private constructor() {
     // 日志目录使用项目根目录的绝对路径
-    this.logsDir = join(PROJECT_ROOT, 'logs', 'cli')
+    this.logsDir = join(PROJECT_ROOT, 'logs', 'cli');
   }
 
   /**
@@ -90,9 +90,9 @@ class Logger {
    */
   static getInstance(): Logger {
     if (!Logger.instance) {
-      Logger.instance = new Logger()
+      Logger.instance = new Logger();
     }
-    return Logger.instance
+    return Logger.instance;
   }
 
   /**
@@ -102,23 +102,23 @@ class Logger {
   createSession(): void {
     try {
       // 确保日志目录存在
-      this.ensureLogsDir()
+      this.ensureLogsDir();
 
       // 生成 session ID（时间戳）
-      this.currentSessionId = this.generateSessionId()
+      this.currentSessionId = this.generateSessionId();
 
       // 创建日志文件路径
-      this.currentLogFile = join(this.logsDir, `${this.currentSessionId}.log`)
+      this.currentLogFile = join(this.logsDir, `${this.currentSessionId}.log`);
 
       // 写入 session 开始标记
-      this.writeToFile(`${'='.repeat(80)}\n`)
-      this.writeToFile(`Session started: ${new Date().toISOString()}\n`)
-      this.writeToFile(`${'='.repeat(80)}\n`)
+      this.writeToFile(`${'='.repeat(80)}\n`);
+      this.writeToFile(`Session started: ${new Date().toISOString()}\n`);
+      this.writeToFile(`${'='.repeat(80)}\n`);
 
       // 清理旧日志
-      this.cleanup()
+      this.cleanup();
     } catch (error) {
-      this.handleError('Failed to create log session', error)
+      this.handleError('Failed to create log session', error);
     }
   }
 
@@ -126,30 +126,30 @@ class Logger {
    * DEBUG 级别日志
    */
   debug(message: string, context?: any): void {
-    this.write('DEBUG', message, context)
+    this.write('DEBUG', message, context);
   }
 
   /**
    * INFO 级别日志
    */
   info(message: string, context?: any): void {
-    this.write('INFO', message, context)
+    this.write('INFO', message, context);
   }
 
   /**
    * WARN 级别日志
    */
   warn(message: string, context?: any): void {
-    this.write('WARN', message, context)
+    this.write('WARN', message, context);
   }
 
   /**
    * ERROR 级别日志
    */
   error(message: string, context?: any): void {
-    this.write('ERROR', message, context)
+    this.write('ERROR', message, context);
     // ERROR 级别立即 flush，确保错误日志不丢失
-    this.flush()
+    this.flush();
   }
 
   /**
@@ -158,9 +158,9 @@ class Logger {
    */
   flush(): void {
     try {
-      this.flushBuffer()
+      this.flushBuffer();
     } catch (error) {
-      this.handleError('Failed to flush logs', error)
+      this.handleError('Failed to flush logs', error);
     }
   }
 
@@ -170,34 +170,34 @@ class Logger {
    */
   cleanup(retentionDays?: number): void {
     try {
-      const days = retentionDays ?? this.config.retentionDays
-      if (days === 0) return // 0 表示永不清理
+      const days = retentionDays ?? this.config.retentionDays;
+      if (days === 0) return; // 0 表示永不清理
 
-      const cutoffTime = Date.now() - days * 24 * 60 * 60 * 1000
+      const cutoffTime = Date.now() - days * 24 * 60 * 60 * 1000;
 
       // 确保目录存在
-      if (!existsSync(this.logsDir)) return
+      if (!existsSync(this.logsDir)) return;
 
       // 读取所有 .log 文件
-      const files = readdirSync(this.logsDir).filter((f) => f.endsWith('.log'))
+      const files = readdirSync(this.logsDir).filter((f) => f.endsWith('.log'));
 
-      let deletedCount = 0
+      let deletedCount = 0;
       for (const file of files) {
-        const filePath = join(this.logsDir, file)
-        const stats = statSync(filePath)
+        const filePath = join(this.logsDir, file);
+        const stats = statSync(filePath);
 
         // 删除超过保留期的文件
         if (stats.mtimeMs < cutoffTime) {
-          unlinkSync(filePath)
-          deletedCount++
+          unlinkSync(filePath);
+          deletedCount++;
         }
       }
 
       if (deletedCount > 0) {
-        this.debug(`Cleaned up ${deletedCount} old log file(s)`)
+        this.debug(`Cleaned up ${deletedCount} old log file(s)`);
       }
     } catch (error) {
-      this.handleError('Failed to cleanup old logs', error)
+      this.handleError('Failed to cleanup old logs', error);
     }
   }
 
@@ -205,14 +205,14 @@ class Logger {
    * 设置 Logger 配置
    */
   setConfig(config: Partial<LoggerConfig>): void {
-    this.config = { ...this.config, ...config }
+    this.config = { ...this.config, ...config };
   }
 
   /**
    * 获取当前 session ID
    */
   getSessionId(): string | null {
-    return this.currentSessionId
+    return this.currentSessionId;
   }
 
   /**
@@ -221,23 +221,23 @@ class Logger {
   private write(level: LogLevel, message: string, context?: any): void {
     try {
       // 检查是否启用
-      if (!this.config.enabled) return
+      if (!this.config.enabled) return;
 
       // 检查日志级别
-      if (!this.shouldLog(level)) return
+      if (!this.shouldLog(level)) return;
 
       // 格式化日志条目
-      const entry = this.formatEntry(level, message, context)
+      const entry = this.formatEntry(level, message, context);
 
       // 添加到缓冲区
-      this.buffer.push(entry)
+      this.buffer.push(entry);
 
       // 检查是否需要刷新缓冲区
       if (this.buffer.length >= this.config.bufferSize) {
-        this.flushBuffer()
+        this.flushBuffer();
       }
     } catch (error) {
-      this.handleError('Failed to write log', error)
+      this.handleError('Failed to write log', error);
     }
   }
 
@@ -245,9 +245,9 @@ class Logger {
    * 格式化日志条目
    */
   private formatEntry(level: LogLevel, message: string, context?: any): string {
-    const timestamp = this.getTimestamp()
-    const contextStr = context ? ` ${this.serializeContext(context)}` : ''
-    return `[${timestamp}] [${level}] ${message}${contextStr}`
+    const timestamp = this.getTimestamp();
+    const contextStr = context ? ` ${this.serializeContext(context)}` : '';
+    return `[${timestamp}] [${level}] ${message}${contextStr}`;
   }
 
   /**
@@ -255,16 +255,16 @@ class Logger {
    * 格式: 2025-12-25 15:30:45.123
    */
   private getTimestamp(): string {
-    const now = new Date()
-    const year = now.getFullYear()
-    const month = String(now.getMonth() + 1).padStart(2, '0')
-    const day = String(now.getDate()).padStart(2, '0')
-    const hours = String(now.getHours()).padStart(2, '0')
-    const minutes = String(now.getMinutes()).padStart(2, '0')
-    const seconds = String(now.getSeconds()).padStart(2, '0')
-    const millis = String(now.getMilliseconds()).padStart(3, '0')
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    const millis = String(now.getMilliseconds()).padStart(3, '0');
 
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${millis}`
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${millis}`;
   }
 
   /**
@@ -278,14 +278,14 @@ class Logger {
           name: context.name,
           message: context.message,
           stack: context.stack,
-        })
+        });
       }
 
       // 普通对象
-      return JSON.stringify(context)
+      return JSON.stringify(context);
     } catch (error) {
       // 处理循环引用等序列化错误
-      return String(context)
+      return String(context);
     }
   }
 
@@ -293,22 +293,22 @@ class Logger {
    * 判断是否应该记录该级别的日志
    */
   private shouldLog(level: LogLevel): boolean {
-    return LOG_LEVELS[level] >= LOG_LEVELS[this.config.minLevel]
+    return LOG_LEVELS[level] >= LOG_LEVELS[this.config.minLevel];
   }
 
   /**
    * 刷新缓冲区到文件
    */
   private flushBuffer(): void {
-    if (this.buffer.length === 0) return
-    if (!this.currentLogFile) return
+    if (this.buffer.length === 0) return;
+    if (!this.currentLogFile) return;
 
     try {
-      const content = this.buffer.join('\n') + '\n'
-      this.writeToFile(content)
-      this.buffer = []
+      const content = this.buffer.join('\n') + '\n';
+      this.writeToFile(content);
+      this.buffer = [];
     } catch (error) {
-      this.handleError('Failed to flush buffer', error)
+      this.handleError('Failed to flush buffer', error);
     }
   }
 
@@ -316,14 +316,14 @@ class Logger {
    * 写入内容到日志文件
    */
   private writeToFile(content: string): void {
-    if (!this.currentLogFile) return
+    if (!this.currentLogFile) return;
 
     try {
-      appendFileSync(this.currentLogFile, content, 'utf-8')
+      appendFileSync(this.currentLogFile, content, 'utf-8');
     } catch (error) {
       // 写入失败时禁用日志（避免持续报错）
-      this.config.enabled = false
-      process.stderr.write(`Logger disabled due to write error: ${error}\n`)
+      this.config.enabled = false;
+      process.stderr.write(`Logger disabled due to write error: ${error}\n`);
     }
   }
 
@@ -332,7 +332,7 @@ class Logger {
    */
   private ensureLogsDir(): void {
     if (!existsSync(this.logsDir)) {
-      mkdirSync(this.logsDir, { recursive: true })
+      mkdirSync(this.logsDir, { recursive: true });
     }
   }
 
@@ -341,15 +341,15 @@ class Logger {
    * 格式: YYYY-MM-DD_HH-MM-SS
    */
   private generateSessionId(): string {
-    const now = new Date()
-    const year = now.getFullYear()
-    const month = String(now.getMonth() + 1).padStart(2, '0')
-    const day = String(now.getDate()).padStart(2, '0')
-    const hours = String(now.getHours()).padStart(2, '0')
-    const minutes = String(now.getMinutes()).padStart(2, '0')
-    const seconds = String(now.getSeconds()).padStart(2, '0')
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
 
-    return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`
+    return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
   }
 
   /**
@@ -358,11 +358,11 @@ class Logger {
    */
   private handleError(message: string, error: any): void {
     // 只输出到 stderr，不抛出异常
-    process.stderr.write(`[Logger Error] ${message}: ${error}\n`)
+    process.stderr.write(`[Logger Error] ${message}: ${error}\n`);
   }
 }
 
 /**
  * 导出 Logger 单例实例
  */
-export const logger = Logger.getInstance()
+export const logger = Logger.getInstance();

@@ -33,10 +33,10 @@ export function registerCommands() {
   // ============================================================
 
   commandRegistry.register({
-    id: 'session',
-    name: 'session',
-    label: 'Session List',
-    description: 'View and switch sessions',
+    id: 'resume',
+    name: 'resume',
+    label: 'Resume Session',
+    description: 'Resume a previous session',
     category: 'Session',
     type: 'panel',
     panelFactory: (onClose) => <PanelSessionList onClose={onClose} />,

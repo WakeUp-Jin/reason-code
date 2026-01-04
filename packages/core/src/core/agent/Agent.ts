@@ -3,7 +3,7 @@
  * 独立实现，提供 CLI 友好的 API
  */
 
-import { ContextManager, ContextType } from '../context/index.js';
+import { ContextManager, ContextType, Message } from '../context/index.js';
 import { ToolManager } from '../tool/ToolManager.js';
 import { ILLMService } from '../llm/types/index.js';
 import { createLLMService } from '../llm/factory.js';
@@ -11,6 +11,7 @@ import { executeToolLoop } from '../llm/utils/executeToolLoop.js';
 import { eventBus } from '../../evaluation/EventBus.js';
 import { SIMPLE_AGENT_PROMPT } from '../promptManager/index.js';
 import { ExecutionStreamManager } from '../execution/index.js';
+import { ApprovalMode, ConfirmDetails, ConfirmOutcome } from '../tool/types.js';
 
 /**
  * Agent 配置
@@ -26,6 +27,36 @@ export interface AgentConfig {
   name?: string;
   systemPrompt?: string;
   maxLoops?: number;
+}
+
+/**
+ * 历史消息加载选项
+ */
+export interface HistoryLoadOptions {
+  /** 是否清空现有上下文，默认 true */
+  clearExisting?: boolean;
+  /** 是否跳过系统提示词，默认 true */
+  skipSystemPrompt?: boolean;
+  /** 最大加载消息数 */
+  maxMessages?: number;
+}
+
+/**
+ * Agent 运行选项
+ */
+export interface AgentRunOptions {
+  /** 模型的 Token 限制（由 CLI 层传入） */
+  modelLimit?: number;
+
+  /** 工具确认回调（由 CLI 层提供） */
+  onConfirmRequired?: (
+    callId: string,
+    toolName: string,
+    details: ConfirmDetails
+  ) => Promise<ConfirmOutcome>;
+
+  /** 批准模式 */
+  approvalMode?: ApprovalMode;
 }
 
 /**
@@ -55,7 +86,7 @@ export interface AgentResult {
  *   apiKey: process.env.DEEPSEEK_API_KEY,
  * });
  * await agent.init();
- * const result = await agent.run('你好');
+ * const result = await agent.run('你好', { modelLimit: 64000 });
  * ```
  */
 export class Agent {
@@ -80,7 +111,7 @@ export class Agent {
 
   /**
    * 初始化 Agent
-   * 创建 LLM 服务、初始化上下文管理器
+   * 创建 LLM 服务、设置系统提示词
    */
   async init(): Promise<void> {
     // 创建 LLM 服务
@@ -91,11 +122,8 @@ export class Agent {
       baseURL: this.config.baseURL,
     });
 
-    // 初始化上下文管理器
-    await this.contextManager.init();
-
     // 设置系统提示词
-    this.contextManager.add(this.config.systemPrompt!, ContextType.SYSTEM_PROMPT);
+    this.contextManager.setSystemPrompt(this.config.systemPrompt!);
 
     this.initialized = true;
   }
@@ -123,9 +151,10 @@ export class Agent {
   /**
    * 执行 Agent
    * @param userInput - 用户输入
+   * @param options - 运行选项
    * @returns Agent 执行结果
    */
-  async run(userInput: string): Promise<AgentResult> {
+  async run(userInput: string, options?: AgentRunOptions): Promise<AgentResult> {
     if (!this.initialized || !this.llmService) {
       throw new Error('Agent not initialized. Call init() first.');
     }
@@ -152,8 +181,15 @@ export class Agent {
           maxLoops: this.config.maxLoops,
           agentName: this.config.name,
           executionStream: this.executionStream,
+          model: this.config.model,
+          modelLimit: options?.modelLimit,
+          onConfirmRequired: options?.onConfirmRequired,
+          approvalMode: options?.approvalMode,
         }
       );
+
+      // 完成当前轮次（归档到历史）
+      this.contextManager.finishTurn();
 
       // 完成执行流
       this.executionStream.complete();
@@ -224,5 +260,47 @@ export class Agent {
    */
   getExecutionStream(): ExecutionStreamManager {
     return this.executionStream;
+  }
+
+  /**
+   * 加载历史消息到上下文
+   * 用于恢复之前的会话状态
+   *
+   * @param messages - Core 格式的历史消息
+   * @param options - 加载选项
+   */
+  loadHistory(messages: Message[], options?: HistoryLoadOptions): void {
+    const opts: Required<HistoryLoadOptions> = {
+      clearExisting: true,
+      skipSystemPrompt: true,
+      maxMessages: Infinity,
+      ...options,
+    };
+
+    // 清空现有历史（保留系统提示词）
+    if (opts.clearExisting) {
+      this.contextManager.clear(ContextType.HISTORY);
+      this.contextManager.clearCurrentTurn();
+    }
+
+    // 限制消息数量
+    const messagesToLoad =
+      opts.maxMessages !== Infinity ? messages.slice(-opts.maxMessages) : messages;
+
+    // 过滤并加载消息
+    const filteredMessages = opts.skipSystemPrompt
+      ? messagesToLoad.filter((msg) => msg.role !== 'system')
+      : messagesToLoad;
+
+    // 加载到历史上下文
+    this.contextManager.loadHistory(filteredMessages);
+  }
+
+  /**
+   * 清空上下文（保留系统提示词）
+   */
+  clearContext(): void {
+    this.contextManager.clear(ContextType.HISTORY);
+    this.contextManager.clearCurrentTurn();
   }
 }

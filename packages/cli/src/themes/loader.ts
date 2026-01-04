@@ -46,7 +46,7 @@ function resolveThemeColors(theme: ThemeSemantic, defs: ThemeDefs): ThemeSemanti
     resolved[key] = resolveColorRef(value, defs)
   }
 
-  return resolved as ThemeSemantic
+  return resolved as unknown as ThemeSemantic
 }
 
 /**

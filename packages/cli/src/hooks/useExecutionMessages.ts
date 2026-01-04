@@ -72,6 +72,33 @@ export function useExecutionMessages(options: UseExecutionMessagesOptions) {
           logger.debug('Execution started, reset message tracking');
           break;
 
+        case 'assistant:message': {
+          // 保存 assistant 消息（包含 tool_calls）
+          // 这个消息会在 tool 消息之前被添加，确保历史加载时序列合法
+          const { content, tool_calls } = event;
+          logger.debug('Assistant message event', {
+            contentLength: content.length,
+            toolCallsCount: tool_calls.length,
+          });
+
+          if (assistantPlaceholderId) {
+            // 在 assistant 占位消息前插入
+            insertMessageBefore(sessionId, assistantPlaceholderId, {
+              role: 'assistant',
+              content,
+              tool_calls,
+            });
+          } else {
+            // 没有占位消息，直接追加
+            addMessage(sessionId, {
+              role: 'assistant',
+              content,
+              tool_calls,
+            });
+          }
+          break;
+        }
+
         case 'tool:start': {
           const { toolCall } = event;
           logger.debug('Tool start event', {
@@ -199,7 +226,70 @@ export function useExecutionMessages(options: UseExecutionMessagesOptions) {
           break;
         }
 
-        case 'execution:complete':
+        case 'execution:complete': {
+          // 保存 token 统计到最后一条 assistant 消息
+          const { stats } = event;
+          if (stats) {
+            const sessionMessages = useAppStore.getState().messages[sessionId] || [];
+            // 查找最后一条 assistant 消息
+            const lastAssistantMsg = sessionMessages
+              .slice()
+              .reverse()
+              .find((m) => m.role === 'assistant');
+
+            if (lastAssistantMsg) {
+              // 获取当前模型信息以计算费用
+              const currentModel = useAppStore.getState().currentModel;
+              const models = useAppStore.getState().models;
+              const modelInfo = models.find((m) => m.id === currentModel);
+
+              // 计算费用
+              const inputCost = modelInfo?.pricing
+                ? (stats.inputTokens / 1_000_000) * modelInfo.pricing.input
+                : 0;
+              const outputCost = modelInfo?.pricing
+                ? (stats.outputTokens / 1_000_000) * modelInfo.pricing.output
+                : 0;
+              const totalCost = inputCost + outputCost;
+
+              // 更新消息 metadata
+              updateMessage(sessionId, lastAssistantMsg.id, {
+                metadata: {
+                  tokenUsage: {
+                    inputTokens: stats.inputTokens,
+                    outputTokens: stats.outputTokens,
+                    totalTokens: stats.totalTokens,
+                  },
+                  model: currentModel,
+                  cost: {
+                    inputCost,
+                    outputCost,
+                    totalCost,
+                  },
+                },
+              });
+
+              logger.info('✅ Saved token stats to assistant message', {
+                messageId: lastAssistantMsg.id,
+                tokens: stats.totalTokens,
+                inputTokens: stats.inputTokens,
+                outputTokens: stats.outputTokens,
+                cost: totalCost,
+                model: currentModel,
+              });
+            } else {
+              logger.warn('⚠️ No assistant message found to save token stats');
+            }
+          } else {
+            logger.warn('⚠️ No stats in execution:complete event');
+          }
+
+          // 清理追踪状态
+          toolMessageMapRef.current.clear();
+          thinkingMessageIdRef.current = null;
+          break;
+        }
+
         case 'execution:error':
         case 'execution:cancel':
           // 清理追踪状态

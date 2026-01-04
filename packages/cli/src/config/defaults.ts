@@ -36,6 +36,8 @@ export const DEFAULT_CONFIG: ReasonCliConfig = {
   ui: {
     theme: 'kanagawa',
     mode: 'dark',
+    currency: 'CNY',
+    exchangeRate: 7.2,
   },
   session: {
     lastSessionId: undefined,

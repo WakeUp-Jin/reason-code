@@ -1,5 +1,6 @@
 import React, { createContext, useContext, type ReactNode } from 'react';
 import { create } from 'zustand';
+import { useShallow } from 'zustand/react/shallow';
 
 // Session 类型
 export interface Session {
@@ -11,9 +12,9 @@ export interface Session {
 
 // Token 使用情况
 export interface TokenUsage {
-  inputTokens: number;   // 输入 token 数
-  outputTokens: number;  // 输出 token 数
-  totalTokens: number;   // 总 token 数
+  inputTokens: number; // 输入 token 数
+  outputTokens: number; // 输出 token 数
+  totalTokens: number; // 总 token 数
 }
 
 // 消息元数据
@@ -26,17 +27,17 @@ export interface MessageMetadata {
 
   // 成本信息（可选）
   cost?: {
-    inputCost: number;   // 输入成本（USD）
-    outputCost: number;  // 输出成本（USD）
-    totalCost: number;   // 总成本（USD）
+    inputCost: number; // 输入成本（USD）
+    outputCost: number; // 输出成本（USD）
+    totalCost: number; // 总成本（USD）
   };
 
   // 生成信息（可选）
   generationInfo?: {
-    temperature?: number;   // 温度参数
-    maxTokens?: number;     // 最大 token 数
-    stopReason?: string;    // 停止原因
-    latency?: number;       // 响应延迟（ms）
+    temperature?: number; // 温度参数
+    maxTokens?: number; // 最大 token 数
+    stopReason?: string; // 停止原因
+    latency?: number; // 响应延迟（ms）
   };
 
   // 其他自定义字段
@@ -77,6 +78,17 @@ export interface Message {
 
   // 工具调用信息（仅 role='tool' 时有）
   toolCall?: ToolCallInfo;
+
+  // 工具调用列表（仅 role='assistant' 时有，用于历史加载）
+  // 与 LLM API 的 tool_calls 字段对应，确保历史消息序列合法
+  tool_calls?: Array<{
+    id: string;
+    type: 'function';
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }>;
 }
 
 // 消息更新类型（支持 toolCall 部分更新）
@@ -91,6 +103,16 @@ export interface AgentInfo {
   description: string;
 }
 
+// 货币类型
+export type Currency = 'CNY' | 'USD';
+
+// 货币配置
+export interface CurrencyConfig {
+  currency: Currency;
+  // 汇率（CNY to USD）
+  exchangeRate: number;
+}
+
 // Model 类型
 export interface ModelInfo {
   id: string;
@@ -100,10 +122,10 @@ export interface ModelInfo {
   // Context 窗口大小（最大 token 数）
   maxTokens: number;
 
-  // 定价（USD per 1M tokens）
+  // 定价（CNY per 1M tokens，默认人民币）
   pricing?: {
-    input: number;   // 输入价格
-    output: number;  // 输出价格
+    input: number; // 输入价格
+    output: number; // 输出价格
   };
 
   // 其他信息
@@ -116,6 +138,9 @@ export interface Config {
   mode: 'dark' | 'light';
   currentAgent: string;
   currentModel: string;
+  currency: Currency; // 货币类型
+  exchangeRate: number; // 汇率（CNY to USD）
+  approvalMode: 'default' | 'auto_edit' | 'yolo'; // 工具批准模式
 }
 
 // Store 状态类型
@@ -165,6 +190,7 @@ interface AppState {
 
   // Config Actions
   updateConfig: (updates: Partial<Config>) => void;
+  toggleApprovalMode: () => void; // 循环切换批准模式
 
   // Initialization from disk
   initializeFromDisk: (data: {
@@ -173,6 +199,8 @@ interface AppState {
     currentSessionId: string | null;
     currentAgent: string;
     currentModel: string;
+    currency?: Currency;
+    exchangeRate?: number;
   }) => void;
 }
 
@@ -199,8 +227,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       provider: 'DeepSeek',
       maxTokens: 64_000,
       pricing: {
-        input: 0.14,   // $0.14 per 1M tokens
-        output: 0.28,  // $0.28 per 1M tokens
+        input: 2.0, // ¥2.0 per 1M tokens
+        output: 3.0, // ¥3.0 per 1M tokens
       },
       description: 'Fast and affordable chat model',
     },
@@ -210,8 +238,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       provider: 'DeepSeek',
       maxTokens: 64_000,
       pricing: {
-        input: 0.55,   // $0.55 per 1M tokens
-        output: 2.19,  // $2.19 per 1M tokens
+        input: 2.0, // ¥2.0 per 1M tokens
+        output: 3.0, // ¥3.0 per 1M tokens
       },
       description: 'Advanced reasoning model (R1)',
     },
@@ -221,8 +249,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       provider: 'Anthropic',
       maxTokens: 200_000,
       pricing: {
-        input: 3,    // $3 per 1M tokens
-        output: 15,  // $15 per 1M tokens
+        input: 21.6, // ¥21.6 per 1M tokens
+        output: 108.0, // ¥108.0 per 1M tokens
       },
       description: 'Most capable Claude model with 200K context',
     },
@@ -232,8 +260,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       provider: 'OpenAI',
       maxTokens: 128_000,
       pricing: {
-        input: 2.5,   // $2.5 per 1M tokens
-        output: 10,   // $10 per 1M tokens
+        input: 18.0, // ¥18.0 per 1M tokens
+        output: 72.0, // ¥72.0 per 1M tokens
       },
       description: 'Fast and capable GPT-4 model',
     },
@@ -243,8 +271,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       provider: 'Google',
       maxTokens: 1_000_000,
       pricing: {
-        input: 0.5,   // $0.5 per 1M tokens
-        output: 1.5,  // $1.5 per 1M tokens
+        input: 3.6, // ¥3.6 per 1M tokens
+        output: 10.8, // ¥10.8 per 1M tokens
       },
       description: 'Long context Google model with 1M context',
     },
@@ -255,13 +283,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     mode: 'dark',
     currentAgent: 'default',
     currentModel: 'deepseek/deepseek-chat',
+    currency: 'CNY', // 默认人民币
+    exchangeRate: 7.2, // 默认汇率 1 USD = 7.2 CNY
+    approvalMode: 'default', // 默认批准模式
   },
 
   // Session Actions
   createSession: (title) => {
+    // 生成默认标题：使用日期时间而非简单编号
+    let defaultTitle = '';
+    if (!title) {
+      const now = new Date();
+      const month = now.getMonth() + 1;
+      const day = now.getDate();
+      const hour = now.getHours();
+      const minute = String(now.getMinutes()).padStart(2, '0');
+      defaultTitle = `${month}/${day} ${hour}:${minute}`;
+    }
+
     const session: Session = {
       id: generateId(),
-      title: title || `Session ${get().sessions.length + 1}`,
+      title: title || defaultTitle,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -374,10 +416,18 @@ export const useAppStore = create<AppState>((set, get) => ({
                 ? (updates.toolCall as ToolCallInfo)
                 : m.toolCall;
 
+          // 深度合并 metadata 字段
+          // 避免在多次更新时丢失 metadata 中的字段
+          const newMetadata: MessageMetadata | undefined =
+            updates.metadata && m.metadata
+              ? { ...m.metadata, ...updates.metadata }
+              : updates.metadata || m.metadata;
+
           return {
             ...m,
             ...updates,
             toolCall: newToolCall,
+            metadata: newMetadata,
           };
         }),
       },
@@ -411,6 +461,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
 
+  // 循环切换批准模式: default → auto_edit → yolo → default
+  toggleApprovalMode: () => {
+    set((state) => {
+      const modes: Array<'default' | 'auto_edit' | 'yolo'> = ['default', 'auto_edit', 'yolo'];
+      const currentIndex = modes.indexOf(state.config.approvalMode);
+      const nextIndex = (currentIndex + 1) % modes.length;
+      const nextMode = modes[nextIndex];
+
+      return {
+        config: { ...state.config, approvalMode: nextMode },
+      };
+    });
+  },
+
   // Initialization from disk
   initializeFromDisk: (data) => {
     set({
@@ -423,6 +487,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         ...get().config,
         currentAgent: data.currentAgent,
         currentModel: data.currentModel,
+        currency: data.currency || get().config.currency,
+        exchangeRate: data.exchangeRate || get().config.exchangeRate,
       },
     });
   },
@@ -464,12 +530,15 @@ export function useSessions(): Session[] {
 }
 
 // 获取已完成的消息（非流式）
+// 使用 useShallow 进行浅比较，避免不必要的重新渲染
 export function useCompletedMessages(): Message[] {
-  return useAppStore((state) => {
-    const id = state.currentSessionId;
-    const messages = id ? state.messages[id] || [] : [];
-    return messages.filter((m) => !m.isStreaming);
-  });
+  return useAppStore(
+    useShallow((state) => {
+      const id = state.currentSessionId;
+      const messages = id ? state.messages[id] || [] : [];
+      return messages.filter((m) => !m.isStreaming);
+    })
+  );
 }
 
 // 获取当前流式消息

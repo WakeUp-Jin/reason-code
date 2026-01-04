@@ -44,7 +44,7 @@ export function PanelSessionList({ onClose }: PanelSessionListProps) {
 
   return (
     <PanelSelect
-      title="Sessions"
+      title="Resume Session"
       placeholder="Search sessions..."
       options={options}
       onSelect={handleSelect}

@@ -10,14 +10,17 @@ import type { PartialConfig } from '../config/schema.js';
  * 提供显式的保存方法，让组件在关键时刻调用
  */
 export function usePersistence() {
-  const currentSessionId = useAppStore((state) => state.currentSessionId);
-  const sessions = useAppStore((state) => state.sessions);
-  const messages = useAppStore((state) => state.messages);
-
   /**
    * 保存当前会话
+   * 使用 getState() 直接读取最新状态，避免闭包问题
    */
   const saveCurrentSession = useCallback(() => {
+    // ✅ 直接从 store 读取最新状态，而不使用 Hook 的依赖
+    const state = useAppStore.getState();
+    const currentSessionId = state.currentSessionId;
+    const sessions = state.sessions;
+    const messages = state.messages;
+
     if (!currentSessionId) {
       logger.warn('No current session to save');
       return;
@@ -32,17 +35,53 @@ export function usePersistence() {
     const sessionMessages = messages[currentSessionId] || [];
 
     try {
+      // 统计有 metadata 的消息数量
+      const messagesWithMetadata = sessionMessages.filter(
+        m => m.role === 'assistant' && m.metadata?.tokenUsage
+      ).length;
+      const totalAssistantMessages = sessionMessages.filter(m => m.role === 'assistant').length;
+
+      logger.info(`💾 Saving session ${currentSessionId}`, {
+        totalMessages: sessionMessages.length,
+        assistantMessages: totalAssistantMessages,
+        withMetadata: messagesWithMetadata,
+      });
+
+      // 显示最后一条 assistant 消息的详情（用于调试）
+      const lastAssistantMsg = sessionMessages
+        .slice()
+        .reverse()
+        .find(m => m.role === 'assistant');
+
+      if (lastAssistantMsg) {
+        logger.info('📄 Last assistant message details', {
+          id: lastAssistantMsg.id,
+          contentLength: lastAssistantMsg.content?.length || 0,
+          isStreaming: lastAssistantMsg.isStreaming,
+          hasMetadata: !!lastAssistantMsg.metadata,
+          hasTokenUsage: !!lastAssistantMsg.metadata?.tokenUsage,
+          tokens: lastAssistantMsg.metadata?.tokenUsage?.totalTokens || 0,
+        });
+      }
+
       saveSession(session, sessionMessages);
-      logger.info(`Session ${currentSessionId} saved`);
+
+      logger.info(`✅ Session ${currentSessionId} saved to disk`);
     } catch (error) {
       logger.error(`Failed to save session ${currentSessionId}`, { error });
     }
-  }, [currentSessionId, sessions, messages]);
+  }, []); // ← 空依赖，函数不会重新创建，每次调用都读取最新的 store 状态
 
   /**
    * 保存所有会话
+   * 使用 getState() 直接读取最新状态
    */
   const saveAllSessions = useCallback(() => {
+    // ✅ 直接从 store 读取最新状态
+    const state = useAppStore.getState();
+    const sessions = state.sessions;
+    const messages = state.messages;
+
     let savedCount = 0;
     let failedCount = 0;
 
@@ -59,7 +98,7 @@ export function usePersistence() {
     }
 
     logger.info(`Saved ${savedCount} sessions, ${failedCount} failed`);
-  }, [sessions, messages]);
+  }, []);
 
   /**
    * 保存配置
@@ -83,19 +122,21 @@ export function usePersistence() {
     // 保存所有会话
     saveAllSessions();
 
-    // 保存配置（当前会话 ID）
-    if (currentSessionId) {
-      saveConfig({
-        session: {
-          lastSessionId: currentSessionId,
-          autoSave: true,
-          saveDebounce: 500,
-        },
-      });
-    }
+    // 保存配置（仅保留 UI 配置）
+    // ✅ 直接从 store 读取最新状态
+    const state = useAppStore.getState();
+    const currency = state.config.currency;
+    const exchangeRate = state.config.exchangeRate;
+
+    saveConfig({
+      ui: {
+        currency,
+        exchangeRate,
+      } as any, // 使用部分更新
+    });
 
     logger.info('All data saved');
-  }, [currentSessionId, saveAllSessions, saveConfig]);
+  }, [saveAllSessions, saveConfig]);
 
   return {
     saveCurrentSession,

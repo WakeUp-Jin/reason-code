@@ -8,6 +8,7 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../context/theme.js';
 import { TOOL_ICONS, TOOL_STATUS_THEME_COLORS } from './constants.js';
 import { ToolCallStatus, type ToolCallRecord } from '@reason-cli/core';
+import { formatToolSummary } from '../../util/pathFormatter.js';
 
 // Spinner 动画帧
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -40,6 +41,19 @@ export function ToolCallDisplay({ toolCall }: ToolCallDisplayProps) {
   const statusColorKey = TOOL_STATUS_THEME_COLORS[toolCall.status] || 'textMuted';
   const statusColor = colors[statusColorKey];
 
+  // 格式化参数摘要（将绝对路径转换为相对路径）
+  const displayParamsSummary = formatToolSummary(
+    toolCall.toolName,
+    toolCall.paramsSummary,
+    process.cwd()
+  );
+
+  // 格式化结果摘要（从结果摘要中提取路径并格式化）
+  // 结果摘要格式如 "Read 45 lines from /abs/path/to/file.ts"
+  const displayResultSummary = toolCall.resultSummary
+    ? formatResultSummary(toolCall.toolName, toolCall.resultSummary)
+    : undefined;
+
   // 状态图标
   const StatusIcon = () => {
     if (toolCall.status === ToolCallStatus.Executing) {
@@ -62,18 +76,18 @@ export function ToolCallDisplay({ toolCall }: ToolCallDisplayProps) {
         <Text color={colors.primary} bold>
           {toolCall.toolName}
         </Text>
-        {toolCall.paramsSummary && (
+        {displayParamsSummary && (
           <Text color={colors.textMuted}>
-            ({toolCall.paramsSummary})
+            ({displayParamsSummary})
           </Text>
         )}
       </Box>
 
       {/* 结果摘要行 */}
-      {toolCall.resultSummary && (
+      {displayResultSummary && (
         <Box paddingLeft={2}>
           <Text color={colors.textMuted}>└ </Text>
-          <Text color={colors.text}>{toolCall.resultSummary}</Text>
+          <Text color={colors.text}>{displayResultSummary}</Text>
         </Box>
       )}
 
@@ -94,4 +108,33 @@ export function ToolCallDisplay({ toolCall }: ToolCallDisplayProps) {
       )}
     </Box>
   );
+}
+
+/**
+ * 格式化结果摘要中的路径
+ * 例如："Read 45 lines from /abs/path/to/file.ts" → "Read 45 lines from packages/cli/src/file.ts"
+ */
+function formatResultSummary(toolName: string, summary: string): string {
+  // 文件路径相关的工具需要格式化路径
+  const pathTools = ['Read', 'ReadFile', 'Write', 'WriteFile', 'Edit', 'ListFiles'];
+
+  if (!pathTools.includes(toolName)) {
+    return summary;
+  }
+
+  // 使用正则提取路径（假设路径是摘要中的最后一部分）
+  // "Read 45 lines from /path/to/file" → 提取 "/path/to/file"
+  // "Wrote to /path/to/file" → 提取 "/path/to/file"
+  // "Listed 10 items in /path/to/dir" → 提取 "/path/to/dir"
+  const pathPattern = /(?:from|to|in)\s+(.+)$/;
+  const match = summary.match(pathPattern);
+
+  if (match && match[1]) {
+    const absolutePath = match[1];
+    const formattedPath = formatToolSummary(toolName, absolutePath, process.cwd());
+    // 替换原始路径为格式化后的路径
+    return summary.replace(absolutePath, formattedPath);
+  }
+
+  return summary;
 }

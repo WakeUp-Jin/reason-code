@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Box, Text, Static } from 'ink';
 import { useTheme } from '../../context/theme.js';
 import { useExecution } from '../../context/execution.js';
@@ -52,14 +52,18 @@ export function Session() {
   }
 
   // 构建 Static 区域的 items - Header 作为第一个 item
-  const staticItems: StaticItem[] = [
-    { id: 'header', type: 'header' },
-    ...completedMessages.map((m) => ({
-      id: m.id,
-      type: 'message' as const,
-      message: m,
-    })),
-  ];
+  // 使用 useMemo 缓存，避免不必要的重新渲染
+  const staticItems: StaticItem[] = useMemo(
+    () => [
+      { id: 'header', type: 'header' },
+      ...completedMessages.map((m) => ({
+        id: m.id,
+        type: 'message' as const,
+        message: m,
+      })),
+    ],
+    [completedMessages]
+  );
 
   return (
     <>

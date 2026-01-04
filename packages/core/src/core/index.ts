@@ -13,9 +13,35 @@ export * from './llm/index.js';
 // 工具系统
 export * from './tool/index.js';
 
-// Context 管理 - 避免 ImageData 冲突
+// Context 管理
 export { ContextManager } from './context/ContextManager.js';
-export type { ContextType } from './context/types.js';
+export {
+  ContextType,
+  type Message,
+  type MessageRole,
+  type ToolCall,
+  type ContextCheckResult,
+  type CompressionResult,
+  type ToolOutputProcessResult,
+} from './context/types.js';
+
+// 上下文模块
+export {
+  BaseContext,
+  SystemPromptContext,
+  HistoryContext,
+  CurrentTurnContext,
+} from './context/index.js';
+
+// 上下文压缩和检查
+export {
+  TokenEstimator,
+  ContextChecker,
+  DEFAULT_THRESHOLDS,
+  HistoryCompressor,
+  ToolOutputSummarizer,
+} from './context/index.js';
+export type { ContextThresholds } from './context/index.js';
 
 // Prompt 管理
 export * from './promptManager/index.js';

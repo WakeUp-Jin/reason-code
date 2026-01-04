@@ -1,4 +1,5 @@
 import type { ExecutionStreamManager } from '../../execution/index.js';
+import type { ApprovalMode, ConfirmDetails, ConfirmOutcome } from '../../tool/types.js';
 
 /** 图片数据 */
 export interface ImageData {
@@ -133,6 +134,27 @@ export interface ToolLoopConfig {
   agentName?: string;
   /** 执行流管理器 */
   executionStream?: ExecutionStreamManager;
+  /** 模型名称（用于日志） */
+  model?: string;
+  /** 模型的 Token 限制（由 CLI 层传入） */
+  modelLimit?: number;
+  /** 是否启用上下文压缩 */
+  enableCompression?: boolean;
+  /** 是否启用工具输出总结 */
+  enableToolSummarization?: boolean;
+
+  // ============================================================
+  // 工具权限验证配置
+  // ============================================================
+
+  /** 批准模式 */
+  approvalMode?: ApprovalMode;
+  /** 确认回调（UI 层提供） */
+  onConfirmRequired?: (
+    callId: string,
+    toolName: string,
+    details: ConfirmDetails
+  ) => Promise<ConfirmOutcome>;
 }
 
 /** LLM Service 核心接口 */
@@ -145,11 +167,7 @@ export interface ILLMService {
    * @param options - 生成参数（temperature, maxTokens 等）
    * @returns 模型响应（包含内容、工具调用、使用统计）
    */
-  complete(
-    messages: any[],
-    tools?: any[],
-    options?: LLMChatOptions
-  ): Promise<LLMResponse>;
+  complete(messages: any[], tools?: any[], options?: LLMChatOptions): Promise<LLMResponse>;
 
   /**
    * 简单对话：无工具，单次调用
@@ -165,11 +183,7 @@ export interface ILLMService {
    * @param imageData - 可选的图片数据
    * @param stream - 是否流式输出
    */
-  generate?(
-    userInput: string,
-    imageData?: ImageData,
-    stream?: boolean
-  ): Promise<string>;
+  generate?(userInput: string, imageData?: ImageData, stream?: boolean): Promise<string>;
 
   /** 获取配置 */
   getConfig(): { provider: string; model: string };

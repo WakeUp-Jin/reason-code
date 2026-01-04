@@ -1,22 +1,33 @@
-import type { ModelInfo, TokenUsage, MessageMetadata } from '../context/store.js';
+import type { ModelInfo, TokenUsage, MessageMetadata, Currency } from '../context/store.js';
 
 /**
  * 计算 token 使用成本
  * @param tokenUsage Token 使用情况
  * @param model 模型信息
- * @returns 成本信息（USD）
+ * @param currency 目标货币（默认 CNY）
+ * @param exchangeRate 汇率（CNY to USD，默认 7.2）
+ * @returns 成本信息（指定货币）
  */
 export function calculateCost(
   tokenUsage: TokenUsage,
-  model: ModelInfo
+  model: ModelInfo,
+  currency: Currency = 'CNY',
+  exchangeRate: number = 7.2
 ): { inputCost: number; outputCost: number; totalCost: number } {
   if (!model.pricing) {
     return { inputCost: 0, outputCost: 0, totalCost: 0 };
   }
 
-  // 计算成本（pricing 是 per 1M tokens）
-  const inputCost = (tokenUsage.inputTokens / 1_000_000) * model.pricing.input;
-  const outputCost = (tokenUsage.outputTokens / 1_000_000) * model.pricing.output;
+  // 模型定价是人民币（CNY per 1M tokens）
+  let inputCost = (tokenUsage.inputTokens / 1_000_000) * model.pricing.input;
+  let outputCost = (tokenUsage.outputTokens / 1_000_000) * model.pricing.output;
+
+  // 如果用户选择美元，转换为美元
+  if (currency === 'USD') {
+    inputCost = inputCost / exchangeRate;
+    outputCost = outputCost / exchangeRate;
+  }
+
   const totalCost = inputCost + outputCost;
 
   return {
@@ -64,11 +75,22 @@ export function formatTokens(tokens: number): string {
 
 /**
  * 格式化成本（保留 4 位小数）
- * @param cost 成本（USD）
+ * @param cost 成本
+ * @param currency 货币类型（默认 CNY）
  * @returns 格式化后的字符串
  */
-export function formatCost(cost: number): string {
-  return `$${cost.toFixed(4)}`;
+export function formatCost(cost: number, currency: Currency = 'CNY'): string {
+  const symbol = currency === 'CNY' ? '¥' : '$';
+  return `${symbol}${cost.toFixed(4)}`;
+}
+
+/**
+ * 获取货币符号
+ * @param currency 货币类型
+ * @returns 货币符号
+ */
+export function getCurrencySymbol(currency: Currency): string {
+  return currency === 'CNY' ? '¥' : '$';
 }
 
 /**
