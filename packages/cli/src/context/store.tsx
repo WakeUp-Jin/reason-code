@@ -525,7 +525,54 @@ export function useSessions(): Session[] {
   return useAppStore((state) => state.sessions);
 }
 
-// 获取已完成的消息（非流式）
+// 找到第一个阻塞点（未完成的工具或流式消息）
+// 阻塞点之前的消息可以进入 Static 区域，阻塞点及之后的消息在动态区域渲染
+function findBlockingIndex(messages: Message[]): number {
+  return messages.findIndex((m) => {
+    // 流式消息是阻塞点
+    if (m.isStreaming) return true;
+    // 未完成的工具是阻塞点
+    if (m.role === 'tool' && m.toolCall) {
+      const status = m.toolCall.status;
+      return status !== 'success' && status !== 'error' && status !== 'cancelled';
+    }
+    return false;
+  });
+}
+
+// 获取 Static 区域的消息（阻塞点之前）
+// 这些消息的状态已经确定，不会再变化
+export function useStaticMessages(): Message[] {
+  return useAppStore(
+    useShallow((state) => {
+      const id = state.currentSessionId;
+      const messages = id ? state.messages[id] || [] : [];
+      const blockingIndex = findBlockingIndex(messages);
+      // 没有阻塞点，所有消息都可以进入 Static
+      if (blockingIndex === -1) return messages;
+      // 返回阻塞点之前的消息
+      return messages.slice(0, blockingIndex);
+    })
+  );
+}
+
+// 获取动态区域的消息（阻塞点及之后，不含流式）
+// 这些消息的状态可能还会变化，需要在动态区域渲染
+export function useDynamicMessages(): Message[] {
+  return useAppStore(
+    useShallow((state) => {
+      const id = state.currentSessionId;
+      const messages = id ? state.messages[id] || [] : [];
+      const blockingIndex = findBlockingIndex(messages);
+      // 没有阻塞点，动态区域为空
+      if (blockingIndex === -1) return [];
+      // 返回阻塞点及之后的消息（不含流式消息，流式消息单独处理）
+      return messages.slice(blockingIndex).filter((m) => !m.isStreaming);
+    })
+  );
+}
+
+// 获取已完成的消息（非流式）- 保留用于向后兼容
 // 使用 useShallow 进行浅比较，避免不必要的重新渲染
 export function useCompletedMessages(): Message[] {
   return useAppStore(

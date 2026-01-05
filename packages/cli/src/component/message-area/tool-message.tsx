@@ -31,8 +31,8 @@ export function ToolMessage({ message }: ToolMessageProps) {
 
     // ✅ 新增：cancelled 状态
     cancelled: {
-      color: colors.textMuted,
-      icon: '○',
+      color: colors.error,
+      icon: '●',
       text: toolCall.resultSummary || '已取消',
     },
 

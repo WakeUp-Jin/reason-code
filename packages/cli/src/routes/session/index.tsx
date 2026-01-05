@@ -4,7 +4,8 @@ import { useTheme } from '../../context/theme.js';
 import { useIsExecuting, useExecutionState } from '../../context/execution.js';
 import {
   useCurrentSession,
-  useCompletedMessages,
+  useStaticMessages,
+  useDynamicMessages,
   useStreamingMessage,
   useAppStore,
 } from '../../context/store.js';
@@ -27,9 +28,10 @@ type StaticItem =
 export function Session() {
   const { colors } = useTheme();
   const isExecuting = useIsExecuting();
-  const { isPendingConfirm } = useExecutionState(); // ✅ 移除 pendingToolInfo
+  const { isPendingConfirm } = useExecutionState();
   const session = useCurrentSession();
-  const completedMessages = useCompletedMessages();
+  const staticMessages = useStaticMessages();
+  const dynamicMessages = useDynamicMessages();
   const streamingMessage = useStreamingMessage();
   const currentSessionId = useAppStore((state) => state.currentSessionId);
 
@@ -52,23 +54,38 @@ export function Session() {
     );
   }
 
+  // 渲染消息的通用函数
+  const renderMessage = (message: Message) => {
+    switch (message.role) {
+      case 'user':
+        return <UserMessage message={message} />;
+      case 'assistant':
+        // 过滤空内容的 assistant 消息
+        if (!message.content) return null;
+        return <AssistantMessage message={message} />;
+      case 'tool':
+        return <ToolMessage message={message} />;
+      case 'thinking':
+        return <ThinkingMessage message={message} />;
+      default:
+        return null;
+    }
+  };
+
   // 构建 Static 区域的 items - Header 作为第一个 item
   // 使用 useMemo 缓存，避免不必要的重新渲染
   const staticItems: StaticItem[] = useMemo(
     () => [
       { id: 'header', type: 'header' },
-      ...completedMessages
+      ...staticMessages
+        .filter((m) => m.role !== 'assistant' || m.content) // 过滤空 assistant 消息
         .map((m) => ({
           id: m.id,
           type: 'message' as const,
           message: m,
-        }))
-        .filter(
-          (m) =>
-            m.message.role !== 'assistant' || (m.message.role === 'assistant' && m.message.content)
-        ),
+        })),
     ],
-    [completedMessages]
+    [staticMessages]
   );
 
   return (
@@ -83,44 +100,34 @@ export function Session() {
               </Box>
             );
           }
-          // 消息项 - 根据 role 选择组件
-          const renderMessage = () => {
-            switch (item.message.role) {
-              case 'user':
-                return <UserMessage message={item.message} />;
-              case 'assistant':
-                return <AssistantMessage message={item.message} />;
-              case 'tool':
-                return <ToolMessage message={item.message} />;
-              case 'thinking':
-                return <ThinkingMessage message={item.message} />;
-              default:
-                return null;
-            }
-          };
-
           return (
             <Box key={item.id} paddingLeft={2} paddingRight={2}>
-              {renderMessage()}
+              {renderMessage(item.message)}
             </Box>
           );
         }}
       </Static>
 
-      {/* 动态区域 - 执行流 + 流式消息 + 输入框 + Footer */}
-      {/* ✅ 不再需要临时显示工具标题，工具消息已在 Static 区域中显示 */}
-      {/* 正常执行：显示执行流 */}
+      {/* 动态区域 - 未完成的消息（阻塞点及之后） */}
+      {dynamicMessages.map((m) => {
+        const content = renderMessage(m);
+        if (!content) return null;
+        return (
+          <Box key={m.id} paddingLeft={2} paddingRight={2}>
+            {content}
+          </Box>
+        );
+      })}
+
+      {/* 执行状态指示器 - 保持不变 */}
       {isExecuting && !isPendingConfirm && (
-        <Box paddingLeft={2} paddingRight={2}>
+        <Box marginTop={1} paddingLeft={2} paddingRight={2}>
           <ExecutionStream />
         </Box>
       )}
 
-      {streamingMessage && !isPendingConfirm && (
-        <Box paddingLeft={2} paddingRight={2}>
-          <AssistantMessage message={streamingMessage} />
-        </Box>
-      )}
+      {/* 流式消息 */}
+      {/* {streamingMessage && !isPendingConfirm && <AssistantMessage message={streamingMessage} />} */}
 
       {/* 输入区域和 Footer */}
       <Box

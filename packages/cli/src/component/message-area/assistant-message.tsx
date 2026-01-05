@@ -24,15 +24,14 @@ export function AssistantMessage({ message }: AssistantMessageProps) {
       // borderStyle="single"
       // borderColor="green"
     >
-      <Text color={colors.text}>{message.content}</Text>
-      {message.isStreaming && (
+      {!message.isStreaming && <Text color={colors.text}>{message.content}</Text>}
+      {/* {message.isStreaming && (
         <Box marginTop={1}>
           <Text color={colors.secondary}>▣ </Text>
           <Text color={colors.text}>{currentModel}</Text>
-          <Text color={colors.textMuted}> · streaming...</Text>
           <Text color={colors.accent}> · streaming...</Text>
         </Box>
-      )}
+      )} */}
     </Box>
   );
 }
