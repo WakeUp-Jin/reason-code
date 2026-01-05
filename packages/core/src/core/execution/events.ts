@@ -36,7 +36,8 @@ export type ExecutionEvent =
     }
 
   // 工具事件
-  | { type: 'tool:start'; toolCall: ToolCallRecord }
+  | { type: 'tool:validating'; toolCall: ToolCallRecord } // ✅ 工具开始验证
+  | { type: 'tool:executing'; toolCall: ToolCallRecord } // ✅ 工具进入执行状态
   | { type: 'tool:output'; toolCallId: string; output: string }
   | { type: 'tool:complete'; toolCall: ToolCallRecord }
   | { type: 'tool:error'; toolCallId: string; error: string }
@@ -46,7 +47,15 @@ export type ExecutionEvent =
       toolName: string;
       confirmDetails: ConfirmDetails;
     }
-  | { type: 'tool:cancelled'; toolCallId: string; reason: string }
+  | {
+      type: 'tool:cancelled';
+      toolCallId: string;
+      reason: string;
+      // ✅ 新增：包含工具信息
+      toolName: string;
+      toolCategory: string;
+      paramsSummary: string;
+    }
 
   // 流式输出事件
   | { type: 'content:delta'; delta: string }

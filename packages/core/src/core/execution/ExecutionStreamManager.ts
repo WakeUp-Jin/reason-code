@@ -12,6 +12,7 @@ import {
   type ExecutionStats,
 } from './types.js';
 import type { ConfirmDetails } from '../tool/types.js';
+import { logger } from '../../utils/logger.js';
 
 // 状态短语池
 const STATUS_PHRASES = [
@@ -46,6 +47,14 @@ export class ExecutionStreamManager {
   /** Web 端流式传输回调，预留接口 */
   private onStream?: ExecutionEventHandler;
 
+  /** ✅ 新增：保存等待确认的工具信息（用于取消时生成事件） */
+  private pendingConfirmInfo?: {
+    toolCallId: string;
+    toolName: string;
+    toolCategory: string;
+    paramsSummary: string;
+  };
+
   constructor(options?: ExecutionStreamManagerOptions) {
     this.snapshot = this.createInitialSnapshot();
     this.onStream = options?.onStream;
@@ -77,9 +86,158 @@ export class ExecutionStreamManager {
   }
 
   private emit(event: ExecutionEvent): void {
+    // 📡 记录事件发送 - 结构化日志
+    logger.debug(`📡 [Event] ${event.type}`, this.serializeEventForLog(event));
+
     this.handlers.forEach((handler) => handler(event));
     // Web 端流式传输回调
     this.onStream?.(event);
+  }
+
+  /**
+   * 序列化事件用于日志记录
+   * 避免日志过大，只记录关键信息
+   */
+  private serializeEventForLog(event: ExecutionEvent): object {
+    const baseLog = { type: event.type };
+
+    switch (event.type) {
+      // 生命周期事件
+      case 'execution:start':
+        return { ...baseLog, timestamp: event.timestamp };
+
+      case 'execution:complete':
+        return {
+          ...baseLog,
+          stats: event.stats,
+        };
+
+      case 'execution:error':
+        return { ...baseLog, error: event.error };
+
+      case 'execution:cancel':
+        return baseLog;
+
+      // 状态事件
+      case 'state:change':
+        return {
+          ...baseLog,
+          state: event.state,
+          phrase: event.phrase,
+        };
+
+      // 思考事件
+      case 'thinking:start':
+        return baseLog;
+
+      case 'thinking:delta':
+        return {
+          ...baseLog,
+          deltaLength: event.delta.length,
+          deltaPreview: event.delta.slice(0, 50),
+        };
+
+      case 'thinking:complete':
+        return {
+          ...baseLog,
+          contentLength: event.content.length,
+          contentPreview: event.content.slice(0, 100),
+        };
+
+      // Assistant 消息事件 - 关键！
+      case 'assistant:message':
+        return {
+          ...baseLog,
+          contentLength: event.content.length,
+          contentPreview: event.content.slice(0, 100),
+          toolCallsCount: event.tool_calls.length,
+          toolNames: event.tool_calls.map((tc) => tc.function.name),
+        };
+
+      // 工具事件
+      case 'tool:validating':
+        return {
+          ...baseLog,
+          toolCallId: event.toolCall.id,
+          toolName: event.toolCall.toolName,
+          toolCategory: event.toolCall.toolCategory,
+          hasThinking: !!event.toolCall.thinkingContent,
+          thinkingPreview: event.toolCall.thinkingContent?.slice(0, 50),
+        };
+
+      case 'tool:executing':
+        return {
+          ...baseLog,
+          toolCallId: event.toolCall.id,
+          toolName: event.toolCall.toolName,
+          paramsCount: Object.keys(event.toolCall.params).length,
+        };
+
+      case 'tool:output':
+        return {
+          ...baseLog,
+          toolCallId: event.toolCallId,
+          outputLength: event.output.length,
+          outputPreview: event.output.slice(0, 100),
+        };
+
+      case 'tool:complete':
+        return {
+          ...baseLog,
+          toolCallId: event.toolCall.id,
+          toolName: event.toolCall.toolName,
+          status: event.toolCall.status,
+          duration: event.toolCall.duration,
+          resultSummary: event.toolCall.resultSummary,
+        };
+
+      case 'tool:error':
+        return {
+          ...baseLog,
+          toolCallId: event.toolCallId,
+          error: event.error,
+        };
+
+      case 'tool:awaiting_approval':
+        return {
+          ...baseLog,
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          confirmDetailsType: event.confirmDetails.type,
+        };
+
+      case 'tool:cancelled':
+        return {
+          ...baseLog,
+          toolCallId: event.toolCallId,
+          reason: event.reason,
+        };
+
+      // 流式输出事件
+      case 'content:delta':
+        return {
+          ...baseLog,
+          deltaLength: event.delta.length,
+          deltaPreview: event.delta.slice(0, 50),
+        };
+
+      case 'content:complete':
+        return {
+          ...baseLog,
+          contentLength: event.content.length,
+          contentPreview: event.content.slice(0, 100),
+        };
+
+      // Token 统计事件
+      case 'stats:update':
+        return {
+          ...baseLog,
+          stats: event.stats,
+        };
+
+      default:
+        return baseLog;
+    }
   }
 
   // ==================== 生命周期 ====================
@@ -195,10 +353,25 @@ export class ExecutionStreamManager {
     });
   }
 
-  startToolCall(toolCall: Omit<ToolCallRecord, 'status' | 'startTime'>): ToolCallRecord {
+  /**
+   * 工具开始验证（最早的状态）
+   * 在参数解析和工具定义获取阶段调用
+   */
+  startValidating(
+    callId: string,
+    toolName: string,
+    toolCategory: string,
+    paramsSummary: string,
+    thinkingContent?: string
+  ): void {
     const record: ToolCallRecord = {
-      ...toolCall,
-      status: ToolCallStatus.Executing,
+      id: callId,
+      toolName,
+      toolCategory,
+      params: {},  // 验证阶段可能还没完整参数
+      paramsSummary,
+      thinkingContent,
+      status: ToolCallStatus.Pending,  // 使用 Pending 状态
       startTime: Date.now(),
     };
 
@@ -206,10 +379,30 @@ export class ExecutionStreamManager {
     this.snapshot.state = ExecutionState.ToolExecuting;
     this.snapshot.stats.toolCallCount++;
 
-    this.emit({ type: 'tool:start', toolCall: record });
+    this.emit({
+      type: 'tool:validating',
+      toolCall: record,
+    });
     this.emitStateChange();
+  }
 
-    return record;
+  /**
+   * 更新为执行中（从 validating/awaiting → executing）
+   * 重新开始计时
+   */
+  updateToExecuting(callId: string, params: Record<string, any>): void {
+    if (this.snapshot.currentToolCall?.id === callId) {
+      const record = this.snapshot.currentToolCall;
+      record.status = ToolCallStatus.Executing;
+      record.params = params;  // 更新完整参数
+      record.startTime = Date.now();  // ✅ 重新计时（从 executing 开始）
+
+      this.emit({
+        type: 'tool:executing',
+        toolCall: { ...record },
+      });
+      this.emitStateChange();
+    }
   }
 
   updateToolOutput(toolCallId: string, output: string): void {
@@ -257,6 +450,25 @@ export class ExecutionStreamManager {
    * 当工具需要用户批准时调用
    */
   awaitingApproval(toolCallId: string, toolName: string, confirmDetails: ConfirmDetails): void {
+    // ✅ 新增：保存工具信息，以便取消时使用
+    const paramsSummary =
+      confirmDetails.fileName ||
+      confirmDetails.filePath ||
+      confirmDetails.command ||
+      '';
+
+    this.pendingConfirmInfo = {
+      toolCallId,
+      toolName,
+      toolCategory: confirmDetails.type || 'builtin',
+      paramsSummary,
+    };
+
+    // 更新当前工具调用状态（如果存在）
+    if (this.snapshot.currentToolCall?.id === toolCallId) {
+      this.snapshot.currentToolCall.status = ToolCallStatus.Pending;  // 等待确认
+    }
+
     this.snapshot.state = ExecutionState.WaitingConfirm;
     this.emit({
       type: 'tool:awaiting_approval',
@@ -273,6 +485,7 @@ export class ExecutionStreamManager {
    */
   cancelToolCall(toolCallId: string, reason: string): void {
     if (this.snapshot.currentToolCall?.id === toolCallId) {
+      // 已经 startToolCall/startValidating，更新记录
       const record = this.snapshot.currentToolCall;
       record.status = ToolCallStatus.Cancelled;
       record.endTime = Date.now();
@@ -283,11 +496,31 @@ export class ExecutionStreamManager {
       this.snapshot.currentToolCall = undefined;
       this.snapshot.state = ExecutionState.Thinking;
 
-      this.emit({ type: 'tool:cancelled', toolCallId, reason });
+      // ✅ 包含工具信息
+      this.emit({
+        type: 'tool:cancelled',
+        toolCallId,
+        reason,
+        toolName: record.toolName,
+        toolCategory: record.toolCategory,
+        paramsSummary: record.paramsSummary,
+      });
       this.emitStateChange();
     } else {
-      // 如果还没有 startToolCall，直接发送取消事件
-      this.emit({ type: 'tool:cancelled', toolCallId, reason });
+      // ✅ 确认阶段取消（没有 startValidating），使用保存的 pendingConfirmInfo
+      const info = this.pendingConfirmInfo;
+
+      this.emit({
+        type: 'tool:cancelled',
+        toolCallId,
+        reason,
+        toolName: info?.toolName || 'unknown',
+        toolCategory: info?.toolCategory || 'builtin',
+        paramsSummary: info?.paramsSummary || '',
+      });
+
+      // 清理保存的信息
+      this.pendingConfirmInfo = undefined;
     }
   }
 

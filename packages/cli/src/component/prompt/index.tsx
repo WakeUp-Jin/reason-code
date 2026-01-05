@@ -35,7 +35,6 @@ export function Prompt({
   const [commandMode, setCommandMode] = useState<'autocomplete' | null>(null);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
 
-  const currentAgent = useAppStore((state) => state.currentAgent);
   const currentModel = useAppStore((state) => state.currentModel);
   const models = useAppStore((state) => state.models);
   const currentModelInfo = models.find((m) => m.id === currentModel);
@@ -201,13 +200,10 @@ export function Prompt({
     { isActive: !disabled }
   );
 
-  // Agent 颜色
-  const agentColor = colors.primary;
-
   // 左侧文本
-  const leftText = `${currentAgent} ${currentModelInfo?.name || currentModel} ${currentModelInfo?.provider || ''}`;
+  const leftText = `${currentModelInfo?.name || currentModel} ${currentModelInfo?.provider || ''}`;
   // 右侧文本
-  const rightText = 'tab switch agent  / for commands';
+  const rightText = '/ for commands';
 
   return (
     <Box width="100%" flexDirection="column">

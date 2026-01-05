@@ -54,8 +54,8 @@ export interface LoggerConfig {
  */
 const DEFAULT_CONFIG: LoggerConfig = {
   enabled: false, // 默认禁用，等待上层配置
-  minLevel: 'INFO',
-  retentionDays: 7,
+  minLevel: 'DEBUG',
+  retentionDays: 3,
   bufferSize: 1, // 减小缓冲区，确保日志及时写入
   logsDir: undefined,
 };

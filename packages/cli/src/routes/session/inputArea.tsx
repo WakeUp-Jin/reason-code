@@ -1,13 +1,37 @@
 import React, { useState, useEffect, type ReactNode } from 'react';
 import { Box } from 'ink';
+import type { ConfirmDetails, ConfirmOutcome } from '@reason-cli/core';
 import { Prompt } from '../../component/prompt';
 import { useStore, useAppStore } from '../../context/store';
 import { useCurrentSession } from '../../context/store';
+import { useExecutionState } from '../../context/execution.js';
 import { commandRegistry, CommandPanel } from '../../component/command/index.js';
 import { PanelToolConfirm } from '../../component/panel/panel-tool-confirm.js';
 import { logger } from '../../util/logger.js';
 import { usePersistence } from '../../hooks/usePersistence.js';
 import { useAgent } from '../../hooks/useAgent.js';
+
+/** 工具确认请求 */
+interface ToolConfirmRequest {
+  callId: string;
+  toolName: string;
+  details: ConfirmDetails;
+  resolve: (outcome: ConfirmOutcome) => void;
+}
+
+/** 从 details 中提取参数摘要 */
+function getParamsSummary(details: ConfirmDetails): string | undefined {
+  switch (details.type) {
+    case 'info':
+      return details.fileName;  // Write: 文件名
+    case 'edit':
+      return details.filePath;  // Edit: 文件路径
+    case 'exec':
+      return details.command;   // Bash: 命令
+    default:
+      return undefined;
+  }
+}
 
 export interface InputAreaProps {
   onCommandPanelChange?: (isVisible: boolean) => void;
@@ -21,9 +45,27 @@ export function InputArea({ onCommandPanelChange }: InputAreaProps) {
   const currentModel = useAppStore((state) => state.currentModel);
   const models = useAppStore((state) => state.models);
   const { saveCurrentSession } = usePersistence();
+  const { setIsPendingConfirm, setPendingToolInfo } = useExecutionState();
 
   // Agent Hook
-  const { isLoading, error, sendMessage, pendingConfirm, handleConfirm } = useAgent();
+  const { isLoading, error, sendMessage } = useAgent();
+
+  // 工具确认状态（内部管理）
+  const [pendingConfirm, setPendingConfirm] = useState<ToolConfirmRequest | null>(null);
+
+  // 同步 pendingConfirm 状态到 ExecutionContext（用于暂停 StatusIndicator 定时器 + Session 显示工具标题）
+  useEffect(() => {
+    setIsPendingConfirm(pendingConfirm !== null);
+    if (pendingConfirm) {
+      const paramsSummary = getParamsSummary(pendingConfirm.details);
+      setPendingToolInfo({
+        toolName: pendingConfirm.toolName,
+        paramsSummary,
+      });
+    } else {
+      setPendingToolInfo(null);
+    }
+  }, [pendingConfirm, setIsPendingConfirm, setPendingToolInfo]);
 
   // 命令面板状态
   const [commandPanelState, setCommandPanelState] = useState<{
@@ -58,8 +100,19 @@ export function InputArea({ onCommandPanelChange }: InputAreaProps) {
       isStreaming: true,
     });
 
-    // 调用真实 Agent
-    const response = await sendMessage(value);
+    // 创建确认回调
+    const onConfirmRequired = async (
+      callId: string,
+      toolName: string,
+      details: ConfirmDetails
+    ): Promise<ConfirmOutcome> => {
+      return new Promise<ConfirmOutcome>((resolve) => {
+        setPendingConfirm({ callId, toolName, details, resolve });
+      });
+    };
+
+    // 调用真实 Agent，传递确认回调
+    const response = await sendMessage(value, { onConfirmRequired });
 
     // 更新 AI 响应
     if (response) {
@@ -93,6 +146,18 @@ export function InputArea({ onCommandPanelChange }: InputAreaProps) {
     logger.info('💾 Saving session after AI response...');
     saveCurrentSession();
     logger.info('✅ Session saved successfully');
+  };
+
+  // 处理用户确认（用户点击按钮时调用）
+  const handleConfirm = (outcome: ConfirmOutcome) => {
+    if (pendingConfirm) {
+      pendingConfirm.resolve(outcome); // ← 调用 resolve，Promise 完成
+      setPendingConfirm(null); // 关闭确认面板
+      logger.info(`Tool confirm: ${outcome}`, {
+        callId: pendingConfirm.callId,
+        toolName: pendingConfirm.toolName,
+      });
+    }
   };
 
   // 处理命令执行

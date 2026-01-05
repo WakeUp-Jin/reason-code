@@ -10,8 +10,7 @@ export function Footer() {
   const messages = useCurrentMessages()
   const realtimeStats = useExecutionStats()
 
-  // 获取 Agent 和 Model 信息
-  const currentAgent = useAppStore((state) => state.currentAgent)
+  // 获取 Model 信息
   const currentModel = useAppStore((state) => state.currentModel)
   const models = useAppStore((state) => state.models)
   const currentModelInfo = models.find(m => m.id === currentModel)
@@ -103,16 +102,12 @@ export function Footer() {
     }
   }, [approvalMode, colors])
 
-  // Agent 颜色
-  const agentColor = colors.primary
-
   return (
     <Box flexShrink={0}>
-      {/* 左侧：ApprovalMode + Agent + Model */}
+      {/* 左侧：ApprovalMode + Model */}
       <Box gap={1}>
         <Text color={approvalModeColor}>{approvalModeDisplay}</Text>
         <Text color={colors.textMuted}>|</Text>
-        <Text color={agentColor}>{currentAgent}</Text>
         <Text color={colors.text}>{currentModelInfo?.name || currentModel}</Text>
         <Text color={colors.textMuted}>{currentModelInfo?.provider}</Text>
       </Box>

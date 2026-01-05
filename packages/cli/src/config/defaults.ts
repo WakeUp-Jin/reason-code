@@ -30,14 +30,12 @@ export const DEFAULT_CONFIG: ReasonCliConfig = {
       timeout: 60000,
     },
   },
-  agent: {
-    current: 'default',
-  },
   ui: {
     theme: 'kanagawa',
     mode: 'dark',
     currency: 'CNY',
     exchangeRate: 7.2,
+    approvalMode: 'default',
   },
   session: {
     lastSessionId: undefined,

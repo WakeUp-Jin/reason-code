@@ -22,9 +22,23 @@ export function ToolMessage({ message }: ToolMessageProps) {
 
   // 状态配置
   const statusConfig = {
-    executing: {
+    // ✅ 新增：pending 状态（validating/awaiting_approval）
+    pending: {
       color: colors.warning,
       icon: '○',
+      text: toolCall.resultSummary || 'pending...', // 使用 resultSummary 显示具体提示
+    },
+
+    // ✅ 新增：cancelled 状态
+    cancelled: {
+      color: colors.textMuted,
+      icon: '○',
+      text: toolCall.resultSummary || '已取消',
+    },
+
+    executing: {
+      color: colors.warning,
+      icon: '●',
       text: 'executing...',
     },
     success: {
@@ -39,7 +53,7 @@ export function ToolMessage({ message }: ToolMessageProps) {
     },
   };
 
-  const config = statusConfig[toolCall.status] || statusConfig.executing;
+  const config = statusConfig[toolCall.status] || statusConfig.pending;
 
   // 格式化耗时
   const formatDuration = (ms: number | undefined): string => {
@@ -51,13 +65,19 @@ export function ToolMessage({ message }: ToolMessageProps) {
   const durationText = formatDuration(toolCall.duration);
 
   return (
-    <Box width="100%" flexDirection="column" paddingX={2} marginTop={1}>
+    <Box
+      width="100%"
+      flexDirection="column"
+      paddingX={2}
+      // borderStyle="single"
+      // borderColor="red"
+    >
       {/* 工具调用前的思考内容（灰色斜体） */}
-      {toolCall.thinkingContent && (
+      {/* {toolCall.thinkingContent && (
         <Box>
           <Text color={colors.text}>{toolCall.thinkingContent}</Text>
         </Box>
-      )}
+      )} */}
 
       {/* 工具名称和参数摘要 */}
       <Box>

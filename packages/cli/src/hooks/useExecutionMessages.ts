@@ -4,9 +4,9 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { useExecution } from '../context/execution.js';
+import { useExecutionState } from '../context/execution.js';
 import { useAppStore, type ToolCallStatus, type Message } from '../context/store.js';
-import type { ExecutionEvent } from '@reason-cli/core';
+import { ToolCallStatus as CoreToolCallStatus, type ExecutionEvent } from '@reason-cli/core';
 import { logger } from '../util/logger.js';
 
 interface UseExecutionMessagesOptions {
@@ -19,24 +19,24 @@ interface UseExecutionMessagesOptions {
 /**
  * 将 Core 的 ToolCallStatus 映射到 CLI 的 ToolCallStatus
  */
-function mapToolCallStatus(status: string): ToolCallStatus {
+function mapToolCallStatus(status: CoreToolCallStatus): ToolCallStatus {
   switch (status) {
-    case 'executing':
-    case 'pending':
-      return 'executing';
-    case 'success':
-      return 'success';
-    case 'error':
-    case 'cancelled':
-      return 'error';
+    case CoreToolCallStatus.Executing:
+    case CoreToolCallStatus.Pending:
+      return CoreToolCallStatus.Executing;
+    case CoreToolCallStatus.Success:
+      return CoreToolCallStatus.Success;
+    case CoreToolCallStatus.Error:
+    case CoreToolCallStatus.Cancelled:
+      return CoreToolCallStatus.Error;
     default:
-      return 'executing';
+      return CoreToolCallStatus.Executing;
   }
 }
 
 export function useExecutionMessages(options: UseExecutionMessagesOptions) {
   const { sessionId, assistantPlaceholderId } = options;
-  const { subscribe } = useExecution();
+  const { subscribe } = useExecutionState();
 
   // Store actions - 使用 getState 获取最新的 actions，避免依赖变化
   const getStoreActions = () => {
@@ -99,48 +99,91 @@ export function useExecutionMessages(options: UseExecutionMessagesOptions) {
           break;
         }
 
-        case 'tool:start': {
+        case 'tool:validating': {
           const { toolCall } = event;
-          logger.debug('Tool start event', {
+
+          logger.debug('Tool validating event', {
             toolName: toolCall.toolName,
             toolCallId: toolCall.id,
-            thinkingContent: toolCall.thinkingContent?.slice(0, 50),
           });
 
-          // 创建 tool 消息
+          // ✅ 创建 tool 消息（最早的状态）
           let message: Message;
           if (assistantPlaceholderId) {
-            // 在 assistant 占位消息前插入
             message = insertMessageBefore(sessionId, assistantPlaceholderId, {
               role: 'tool',
-              content: '',
+              content: '', // 暂时为空，等待 tool:complete 时填充
+              // ✅ API 标准字段
+              tool_call_id: toolCall.id, // 对应的 tool_call id
+              name: toolCall.toolName, // 工具名称
+              // CLI 自定义字段（用于 UI 显示）
               toolCall: {
                 toolName: toolCall.toolName,
                 toolCategory: toolCall.toolCategory,
                 params: toolCall.params,
                 paramsSummary: toolCall.paramsSummary,
-                status: 'executing',
+                status: CoreToolCallStatus.Pending, // 使用枚举值
                 thinkingContent: toolCall.thinkingContent,
               },
             });
           } else {
-            // 没有占位消息，直接追加
             message = addMessage(sessionId, {
               role: 'tool',
-              content: '',
+              content: '', // 暂时为空，等待 tool:complete 时填充
+              // ✅ API 标准字段
+              tool_call_id: toolCall.id, // 对应的 tool_call id
+              name: toolCall.toolName, // 工具名称
+              // CLI 自定义字段（用于 UI 显示）
               toolCall: {
                 toolName: toolCall.toolName,
                 toolCategory: toolCall.toolCategory,
                 params: toolCall.params,
                 paramsSummary: toolCall.paramsSummary,
-                status: 'executing',
+                status: CoreToolCallStatus.Pending, // 使用枚举值
                 thinkingContent: toolCall.thinkingContent,
               },
             });
           }
 
-          // 记录映射
+          // 记录映射（用于后续更新）
           toolMessageMapRef.current.set(toolCall.id, message.id);
+          break;
+        }
+
+        case 'tool:awaiting_approval': {
+          const { toolCallId } = event;
+          const messageId = toolMessageMapRef.current.get(toolCallId);
+
+          logger.debug('Tool awaiting approval event', { toolCallId, messageId });
+
+          if (messageId) {
+            // ✅ 更新消息状态为等待确认
+            updateMessage(sessionId, messageId, {
+              toolCall: {
+                status: CoreToolCallStatus.Pending, // 使用枚举值
+                resultSummary: 'waiting for approval...',
+              },
+            });
+          }
+          break;
+        }
+
+        case 'tool:executing': {
+          const { toolCall } = event;
+          const messageId = toolMessageMapRef.current.get(toolCall.id);
+
+          logger.debug('Tool executing event', { toolCallId: toolCall.id, messageId });
+
+          if (messageId) {
+            // ✅ 更新消息状态为执行中（开始计时）
+            updateMessage(sessionId, messageId, {
+              toolCall: {
+                status: CoreToolCallStatus.Executing, // 使用枚举值
+                params: toolCall.params, // 更新完整参数
+                resultSummary: undefined, // 清除之前的提示文本
+              },
+            });
+          }
           break;
         }
 
@@ -155,8 +198,11 @@ export function useExecutionMessages(options: UseExecutionMessagesOptions) {
           });
 
           if (messageId) {
-            // 更新 tool 消息状态
+            // ✅ 更新 tool 消息状态和内容
             updateMessage(sessionId, messageId, {
+              // ✅ API 标准字段：更新 content 为实际输出
+              content: toolCall.result || toolCall.resultSummary || 'Tool execution completed',
+              // CLI 自定义字段
               toolCall: {
                 toolName: toolCall.toolName,
                 toolCategory: toolCall.toolCategory,
@@ -178,13 +224,41 @@ export function useExecutionMessages(options: UseExecutionMessagesOptions) {
           logger.debug('Tool error event', { toolCallId, error, messageId });
 
           if (messageId) {
-            // 更新 tool 消息状态为错误
+            // ✅ 更新 tool 消息状态为错误
             updateMessage(sessionId, messageId, {
+              // ✅ API 标准字段：更新 content 为错误信息
+              content: `Error: ${error}`,
+              // CLI 自定义字段
               toolCall: {
-                status: 'error',
+                status: CoreToolCallStatus.Error, // 使用枚举值
                 error,
               },
             });
+          }
+          break;
+        }
+
+        case 'tool:cancelled': {
+          const { toolCallId, reason, toolName, toolCategory, paramsSummary } = event;
+          const messageId = toolMessageMapRef.current.get(toolCallId);
+
+          logger.debug('Tool cancelled event', { toolCallId, reason, messageId });
+
+          if (messageId) {
+            // ✅ 更新已存在的消息
+            updateMessage(sessionId, messageId, {
+              // ✅ API 标准字段：更新 content 为取消原因
+              content: `Cancelled: ${reason}`,
+              // CLI 自定义字段
+              toolCall: {
+                status: CoreToolCallStatus.Cancelled, // 使用枚举值
+                error: reason,
+                resultSummary: '已取消',
+              },
+            });
+          } else {
+            // 理论上不会发生（因为 validating 时已创建）
+            logger.warn('Tool cancelled but message not found', { toolCallId });
           }
           break;
         }

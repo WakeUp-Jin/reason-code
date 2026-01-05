@@ -1,6 +1,7 @@
 import React, { createContext, useContext, type ReactNode } from 'react';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
+import { ToolCallStatus } from '@reason-cli/core';
 
 // Session 类型
 export interface Session {
@@ -47,8 +48,8 @@ export interface MessageMetadata {
 // 消息角色类型
 export type MessageRole = 'user' | 'assistant' | 'tool' | 'thinking';
 
-// 工具调用状态
-export type ToolCallStatus = 'executing' | 'success' | 'error';
+// ✅ 导入 Core 层完整定义（包含 pending、executing、success、error、cancelled）
+export type { ToolCallStatus };
 
 // 工具调用信息（tool 消息专用）
 export interface ToolCallInfo {
@@ -89,6 +90,11 @@ export interface Message {
       arguments: string;
     };
   }>;
+
+  // ✅ API 标准字段（仅 role='tool' 时有）
+  // 符合 OpenAI/DeepSeek API 规范
+  tool_call_id?: string; // 对应的 tool_call id
+  name?: string; // 工具名称
 }
 
 // 消息更新类型（支持 toolCall 部分更新）
@@ -136,7 +142,6 @@ export interface ModelInfo {
 export interface Config {
   theme: string;
   mode: 'dark' | 'light';
-  currentAgent: string;
   currentModel: string;
   currency: Currency; // 货币类型
   exchangeRate: number; // 汇率（CNY to USD）
@@ -154,7 +159,6 @@ interface AppState {
 
   // Agent 相关
   agents: AgentInfo[];
-  currentAgent: string;
 
   // Model 相关
   models: ModelInfo[];
@@ -185,7 +189,6 @@ interface AppState {
   appendMessageContent: (sessionId: string, messageId: string, delta: string) => void;
 
   // Agent/Model Actions
-  setCurrentAgent: (agentId: string) => void;
   setCurrentModel: (modelId: string) => void;
 
   // Config Actions
@@ -197,10 +200,10 @@ interface AppState {
     sessions: Session[];
     messages: Record<string, Message[]>;
     currentSessionId: string | null;
-    currentAgent: string;
     currentModel: string;
     currency?: Currency;
     exchangeRate?: number;
+    approvalMode?: 'default' | 'auto_edit' | 'yolo';
   }) => void;
 }
 
@@ -219,7 +222,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     { id: 'default', name: 'Default Agent', description: 'General purpose AI assistant' },
     { id: 'coder', name: 'Coder', description: 'Specialized in coding tasks' },
   ],
-  currentAgent: 'default',
   models: [
     {
       id: 'deepseek/deepseek-chat',
@@ -281,7 +283,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   config: {
     theme: 'kanagawa',
     mode: 'dark',
-    currentAgent: 'default',
     currentModel: 'deepseek/deepseek-chat',
     currency: 'CNY', // 默认人民币
     exchangeRate: 7.2, // 默认汇率 1 USD = 7.2 CNY
@@ -446,10 +447,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // Agent/Model Actions
-  setCurrentAgent: (agentId) => {
-    set({ currentAgent: agentId });
-  },
-
   setCurrentModel: (modelId) => {
     set({ currentModel: modelId });
   },
@@ -481,14 +478,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       sessions: data.sessions,
       messages: data.messages,
       currentSessionId: data.currentSessionId,
-      currentAgent: data.currentAgent,
       currentModel: data.currentModel,
       config: {
         ...get().config,
-        currentAgent: data.currentAgent,
         currentModel: data.currentModel,
         currency: data.currency || get().config.currency,
         exchangeRate: data.exchangeRate || get().config.exchangeRate,
+        approvalMode: data.approvalMode || get().config.approvalMode,
       },
     });
   },

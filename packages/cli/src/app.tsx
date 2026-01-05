@@ -53,10 +53,10 @@ function App() {
           sessions: loadedData.sessions,
           messages: loadedData.messages,
           currentSessionId: null, // 不恢复旧会话
-          currentAgent: loadedData.config.agent.current,
           currentModel: loadedData.config.model.current,
           currency: loadedData.config.ui.currency,
           exchangeRate: loadedData.config.ui.exchangeRate,
+          approvalMode: loadedData.config.ui.approvalMode,
         });
       }
 
@@ -97,10 +97,7 @@ function Root() {
   const config = configManager.getConfig();
 
   return (
-    <ThemeProvider
-      defaultTheme={config.ui.theme as any}
-      defaultMode={config.ui.mode}
-    >
+    <ThemeProvider defaultTheme={config.ui.theme as any} defaultMode={config.ui.mode}>
       <StoreProvider>
         <ToastProvider>
           <RouteProvider>
@@ -143,7 +140,7 @@ export async function startTUI(): Promise<void> {
   coreLogger.configure({
     logsDir: coreLogsDir,
     enabled: true,
-    minLevel: 'INFO',
+    minLevel: 'DEBUG', // 临时改为 DEBUG 级别调试
     bufferSize: 1, // 立即写入，确保日志不丢失
   });
   coreLogger.createSession();

@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useExecution } from '../context/execution.js';
+import { useExecutionState } from '../context/execution.js';
 
 export interface ExecutionStats {
   inputTokens: number;
@@ -25,7 +25,7 @@ export function useExecutionStats(): ExecutionStats {
     totalTokens: 0,
   });
 
-  const { subscribe } = useExecution();
+  const { subscribe } = useExecutionState();
 
   useEffect(() => {
     const unsubscribe = subscribe((event) => {

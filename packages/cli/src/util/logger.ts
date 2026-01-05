@@ -28,7 +28,7 @@ export interface LoggerConfig {
  */
 const DEFAULT_CONFIG: LoggerConfig = {
   enabled: true,
-  minLevel: 'INFO',
+  minLevel: 'DEBUG', // 临时改为 DEBUG 级别调试
   retentionDays: 3,
   bufferSize: 1, // 立即写入，确保日志不丢失
 };

@@ -102,7 +102,6 @@ export class ConfigManager {
           session: this.config.session,     // 覆盖 session（程序会修改）
           ui: this.config.ui,               // 覆盖 ui（程序会修改）
           model: this.config.model,         // 覆盖 model（程序会修改）
-          agent: this.config.agent,         // 覆盖 agent（程序会修改）
           providers: diskConfig.providers,  // ✅ 保留磁盘上的 providers（完全不改）
         };
 

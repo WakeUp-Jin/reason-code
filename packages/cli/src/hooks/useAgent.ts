@@ -9,16 +9,14 @@ import type { ConfirmDetails, ConfirmOutcome, ApprovalMode } from '@reason-cli/c
 import { configManager } from '../config/manager.js';
 import { getModelTokenLimit } from '../config/tokenLimits.js';
 import { logger } from '../util/logger.js';
-import { useExecution } from '../context/execution.js';
+import { useExecutionState } from '../context/execution.js';
 import { useAppStore } from '../context/store.js';
 import { convertToCoreMsgs } from '../util/messageConverter.js';
 
-/** 工具确认请求 */
-interface ToolConfirmRequest {
-  callId: string;
-  toolName: string;
-  details: ConfirmDetails;
-  resolve: (outcome: ConfirmOutcome) => void;
+/** sendMessage 选项 */
+interface SendMessageOptions {
+  /** 工具确认回调（由调用方提供） */
+  onConfirmRequired?: (callId: string, toolName: string, details: ConfirmDetails) => Promise<ConfirmOutcome>;
 }
 
 interface UseAgentReturn {
@@ -29,15 +27,11 @@ interface UseAgentReturn {
   /** 错误信息 */
   error: string | null;
   /** 发送消息给 Agent */
-  sendMessage: (message: string) => Promise<string | null>;
+  sendMessage: (message: string, options?: SendMessageOptions) => Promise<string | null>;
   /** 切换模型 */
   switchModel: (provider: string, model: string) => Promise<void>;
   /** 当前模型信息 */
   currentModel: { provider: string; model: string } | null;
-  /** 工具确认请求（待用户处理） */
-  pendingConfirm: ToolConfirmRequest | null;
-  /** 处理用户确认 */
-  handleConfirm: (outcome: ConfirmOutcome) => void;
 }
 
 /**
@@ -61,8 +55,7 @@ export function useAgent(): UseAgentReturn {
   const [currentModel, setCurrentModel] = useState<{ provider: string; model: string } | null>(
     null
   );
-  const [pendingConfirm, setPendingConfirm] = useState<ToolConfirmRequest | null>(null);
-  const { bindManager } = useExecution();
+  const { bindManager } = useExecutionState();
 
   // 从 store 获取 approvalMode
   const approvalMode = useAppStore((state) => state.config.approvalMode);
@@ -117,40 +110,9 @@ export function useAgent(): UseAgentReturn {
     initAgent();
   }, [bindManager]);
 
-  // 创建工具确认回调（返回 Promise，Core 层 await）
-  const onConfirmRequired = useCallback(
-    async (callId: string, toolName: string, details: ConfirmDetails): Promise<ConfirmOutcome> => {
-      return new Promise<ConfirmOutcome>((resolve) => {
-        // 设置确认请求状态，存储 resolve 函数
-        setPendingConfirm({
-          callId,
-          toolName,
-          details,
-          resolve, // ← 存储 resolve，稍后用户点击时调用
-        });
-      });
-    },
-    []
-  );
-
-  // 处理用户确认（用户点击按钮时调用）
-  const handleConfirm = useCallback(
-    (outcome: ConfirmOutcome) => {
-      if (pendingConfirm) {
-        pendingConfirm.resolve(outcome); // ← 调用 resolve，Promise 完成
-        setPendingConfirm(null); // 关闭确认面板
-        logger.info(`Tool confirm: ${outcome}`, {
-          callId: pendingConfirm.callId,
-          toolName: pendingConfirm.toolName
-        });
-      }
-    },
-    [pendingConfirm]
-  );
-
   // 发送消息（集成历史加载）
   const sendMessage = useCallback(
-    async (message: string): Promise<string | null> => {
+    async (message: string, options?: SendMessageOptions): Promise<string | null> => {
       if (!agentRef.current || !isReady) {
         logger.warn('Agent not ready');
         return null;
@@ -187,10 +149,10 @@ export function useAgent(): UseAgentReturn {
           coreApprovalMode = 'yolo' as ApprovalMode
         }
 
-        // 5. 执行 Agent，传递确认回调
+        // 5. 执行 Agent，使用传入的确认回调
         const result = await agentRef.current.run(message, {
           modelLimit,
-          onConfirmRequired,
+          onConfirmRequired: options?.onConfirmRequired,  // ← 使用调用方传入的回调
           approvalMode: coreApprovalMode,
         });
 
@@ -209,7 +171,7 @@ export function useAgent(): UseAgentReturn {
         setIsLoading(false);
       }
     },
-    [isReady, onConfirmRequired, approvalMode, currentModel]
+    [isReady, approvalMode, currentModel]
   );
 
   // 切换模型
@@ -246,7 +208,5 @@ export function useAgent(): UseAgentReturn {
     sendMessage,
     switchModel,
     currentModel,
-    pendingConfirm,
-    handleConfirm,
   };
 }

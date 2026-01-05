@@ -22,19 +22,13 @@ export const ModelConfigSchema = v.object({
 
 export type ModelConfig = v.InferOutput<typeof ModelConfigSchema>;
 
-// Agent 配置 Schema
-export const AgentConfigSchema = v.object({
-  current: v.optional(v.string(), 'default'), // 当前使用的 Agent ID
-});
-
-export type AgentConfig = v.InferOutput<typeof AgentConfigSchema>;
-
 // UI 配置 Schema
 export const UIConfigSchema = v.object({
   theme: v.optional(v.string(), 'kanagawa'), // 主题名称
   mode: v.optional(v.picklist(['dark', 'light']), 'dark'), // 亮色/暗色模式
   currency: v.optional(v.picklist(['CNY', 'USD']), 'CNY'), // 货币类型
   exchangeRate: v.optional(v.pipe(v.number(), v.minValue(0.01)), 7.2), // 汇率（CNY to USD）
+  approvalMode: v.optional(v.picklist(['default', 'auto_edit', 'yolo']), 'default'), // 工具批准模式
 });
 
 export type UIConfig = v.InferOutput<typeof UIConfigSchema>;
@@ -52,7 +46,6 @@ export type SessionConfig = v.InferOutput<typeof SessionConfigSchema>;
 export const ReasonCliConfigSchema = v.object({
   model: ModelConfigSchema,
   providers: ProvidersConfigSchema,
-  agent: AgentConfigSchema,
   ui: UIConfigSchema,
   session: SessionConfigSchema,
 });

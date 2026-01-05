@@ -23,6 +23,29 @@ const OPTIONS = [
 ];
 
 /**
+ * 单个选项组件
+ * 使用 React.memo 优化：只在 isSelected 变化时重渲染
+ */
+interface OptionItemProps {
+  option: typeof OPTIONS[0];
+  isSelected: boolean;
+  colors: any;
+}
+
+const OptionItem = React.memo(function OptionItem({ option, isSelected, colors }: OptionItemProps) {
+  return (
+    <Box>
+      <Text color={isSelected ? colors.primary : colors.textMuted}>
+        {isSelected ? '❯ ' : '  '}
+      </Text>
+      <Text color={isSelected ? colors.primary : colors.textMuted} bold={isSelected}>
+        {option.label}
+      </Text>
+    </Box>
+  );
+});
+
+/**
  * 根据 type 渲染对应的内容组件
  */
 function renderContent(details: ConfirmDetails) {
@@ -49,8 +72,10 @@ function renderContent(details: ConfirmDetails) {
  * - Allow once: 仅本次允许
  * - Allow always: 总是允许（添加到 allowlist）
  * - Cancel: 取消执行
+ *
+ * ✨ 使用 React.memo 避免父组件重新渲染时导致的不必要重渲染
  */
-export function PanelToolConfirm({ toolName, details, onConfirm }: PanelToolConfirmProps) {
+export const PanelToolConfirm = React.memo(function PanelToolConfirm({ toolName, details, onConfirm }: PanelToolConfirmProps) {
   const { colors } = useTheme();
   const [selectedIndex, setSelectedIndex] = useState(0);
 
@@ -112,25 +137,20 @@ export function PanelToolConfirm({ toolName, details, onConfirm }: PanelToolConf
       </Box>
 
       {/* 内容区域 - 根据 type 渲染不同组件 */}
-      {/* <Box flexDirection="column" flexGrow={1} paddingX={1} paddingY={0}>
+      <Box flexDirection="column" flexGrow={1} paddingX={1} paddingY={0}>
         {renderContent(details)}
-      </Box> */}
+      </Box>
 
       {/* 选项列表 */}
       <Box marginTop={1} flexDirection="column">
-        {OPTIONS.map((option, index) => {
-          const isSelected = index === selectedIndex;
-          return (
-            <Box key={option.key}>
-              <Text color={isSelected ? colors.primary : colors.textMuted}>
-                {isSelected ? '❯ ' : '  '}
-              </Text>
-              <Text color={isSelected ? colors.primary : colors.textMuted} bold={isSelected}>
-                {option.label}
-              </Text>
-            </Box>
-          );
-        })}
+        {OPTIONS.map((option, index) => (
+          <OptionItem
+            key={option.key}
+            option={option}
+            isSelected={index === selectedIndex}
+            colors={colors}
+          />
+        ))}
       </Box>
 
       {/* 底部提示栏 */}
@@ -139,4 +159,4 @@ export function PanelToolConfirm({ toolName, details, onConfirm }: PanelToolConf
       </Box>
     </Box>
   );
-}
+});

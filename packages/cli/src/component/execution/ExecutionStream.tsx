@@ -6,11 +6,12 @@
 
 import React from 'react';
 import { Box } from 'ink';
-import { useExecution } from '../../context/execution.js';
+import { useExecutionSnapshot, useIsExecuting } from '../../context/execution.js';
 import { StatusIndicator } from './StatusIndicator.js';
 
 export function ExecutionStream() {
-  const { snapshot, isExecuting } = useExecution();
+  const snapshot = useExecutionSnapshot();
+  const isExecuting = useIsExecuting();
 
   if (!snapshot || !isExecuting) {
     return null;

@@ -157,6 +157,15 @@ export class ToolScheduler {
     };
     this.toolCallRecords.set(callId, record);
 
+    // ✅ 新增：通知 ExecutionStream 开始验证
+    this.executionStream?.startValidating(
+      callId,
+      toolName,
+      toolCategory ?? 'builtin',
+      paramsSummary ?? generateParamsSummary(toolName, args),
+      thinkingContent
+    );
+
     try {
       // 2. 获取工具定义
       const tool = this.toolManager.getTool(toolName);
@@ -216,14 +225,8 @@ export class ToolScheduler {
 
       // 5. 开始执行 → 通知 ExecutionStream
       this.updateStatus(callId, 'executing');
-      this.executionStream?.startToolCall({
-        id: callId,
-        toolName,
-        toolCategory: toolCategory ?? tool.category ?? 'builtin',
-        params: args,
-        paramsSummary: paramsSummary ?? generateParamsSummary(toolName, args),
-        thinkingContent,
-      });
+      // ✅ 新代码：使用 updateToExecuting 替代 startToolCall
+      this.executionStream?.updateToExecuting(callId, args);
 
       // 6. 执行工具
       const result = await this.toolManager.execute(toolName, args, context);
@@ -252,7 +255,7 @@ export class ToolScheduler {
       // 8. 完成 → 通知 ExecutionStream
       this.executionStream?.completeToolCall(
         callId,
-        result,
+        resultString,
         generateSummary(toolName, args, result)
       );
 

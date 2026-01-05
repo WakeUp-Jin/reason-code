@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Box, Text, Static } from 'ink';
 import { useTheme } from '../../context/theme.js';
-import { useExecution } from '../../context/execution.js';
+import { useIsExecuting, useExecutionState } from '../../context/execution.js';
 import {
   useCurrentSession,
   useCompletedMessages,
@@ -26,7 +26,8 @@ type StaticItem =
 
 export function Session() {
   const { colors } = useTheme();
-  const { isExecuting } = useExecution();
+  const isExecuting = useIsExecuting();
+  const { isPendingConfirm } = useExecutionState(); // ✅ 移除 pendingToolInfo
   const session = useCurrentSession();
   const completedMessages = useCompletedMessages();
   const streamingMessage = useStreamingMessage();
@@ -56,11 +57,16 @@ export function Session() {
   const staticItems: StaticItem[] = useMemo(
     () => [
       { id: 'header', type: 'header' },
-      ...completedMessages.map((m) => ({
-        id: m.id,
-        type: 'message' as const,
-        message: m,
-      })),
+      ...completedMessages
+        .map((m) => ({
+          id: m.id,
+          type: 'message' as const,
+          message: m,
+        }))
+        .filter(
+          (m) =>
+            m.message.role !== 'assistant' || (m.message.role === 'assistant' && m.message.content)
+        ),
     ],
     [completedMessages]
   );
@@ -102,14 +108,15 @@ export function Session() {
       </Static>
 
       {/* 动态区域 - 执行流 + 流式消息 + 输入框 + Footer */}
-      {/* 执行流展示 */}
-      {isExecuting && (
+      {/* ✅ 不再需要临时显示工具标题，工具消息已在 Static 区域中显示 */}
+      {/* 正常执行：显示执行流 */}
+      {isExecuting && !isPendingConfirm && (
         <Box paddingLeft={2} paddingRight={2}>
           <ExecutionStream />
         </Box>
       )}
 
-      {streamingMessage && (
+      {streamingMessage && !isPendingConfirm && (
         <Box paddingLeft={2} paddingRight={2}>
           <AssistantMessage message={streamingMessage} />
         </Box>

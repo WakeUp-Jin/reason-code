@@ -31,7 +31,7 @@ export function convertToCoreMessage(cliMessage: CliMessage): CoreMessage {
   if (cliMessage.toolCall && cliMessage.role === 'tool') {
     return {
       ...baseMessage,
-      tool_call_id: cliMessage.id,
+      tool_call_id: cliMessage.tool_call_id || cliMessage.id, // 优先使用 tool_call_id，兼容旧数据
       name: cliMessage.toolCall.toolName,
     };
   }
@@ -52,4 +52,3 @@ export function convertToCoreMsgs(cliMessages: CliMessage[]): CoreMessage[] {
     .filter((msg) => !msg.isStreaming) // 过滤流式消息（未完成）
     .map(convertToCoreMessage);
 }
-
