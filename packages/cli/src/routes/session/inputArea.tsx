@@ -8,6 +8,7 @@ import { useExecutionState } from '../../context/execution.js';
 import { commandRegistry, CommandPanel } from '../../component/command/index.js';
 import { PanelToolConfirm } from '../../component/panel/panel-tool-confirm.js';
 import { logger } from '../../util/logger.js';
+import { confirmLogger } from '../../util/logUtils.js';
 import { usePersistence } from '../../hooks/usePersistence.js';
 import { useAgent } from '../../hooks/useAgent.js';
 
@@ -116,19 +117,9 @@ export function InputArea({ onCommandPanelChange }: InputAreaProps) {
 
     // 更新 AI 响应
     if (response) {
-      logger.info('📝 Updating assistant message content', {
-        messageId: assistantMessage.id,
-        contentLength: response.length,
-      });
-
       updateMessage(session.id, assistantMessage.id, {
         content: response,
         isStreaming: false,
-      });
-
-      logger.info('✅ Assistant message updated, preparing to save', {
-        sessionId: session.id,
-        messageId: assistantMessage.id,
       });
     } else {
       logger.error('❌ No response from Agent', {
@@ -143,9 +134,7 @@ export function InputArea({ onCommandPanelChange }: InputAreaProps) {
     }
 
     // AI 响应后保存
-    logger.info('💾 Saving session after AI response...');
     saveCurrentSession();
-    logger.info('✅ Session saved successfully');
   };
 
   // 处理用户确认（用户点击按钮时调用）
@@ -153,10 +142,7 @@ export function InputArea({ onCommandPanelChange }: InputAreaProps) {
     if (pendingConfirm) {
       pendingConfirm.resolve(outcome); // ← 调用 resolve，Promise 完成
       setPendingConfirm(null); // 关闭确认面板
-      logger.info(`Tool confirm: ${outcome}`, {
-        callId: pendingConfirm.callId,
-        toolName: pendingConfirm.toolName,
-      });
+      confirmLogger.outcome(pendingConfirm.toolName, pendingConfirm.callId, outcome);
     }
   };
 

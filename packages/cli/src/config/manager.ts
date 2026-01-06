@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { CONFIG_FILE } from '../util/storage.js';
 import { logger } from '../util/logger.js';
+import { configLogger } from '../util/logUtils.js';
 import type { ReasonCliConfig, PartialConfig } from './schema.js';
 import { safeValidateConfig } from './schema.js';
 import { DEFAULT_CONFIG, resolveConfigEnvVars, deepMerge } from './defaults.js';
@@ -24,7 +25,6 @@ export class ConfigManager {
   loadConfig(): ReasonCliConfig {
     // 如果配置文件不存在，创建默认配置文件
     if (!existsSync(CONFIG_FILE)) {
-      logger.info('Config file not found, creating default config');
       this.createDefaultConfig();
     }
 
@@ -51,7 +51,7 @@ export class ConfigManager {
       }
 
       this.config = result.data!;
-      logger.info('Config loaded successfully');
+      configLogger.load();
       return this.config;
     } catch (error) {
       logger.error('Failed to load config file, using default config', { error });
@@ -73,7 +73,6 @@ export class ConfigManager {
 
       // 写入默认配置（保留环境变量引用格式）
       writeFileSync(CONFIG_FILE, JSON.stringify(DEFAULT_CONFIG, null, 2), 'utf-8');
-      logger.info('Default config file created at ' + CONFIG_FILE);
     } catch (error) {
       logger.error('Failed to create default config file', { error });
     }
@@ -104,17 +103,13 @@ export class ConfigManager {
           model: this.config.model,         // 覆盖 model（程序会修改）
           providers: diskConfig.providers,  // ✅ 保留磁盘上的 providers（完全不改）
         };
-
-        logger.debug('Config merged with existing file (providers preserved from disk)');
       } else {
         // 配置文件不存在，使用默认配置
         configToSave = DEFAULT_CONFIG;
-        logger.debug('Using default config for new file');
       }
 
       // 写入文件
       writeFileSync(CONFIG_FILE, JSON.stringify(configToSave, null, 2), 'utf-8');
-      logger.info('Config saved successfully');
     } catch (error) {
       logger.error('Failed to save config file', { error });
     }

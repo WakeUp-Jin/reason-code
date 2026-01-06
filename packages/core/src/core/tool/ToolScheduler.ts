@@ -17,6 +17,7 @@ import {
 import { Allowlist } from './Allowlist.js';
 import { ToolManager } from './ToolManager.js';
 import { logger } from '../../utils/logger.js';
+import { toolLogger } from '../../utils/logUtils.js';
 import { ExecutionStreamManager } from '../execution/ExecutionStreamManager.js';
 import { ToolOutputSummarizer } from '../context/utils/ToolOutputSummarizer.js';
 import { generateSummary, generateParamsSummary } from '../execution/summaryGenerators.js';
@@ -131,7 +132,7 @@ export class ToolScheduler {
         args = deepParseArgs(JSON.parse(rawArgs));
       } catch (e) {
         const errorMessage = `参数解析失败: ${e instanceof Error ? e.message : String(e)}`;
-        logger.error(`Tool ${toolName} args parse failed`, { error: errorMessage });
+        toolLogger.error(toolName, callId, errorMessage);
         this.executionStream?.errorToolCall(callId, errorMessage);
         return this.setError(callId, toolName, errorMessage);
       }
@@ -208,45 +209,61 @@ export class ToolScheduler {
 
       // 5. 开始执行 → 通知 ExecutionStream
       this.updateStatus(callId, 'executing');
-      // ✅ 新代码：使用 updateToExecuting 替代 startToolCall
       this.executionStream?.updateToExecuting(callId, args);
 
+      // 记录工具开始执行
+      toolLogger.execute(toolName, callId, args);
+
       // 6. 执行工具
+      const startTime = Date.now();
       const result = await this.toolManager.execute(toolName, args, context);
-      let resultString = JSON.stringify(result);
+      const resultString = JSON.stringify(result);
+
+      // 记录原始输出（DEBUG 级别完整记录）
+      toolLogger.rawOutput(toolName, callId, resultString);
 
       // 7. 工具输出总结（可选）
+      let processedOutput = resultString;
       if (this.enableToolSummarization && this.toolOutputSummarizer) {
         try {
           const summaryResult = await this.toolOutputSummarizer.process(resultString, toolName);
           if (summaryResult.summarized || summaryResult.truncated) {
-            logger.info(`Tool output processed`, {
+            // 记录压缩详情（WARN 级别，包含完整的压缩前后数据）
+            toolLogger.compressed(
               toolName,
-              originalTokens: summaryResult.originalTokens,
-              processedTokens: summaryResult.processedTokens,
-              summarized: summaryResult.summarized,
-              truncated: summaryResult.truncated,
-            });
-            resultString = summaryResult.output;
+              callId,
+              resultString,  // 完整原始输出
+              summaryResult.originalTokens,
+              summaryResult.output,  // 完整压缩输出
+              summaryResult.processedTokens
+            );
+            processedOutput = summaryResult.output;
+          } else {
+            // 未压缩（低于阈值）
+            toolLogger.noCompression(toolName, callId, summaryResult.originalTokens);
           }
         } catch (e) {
           logger.warn(`Tool output summarization failed`, { toolName, error: e });
-          // 总结失败不影响结果，继续使用原始 resultString
         }
       }
 
       // 8. 完成 → 通知 ExecutionStream
+      const duration = Date.now() - startTime;
+      toolLogger.complete(toolName, callId, duration);
+
       this.executionStream?.completeToolCall(
         callId,
-        resultString,
+        processedOutput,
         generateSummary(toolName, args, result)
       );
 
       // 9. 返回成功结果
-      return this.setSuccess(callId, toolName, result, resultString);
+      return this.setSuccess(callId, toolName, result, processedOutput);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error(`Tool ${toolName} execution failed`, { error: errorMessage });
+
+      // 记录工具执行失败（包含参数帮助调试）
+      toolLogger.error(toolName, callId, errorMessage, args);
 
       // 通知 ExecutionStream 错误
       this.executionStream?.errorToolCall(callId, errorMessage);
@@ -414,8 +431,6 @@ export class ToolScheduler {
       record.durationMs = Date.now() - (record.startTime || Date.now());
     }
 
-    logger.error(`Tool call ${callId} failed: ${error}`);
-
     return {
       callId,
       toolName,
@@ -435,8 +450,6 @@ export class ToolScheduler {
       record.error = reason;
       record.durationMs = Date.now() - (record.startTime || Date.now());
     }
-
-    logger.info(`Tool call ${callId} cancelled: ${reason}`);
 
     return {
       callId,

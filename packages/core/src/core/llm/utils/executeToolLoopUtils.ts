@@ -11,9 +11,11 @@ import { ApprovalMode } from '../../tool/types.js';
 import { Message } from '../../context/types.js';
 import { eventBus } from '../../../evaluation/EventBus.js';
 import { logger } from '../../../utils/logger.js';
+import { contextLogger, llmLogger, loopLogger } from '../../../utils/logUtils.js';
 import { ContextChecker, DEFAULT_THRESHOLDS } from '../../context/utils/ContextChecker.js';
 import { HistoryCompressor } from '../../context/utils/HistoryCompressor.js';
 import { ToolOutputSummarizer } from '../../context/utils/ToolOutputSummarizer.js';
+import { TokenEstimator } from '../../context/utils/tokenEstimator.js';
 import { ExecutionStreamManager } from '../../execution/index.js';
 
 /** 默认 Token 限制 */
@@ -50,7 +52,7 @@ export function createLoopContext(
   config?: ToolLoopConfig
 ): LoopContext {
   // 提取配置（带默认值）
-  const maxLoops = config?.maxLoops ?? 10;
+  const maxLoops = config?.maxLoops ?? 50;
   const agentName = config?.agentName ?? 'simple_agent';
   const executionStream = config?.executionStream;
   const modelLimit = config?.modelLimit ?? DEFAULT_MODEL_LIMIT;
@@ -117,7 +119,9 @@ export async function handleContextCompression(
     return;
   }
 
-  logger.info(`Context compression triggered`, { usagePercent });
+  // 记录压缩触发（包含完整统计）
+  const tokens = TokenEstimator.estimateMessages(messages);
+  contextLogger.compressionTriggered(usagePercent, messages.length, tokens);
 
   // 获取历史上下文
   const history = contextManager.getHistory();
@@ -147,14 +151,15 @@ export async function handleContextCompression(
   // 替换历史
   history.replace([summaryMessage, ...recentMessages]);
 
-  // 记录压缩结果
-  const reduction =
-    (1 - compressionResult.compressedTokens / compressionResult.originalTokens) * 100;
-  logger.info(`History compressed`, {
-    originalTokens: compressionResult.originalTokens,
-    compressedTokens: compressionResult.compressedTokens,
-    reduction: `${reduction.toFixed(1)}%`,
-  });
+  // 记录压缩详情（包含压缩前后的完整消息列表）
+  const afterMessages = [summaryMessage, ...recentMessages];
+  const afterTokens = TokenEstimator.estimateMessages(afterMessages);
+  contextLogger.compressionDetails(
+    historyMessages,
+    compressionResult.originalTokens,
+    afterMessages,
+    afterTokens
+  );
 }
 
 /**
@@ -200,13 +205,6 @@ export async function handleToolCalls(
   const { toolScheduler, executionStream, agentName } = ctx;
   const toolCalls = response.toolCalls!;
 
-  logger.info(`Tool calls detected`, { count: toolCalls.length });
-
-  // 记录 LLM 的思考内容（如果有）
-  if (response.content) {
-    logger.debug(`LLM thinking`, { content: response.content.slice(0, 100) });
-  }
-
   // 1. 构建并添加 assistant 消息（包含工具调用）
   const assistantMessage: Message = {
     role: 'assistant',
@@ -237,19 +235,6 @@ export async function handleToolCalls(
   for (const result of scheduleResults) {
     const toolMessage = buildToolMessage(result);
     contextManager.addToCurrentTurn(toolMessage);
-
-    // 记录日志
-    if (result.success) {
-      logger.debug(`Tool result`, {
-        toolName: result.toolName,
-        resultPreview: result.resultString?.slice(0, 200),
-      });
-    } else {
-      logger.warn(`Tool ${result.toolName} was not executed`, {
-        status: result.status,
-        error: result.error,
-      });
-    }
   }
 }
 
@@ -261,9 +246,6 @@ export function buildSuccessResult(
   contextManager: ContextManager,
   loopCount: number
 ): ToolLoopResult {
-  logger.info(`Tool loop completed`, { loopCount });
-  logger.debug(`Final result`, { contentPreview: response.content?.slice(0, 200) });
-
   // 添加最终的 assistant 消息到当前轮次
   const finalMessage: Message = {
     role: 'assistant',
@@ -282,11 +264,12 @@ export function buildSuccessResult(
  * 构建错误结果
  */
 export function buildErrorResult(error: unknown, loopCount: number): ToolLoopResult {
-  logger.error(`LLM call failed`, { loopCount, error });
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  loopLogger.error(loopCount, errorMessage);
 
   return {
     success: false,
-    error: error instanceof Error ? error.message : String(error),
+    error: errorMessage,
     loopCount,
   };
 }

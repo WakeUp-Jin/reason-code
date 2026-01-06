@@ -30,6 +30,7 @@ import type {
   TodoItem,
 } from '@reason-cli/core';
 import { logger } from '../util/logger.js';
+import { eventLogger } from '../util/logUtils.js';
 
 // ==================== State Context（低频更新）====================
 
@@ -144,13 +145,8 @@ export function ExecutionProvider({ children }: ExecutionProviderProps) {
 
     // 订阅管理器事件
     const unsubscribe = manager.on((event: ExecutionEvent) => {
-      // 🔍 DEBUG: 追踪事件推送
-      const snapshot = manager.getSnapshot();
-      logger.info(`📡 [ExecutionContext] Event received`, {
-        eventType: event.type,
-        statusPhrase: snapshot?.statusPhrase,
-        state: snapshot?.state,
-      });
+      // 记录事件接收（传递完整事件对象）
+      eventLogger.receive(event.type, event);
 
       // 执行开始时清除上次的快照
       if (event.type === 'execution:start') {

@@ -34,3 +34,24 @@ export { getTodos, setTodos, clearTodos } from './TodoWrite/executors.js';
 // TodoRead 工具
 export { TodoReadTool } from './TodoRead/definitions.js';
 export type { TodoReadArgs, TodoReadResult } from './TodoRead/types.js';
+
+// Glob 工具（文件路径搜索）
+export { GlobTool } from './Glob/definitions.js';
+export type { GlobArgs, GlobResult, GlobFileItem, GlobStrategy } from './Glob/types.js';
+export { globExecutor, renderGlobResultForAssistant, getGlobSummary } from './Glob/executors.js';
+
+// Grep 工具（文件内容搜索）
+export { GrepTool } from './Grep/definitions.js';
+export type { GrepArgs, GrepResult, GrepMatch, GrepStrategy } from './Grep/types.js';
+export { grepExecutor, renderGrepResultForAssistant, getGrepSummary } from './Grep/executors.js';
+
+// 搜索工具辅助模块
+export { Ripgrep } from './utils/ripgrep.js';
+export { detectRuntime, isBun, isNode, getRuntimeName, RuntimeEnvironment } from './utils/runtime.js';
+export {
+  canUseRipgrep,
+  canUseGitGrep,
+  canUseSystemGrep,
+  isGitRepository,
+  getToolAvailability,
+} from './utils/tool-detection.js';

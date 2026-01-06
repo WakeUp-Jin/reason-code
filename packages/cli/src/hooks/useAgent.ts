@@ -9,6 +9,7 @@ import type { ConfirmDetails, ConfirmOutcome, ApprovalMode } from '@reason-cli/c
 import { configManager } from '../config/manager.js';
 import { getModelTokenLimit } from '../config/tokenLimits.js';
 import { logger } from '../util/logger.js';
+import { agentLogger } from '../util/logUtils.js';
 import { useExecutionState } from '../context/execution.js';
 import { useAppStore } from '../context/store.js';
 import { convertToCoreMsgs } from '../util/messageConverter.js';
@@ -97,7 +98,10 @@ export function useAgent(): UseAgentReturn {
 
         setCurrentModel({ provider, model });
         setIsReady(true);
-        logger.info(`Agent initialized with ${provider}/${model}`);
+
+        // 记录 Agent 初始化
+        const sessionId = useAppStore.getState().currentSessionId || 'none';
+        agentLogger.init(provider, model, sessionId);
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
         setError(errorMessage);
@@ -132,9 +136,8 @@ export function useAgent(): UseAgentReturn {
           skipSystemPrompt: true,
         });
 
-        logger.debug(
-          `Loaded ${coreHistory.length} history messages for session ${currentSessionId}`
-        );
+        // 记录历史加载（DEBUG 级别）
+        logger.debug(`Loaded ${coreHistory.length} history messages for session ${currentSessionId || 'none'}`);
 
         // 3. 获取当前模型的 Token 限制
         const modelLimit = currentModel ? getModelTokenLimit(currentModel.model) : undefined;
@@ -191,7 +194,7 @@ export function useAgent(): UseAgentReturn {
 
       await agentRef.current.setModel(provider, model, providerConfig?.apiKey);
       setCurrentModel({ provider, model });
-      logger.info(`Switched to ${provider}/${model}`);
+      agentLogger.switch(provider, model);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       setError(errorMessage);

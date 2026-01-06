@@ -13,6 +13,7 @@ import {
 } from './types.js';
 import type { ConfirmDetails } from '../tool/types.js';
 import { logger } from '../../utils/logger.js';
+import { eventLogger } from '../../utils/logUtils.js';
 
 // 状态短语池
 const STATUS_PHRASES = [
@@ -86,8 +87,8 @@ export class ExecutionStreamManager {
   }
 
   private emit(event: ExecutionEvent): void {
-    // 📡 记录事件发送 - 结构化日志
-    logger.debug(`📡 [Event] ${event.type}`, this.serializeEventForLog(event));
+    // 📡 记录事件发送（自动过滤高频事件）
+    eventLogger.emit(event.type, this.serializeEventForLog(event));
 
     this.handlers.forEach((handler) => handler(event));
     // Web 端流式传输回调

@@ -10,8 +10,10 @@ import {
   ToolCallStatus as CoreToolCallStatus,
   type ExecutionEvent,
   type TodoItem,
+  type TodoWriteResult,
 } from '@reason-cli/core';
 import { logger } from '../util/logger.js';
+import { safeJsonParse } from '../util/json.js';
 
 interface UseExecutionMessagesOptions {
   /** 当前会话 ID */
@@ -220,10 +222,16 @@ export function useExecutionMessages(options: UseExecutionMessagesOptions) {
           }
 
           // ✅ TodoWrite 工具完成时，更新 ExecutionContext 的 todos 状态
-          if (toolCall.toolName === 'TodoWrite' && toolCall.result?.todos) {
-            const todos = toolCall.result.todos as TodoItem[];
-            setTodos(todos);
-            logger.debug('Updated todos from TodoWrite', { todosCount: todos.length });
+          if (toolCall.toolName === 'TodoWrite') {
+            const result = safeJsonParse<TodoWriteResult>(toolCall.result, {
+              success: false,
+              todos: [],
+              message: '',
+            });
+            if (result.todos.length > 0) {
+              setTodos(result.todos);
+              logger.debug('Updated todos from TodoWrite', { count: result.todos.length });
+            }
           }
           break;
         }

@@ -53,7 +53,7 @@ export async function readFileExecutor(args: ReadFileArgs, context: any): Promis
   const maxFileSize = context?.maxFileSize ?? DEFAULT_MAX_FILE_SIZE;
 
   //延时10秒
-  await new Promise((resolve) => setTimeout(resolve, 10000));
+  // await new Promise((resolve) => setTimeout(resolve, 10000));
 
   // 检查文件是否存在
   if (!fs.existsSync(targetPath)) {

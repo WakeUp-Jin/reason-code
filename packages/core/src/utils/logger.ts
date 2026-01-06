@@ -55,8 +55,8 @@ export interface LoggerConfig {
 const DEFAULT_CONFIG: LoggerConfig = {
   enabled: false, // 默认禁用，等待上层配置
   minLevel: 'DEBUG',
-  retentionDays: 3,
-  bufferSize: 1, // 减小缓冲区，确保日志及时写入
+  retentionDays: 7,
+  bufferSize: 20,  // 增大缓冲区，减少磁盘 I/O
   logsDir: undefined,
 };
 
@@ -99,6 +99,54 @@ class Logger {
    */
   configure(config: Partial<LoggerConfig>): void {
     this.config = { ...this.config, ...config };
+  }
+
+  /**
+   * 从环境变量读取配置
+   * 优先级高于配置文件
+   */
+  configureFromEnv(): void {
+    const logLevel = process.env.LOG_LEVEL;
+    if (logLevel && ['DEBUG', 'INFO', 'WARN', 'ERROR'].includes(logLevel)) {
+      this.config.minLevel = logLevel as LogLevel;
+    }
+
+    const logEnabled = process.env.LOG_ENABLED;
+    if (logEnabled !== undefined) {
+      this.config.enabled = logEnabled === 'true';
+    }
+  }
+
+  /**
+   * 从配置文件加载配置
+   * @param configPath 配置文件路径（默认项目根目录的 logger.config.json）
+   */
+  loadConfigFromFile(configPath?: string): void {
+    try {
+      const { readFileSync, existsSync } = require('fs');
+      const { join } = require('path');
+
+      const defaultPath = join(process.cwd(), 'logger.config.json');
+      const path = configPath || defaultPath;
+
+      if (!existsSync(path)) {
+        // 配置文件不存在，使用默认配置
+        return;
+      }
+
+      const configJson = readFileSync(path, 'utf-8');
+      const config = JSON.parse(configJson);
+
+      // 合并配置（不覆盖已设置的 logsDir）
+      this.configure({
+        enabled: config.enabled,
+        minLevel: config.minLevel,
+        retentionDays: config.retentionDays,
+        bufferSize: config.bufferSize,
+      });
+    } catch (error) {
+      this.handleError('Failed to load config from file', error);
+    }
   }
 
   /**

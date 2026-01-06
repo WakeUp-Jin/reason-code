@@ -25,7 +25,8 @@
   "dependencies": {
     "zod": "catalog:",
     "openai": "^4.70.4",
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "glob": "^11.0.0"
   },
   "devDependencies": {
     "typescript": "catalog:",

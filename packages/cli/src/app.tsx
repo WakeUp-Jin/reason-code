@@ -128,22 +128,27 @@ export async function startTUI(): Promise<void> {
   // 日志目录使用项目根目录的绝对路径
   const coreLogsDir = join(PROJECT_ROOT, 'logs', 'core');
 
-  // 初始化 CLI 日志系统
-  logger.createSession();
+  // 1. 初始化 CLI 日志系统
+  // 优先级：环境变量 > 配置文件 > 代码默认值
+  logger.loadConfigFromFile();  // 从 logger.config.json 加载（如果存在）
+  logger.configureFromEnv();    // 环境变量覆盖
+  logger.createSession();       // 创建日志 session
+
   logger.info('CLI starting', {
     platform: process.platform,
     nodeVersion: process.version,
     cwd: process.cwd(),
   });
 
-  // 配置并初始化 Core 日志系统（使用独立的 core 日志目录）
+  // 2. 配置并初始化 Core 日志系统
+  // Core 和 CLI 使用相同的日志级别配置
+  coreLogger.loadConfigFromFile();  // 从 logger.config.json 加载（如果存在）
   coreLogger.configure({
-    logsDir: coreLogsDir,
-    enabled: true,
-    minLevel: 'DEBUG', // 临时改为 DEBUG 级别调试
-    bufferSize: 1, // 立即写入，确保日志不丢失
+    logsDir: coreLogsDir,  // CLI 注入日志目录
+    enabled: true,         // Core 默认启用
   });
-  coreLogger.createSession();
+  coreLogger.configureFromEnv();    // 环境变量覆盖
+  coreLogger.createSession();       // 创建日志 session
 
   // 优雅关闭处理器
   const handleShutdown = (signal: string) => {

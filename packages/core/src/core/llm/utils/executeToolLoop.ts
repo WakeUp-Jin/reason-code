@@ -9,6 +9,7 @@ import { ILLMService, ToolLoopResult, ToolLoopConfig } from '../types/index.js';
 import { ContextManager } from '../../context/index.js';
 import { ToolManager } from '../../tool/ToolManager.js';
 import { logger } from '../../../utils/logger.js';
+import { loopLogger, contextLogger } from '../../../utils/logUtils.js';
 
 import {
   createLoopContext,
@@ -44,15 +45,13 @@ export async function executeToolLoop(
   const ctx = createLoopContext(llmService, toolManager, config);
   let loopCount = 0;
 
-  logger.info(`Tool loop started`, {
-    maxLoops: ctx.maxLoops,
-    enableCompression: ctx.enableCompression,
-  });
+  // 记录循环开始
+  loopLogger.start(ctx.maxLoops, ctx.enableCompression);
 
   // 2. 主循环
   while (loopCount < ctx.maxLoops) {
     loopCount++;
-    logger.debug(`Tool loop iteration`, { loopCount, maxLoops: ctx.maxLoops });
+    loopLogger.iteration(loopCount, ctx.maxLoops);
     ctx.executionStream?.incrementLoopCount();
 
     try {
@@ -62,10 +61,11 @@ export async function executeToolLoop(
       // 4. 溢出检查（95% 阈值）
       const overflowCheck = ctx.contextChecker.checkOverflow(messages);
       if (!overflowCheck.passed) {
-        logger.warn(`Context overflow detected`, {
-          usagePercent: overflowCheck.usagePercent,
-          currentTokens: overflowCheck.currentTokens,
-        });
+        contextLogger.overflow(
+          overflowCheck.currentTokens,
+          ctx.contextChecker.getModelLimit(),
+          overflowCheck.usagePercent
+        );
         return {
           success: false,
           error: overflowCheck.error || '上下文溢出，请开始新会话或压缩历史',
@@ -101,8 +101,6 @@ export async function executeToolLoop(
         ctx.contextChecker.updateTokenCount(response.usage.promptTokens);
       }
 
-      logger.info(`LLM response received`, { finishReason: response.finishReason });
-
       // 8. 处理响应
       if (hasToolCalls(response)) {
         await handleToolCalls(response, contextManager, ctx);
@@ -110,6 +108,8 @@ export async function executeToolLoop(
       }
 
       // 9. 没有工具调用，返回最终结果
+      const totalTokens = ctx.contextChecker.getLastPromptTokens();
+      loopLogger.complete(loopCount, totalTokens);
       return buildSuccessResult(response, contextManager, loopCount);
     } catch (error) {
       return buildErrorResult(error, loopCount);
@@ -117,6 +117,8 @@ export async function executeToolLoop(
   }
 
   // 10. 超过最大循环次数
+  const totalTokens = ctx.contextChecker.getLastPromptTokens();
+  loopLogger.complete(loopCount, totalTokens);
   logger.warn(`Max loop count exceeded`, { maxLoops: ctx.maxLoops });
   return {
     success: false,

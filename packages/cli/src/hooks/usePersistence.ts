@@ -3,6 +3,7 @@ import { useAppStore } from '../context/store.js';
 import { saveSession, loadAllSessions } from '../util/storage.js';
 import { configManager } from '../config/manager.js';
 import { logger } from '../util/logger.js';
+import { sessionLogger, configLogger } from '../util/logUtils.js';
 import type { PartialConfig } from '../config/schema.js';
 
 /**
@@ -35,38 +36,21 @@ export function usePersistence() {
     const sessionMessages = messages[currentSessionId] || [];
 
     try {
-      // 统计有 metadata 的消息数量
+      // 统计消息
       const messagesWithMetadata = sessionMessages.filter(
         m => m.role === 'assistant' && m.metadata?.tokenUsage
       ).length;
       const totalAssistantMessages = sessionMessages.filter(m => m.role === 'assistant').length;
 
-      logger.info(`💾 Saving session ${currentSessionId}`, {
-        totalMessages: sessionMessages.length,
-        assistantMessages: totalAssistantMessages,
-        withMetadata: messagesWithMetadata,
-      });
-
-      // 显示最后一条 assistant 消息的详情（用于调试）
-      const lastAssistantMsg = sessionMessages
-        .slice()
-        .reverse()
-        .find(m => m.role === 'assistant');
-
-      if (lastAssistantMsg) {
-        logger.info('📄 Last assistant message details', {
-          id: lastAssistantMsg.id,
-          contentLength: lastAssistantMsg.content?.length || 0,
-          isStreaming: lastAssistantMsg.isStreaming,
-          hasMetadata: !!lastAssistantMsg.metadata,
-          hasTokenUsage: !!lastAssistantMsg.metadata?.tokenUsage,
-          tokens: lastAssistantMsg.metadata?.tokenUsage?.totalTokens || 0,
-        });
-      }
+      // 记录会话保存
+      sessionLogger.save(
+        currentSessionId,
+        sessionMessages.length,
+        totalAssistantMessages,
+        messagesWithMetadata
+      );
 
       saveSession(session, sessionMessages);
-
-      logger.info(`✅ Session ${currentSessionId} saved to disk`);
     } catch (error) {
       logger.error(`Failed to save session ${currentSessionId}`, { error });
     }
@@ -107,7 +91,7 @@ export function usePersistence() {
   const saveConfig = useCallback((updates: Partial<PartialConfig>) => {
     try {
       configManager.updateConfig(updates);
-      logger.info('Config saved', { updates });
+      configLogger.save(updates);
     } catch (error) {
       logger.error('Failed to save config', { error });
     }
