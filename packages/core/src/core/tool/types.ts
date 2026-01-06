@@ -3,6 +3,8 @@
  * 用于定义所有工具的统一结构,便于格式化并作为提示词传给大模型
  */
 
+import { Allowlist } from './Allowlist.js';
+
 /**
  * JSON Schema 参数定义
  */
@@ -161,14 +163,19 @@ export interface InternalTool<TArgs = any, TResult = any> {
    * @param args - 工具参数
    * @param approvalMode - 当前批准模式
    * @param context - 工具上下文
+   * @param allowlist - 会话级白名单，用于存储已批准的操作
    * @returns false 表示不需要确认，ConfirmDetails 表示需要确认
    */
   shouldConfirmExecute?: (
     args: TArgs,
     approvalMode: ApprovalMode,
-    context?: InternalToolContext
+    context?: InternalToolContext,
+    allowlist?: Allowlist
   ) => Promise<ConfirmDetails | false>;
 }
+
+// 重新导出 Allowlist 类型，方便外部使用
+export type { Allowlist };
 
 /**
  * 格式化工具定义为大模型可读格式

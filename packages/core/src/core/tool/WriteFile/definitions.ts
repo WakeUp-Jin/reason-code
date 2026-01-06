@@ -3,7 +3,8 @@
  * 用于验证工具权限系统
  */
 
-import { InternalTool, ApprovalMode, ConfirmDetails } from '../types.js';
+import { InternalTool, InternalToolContext, ApprovalMode, ConfirmDetails } from '../types.js';
+import { Allowlist } from '../Allowlist.js';
 import {
   writeFileExecutor,
   renderResultForAssistant,
@@ -48,10 +49,16 @@ export const WriteFileTool: InternalTool<WriteFileArgs, WriteFileResult> = {
   /**
    * 检查是否需要用户确认执行
    * 写入工具在 DEFAULT 模式下需要确认
+   * @param args - 工具参数
+   * @param approvalMode - 当前批准模式
+   * @param _context - 工具上下文（未使用）
+   * @param _allowlist - 会话级白名单（WriteFile 目前不使用，但签名需要匹配）
    */
   shouldConfirmExecute: async (
     args: WriteFileArgs,
-    approvalMode: ApprovalMode
+    approvalMode: ApprovalMode,
+    _context?: InternalToolContext,
+    _allowlist?: Allowlist
   ): Promise<ConfirmDetails | false> => {
     // YOLO 模式：直接执行，不需要确认
     if (approvalMode === ApprovalMode.YOLO) {

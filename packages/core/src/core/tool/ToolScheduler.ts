@@ -14,6 +14,7 @@ import {
   SchedulerToolCallRequest,
   SchedulerToolCallRecord,
 } from './types.js';
+import { Allowlist } from './Allowlist.js';
 import { ToolManager } from './ToolManager.js';
 import { logger } from '../../utils/logger.js';
 import { ExecutionStreamManager } from '../execution/ExecutionStreamManager.js';
@@ -65,7 +66,7 @@ export interface ScheduleResult {
 export class ToolScheduler {
   private toolManager: ToolManager;
   private approvalMode: ApprovalMode;
-  private allowlist: Set<string> = new Set();
+  private allowlist: Allowlist;
   private toolCallRecords: Map<string, SchedulerToolCallRecord> = new Map();
   private onConfirmRequired?: (callId: string, details: ConfirmDetails) => Promise<ConfirmOutcome>;
   private executionStream?: ExecutionStreamManager;
@@ -75,6 +76,7 @@ export class ToolScheduler {
   constructor(toolManager: ToolManager, config?: ToolSchedulerConfig) {
     this.toolManager = toolManager;
     this.approvalMode = config?.approvalMode ?? ApprovalMode.DEFAULT;
+    this.allowlist = new Allowlist();
     this.onConfirmRequired = config?.onConfirmRequired;
     this.executionStream = config?.executionStream;
     this.enableToolSummarization = config?.enableToolSummarization ?? false;
@@ -105,18 +107,10 @@ export class ToolScheduler {
   }
 
   /**
-   * 添加到 allowlist
+   * 获取 allowlist 实例（供外部访问）
    */
-  addToAllowlist(key: string): void {
-    this.allowlist.add(key);
-    logger.debug(`Added to allowlist: ${key}`);
-  }
-
-  /**
-   * 检查是否在 allowlist 中
-   */
-  isInAllowlist(key: string): boolean {
-    return this.allowlist.has(key);
+  getAllowlist(): Allowlist {
+    return this.allowlist;
   }
 
   /**
@@ -175,47 +169,36 @@ export class ToolScheduler {
         return this.setError(callId, toolName, errorMessage);
       }
 
-      // 3. 检查是否需要确认
+      // 3. 检查是否需要确认（allowlist 检查由工具内部的 shouldConfirmExecute 处理）
       const needsConfirm = await this.checkConfirmation(tool, args, context);
 
       if (needsConfirm) {
-        // 检查 allowlist
-        const allowlistKey = this.getAllowlistKey(toolName, args);
-        if (this.isInAllowlist(allowlistKey)) {
-          logger.debug(`Tool ${toolName} is in allowlist, skipping confirmation`);
+        // 需要用户确认
+        this.updateStatus(callId, 'awaiting_approval', needsConfirm);
+
+        // 通知 ExecutionStream 等待确认
+        this.executionStream?.awaitingApproval(callId, toolName, needsConfirm);
+
+        // 如果有确认回调，等待用户响应
+        if (this.onConfirmRequired) {
+          const outcome = await this.onConfirmRequired(callId, needsConfirm);
+
+          if (outcome === 'cancel') {
+            // 通知 ExecutionStream 取消
+            this.executionStream?.cancelToolCall(callId, 'User cancelled');
+            return this.setCancelled(callId, toolName, 'User cancelled');
+          }
+
+          // 调用确认回调（工具在这里自己处理 allowlist 更新）
+          if (needsConfirm.onConfirm) {
+            await needsConfirm.onConfirm(outcome);
+          }
         } else {
-          // 需要用户确认
-          this.updateStatus(callId, 'awaiting_approval', needsConfirm);
-
-          // 通知 ExecutionStream 等待确认
-          this.executionStream?.awaitingApproval(callId, toolName, needsConfirm);
-
-          // 如果有确认回调，等待用户响应
-          if (this.onConfirmRequired) {
-            const outcome = await this.onConfirmRequired(callId, needsConfirm);
-
-            if (outcome === 'cancel') {
-              // 通知 ExecutionStream 取消
-              this.executionStream?.cancelToolCall(callId, 'User cancelled');
-              return this.setCancelled(callId, toolName, 'User cancelled');
-            }
-
-            // 如果用户选择"总是允许"，添加到 allowlist
-            if (outcome === 'always') {
-              this.addToAllowlist(allowlistKey);
-            }
-
-            // 调用确认回调
-            if (needsConfirm.onConfirm) {
-              await needsConfirm.onConfirm(outcome);
-            }
-          } else {
-            // 没有确认回调，在 DEFAULT 模式下拒绝执行
-            if (this.approvalMode === ApprovalMode.DEFAULT) {
-              const reason = 'Confirmation required but no confirm handler provided';
-              this.executionStream?.cancelToolCall(callId, reason);
-              return this.setCancelled(callId, toolName, reason);
-            }
+          // 没有确认回调，在 DEFAULT 模式下拒绝执行
+          if (this.approvalMode === ApprovalMode.DEFAULT) {
+            const reason = 'Confirmation required but no confirm handler provided';
+            this.executionStream?.cancelToolCall(callId, reason);
+            return this.setCancelled(callId, toolName, reason);
           }
         }
       }
@@ -349,6 +332,7 @@ export class ToolScheduler {
 
   /**
    * 检查工具是否需要确认
+   * allowlist 会传递给工具的 shouldConfirmExecute 方法，由工具自己决定如何使用
    */
   private async checkConfirmation(
     tool: InternalTool,
@@ -372,24 +356,8 @@ export class ToolScheduler {
       return false;
     }
 
-    // 调用工具的 shouldConfirmExecute 方法
-    return tool.shouldConfirmExecute(args, this.approvalMode, context);
-  }
-
-  /**
-   * 生成 allowlist key
-   */
-  private getAllowlistKey(toolName: string, args: any): string {
-    // 对于文件操作，使用文件路径作为 key
-    if (args.filePath) {
-      return `${toolName}:${args.filePath}`;
-    }
-    // 对于命令执行，使用命令作为 key
-    if (args.command) {
-      return `${toolName}:${args.command}`;
-    }
-    // 默认只使用工具名
-    return toolName;
+    // 调用工具的 shouldConfirmExecute 方法，传递 allowlist
+    return tool.shouldConfirmExecute(args, this.approvalMode, context, this.allowlist);
   }
 
   /**

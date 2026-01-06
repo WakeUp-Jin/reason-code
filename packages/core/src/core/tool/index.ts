@@ -5,6 +5,9 @@
 // 类型定义
 export * from './types.js';
 
+// Allowlist 类
+export { Allowlist } from './Allowlist.js';
+
 // 工具管理器
 export { ToolManager } from './ToolManager.js';
 
