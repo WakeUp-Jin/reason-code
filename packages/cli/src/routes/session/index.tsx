@@ -18,6 +18,7 @@ import { ToolMessage } from '../../component/message-area/tool-message.js';
 import { ThinkingMessage } from '../../component/message-area/thinking-message.js';
 import { InputArea } from './inputArea.js';
 import { ExecutionStream } from '../../component/execution/index.js';
+import { TodoDisplay } from '../../component/execution/TodoDisplay.js';
 import { useExecutionMessages } from '../../hooks/useExecutionMessages.js';
 
 // Static 区域的 item 类型
@@ -28,7 +29,7 @@ type StaticItem =
 export function Session() {
   const { colors } = useTheme();
   const isExecuting = useIsExecuting();
-  const { isPendingConfirm } = useExecutionState();
+  const { isPendingConfirm, todos, showTodos } = useExecutionState();
   const session = useCurrentSession();
   const staticMessages = useStaticMessages();
   const dynamicMessages = useDynamicMessages();
@@ -123,6 +124,13 @@ export function Session() {
       {isExecuting && !isPendingConfirm && (
         <Box marginTop={1} paddingLeft={2} paddingRight={2}>
           <ExecutionStream />
+        </Box>
+      )}
+
+      {/* TODO 列表显示 - 受 showTodos 控制 */}
+      {showTodos && todos.length > 0 && (
+        <Box paddingLeft={2} paddingRight={2}>
+          <TodoDisplay todos={todos} />
         </Box>
       )}
 

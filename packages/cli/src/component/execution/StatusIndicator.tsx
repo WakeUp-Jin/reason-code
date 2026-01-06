@@ -3,10 +3,14 @@
  * 显示当前执行状态：Spinner + 状态短语 + 时间 + Token + Tip
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../../context/theme.js';
-import { useExecutionSnapshot, useIsExecuting, useExecutionState } from '../../context/execution.js';
+import {
+  useExecutionSnapshot,
+  useIsExecuting,
+  useExecutionState,
+} from '../../context/execution.js';
 import { TIPS } from './constants.js';
 import { logger } from '../../util/logger.js';
 
@@ -30,7 +34,7 @@ function Spinner({ color, isPaused }: { color: string; isPaused?: boolean }) {
 
     logger.info(`▶️ [Spinner] RUNNING - starting timer`);
     const timer = setInterval(() => {
-      setFrameIndex(prev => (prev + 1) % SPINNER_FRAMES.length);
+      setFrameIndex((prev) => (prev + 1) % SPINNER_FRAMES.length);
     }, 80);
 
     return () => {
@@ -49,7 +53,8 @@ export function StatusIndicator() {
   const { colors } = useTheme();
   const snapshot = useExecutionSnapshot();
   const isExecuting = useIsExecuting();
-  const { showThinking, toggleThinking, isPendingConfirm } = useExecutionState();
+  const { showThinking, toggleThinking, isPendingConfirm, todos, showTodos, toggleTodos } =
+    useExecutionState();
   const [elapsedTime, setElapsedTime] = useState(0);
   const [tipIndex, setTipIndex] = useState(0);
 
@@ -58,12 +63,26 @@ export function StatusIndicator() {
     logger.info(`🎯 [StatusIndicator] isPendingConfirm changed`, { isPendingConfirm, isExecuting });
   }, [isPendingConfirm, isExecuting]);
 
-  // 快捷键监听
-  useInput((input, key) => {
-    if (key.ctrl && input === 't') {
-      toggleThinking();
+  // 快捷键监听：ctrl+t 切换 thinking，ctrl+d 切换 todos
+  useInput(
+    (input, key) => {
+      if (key.ctrl && input === 't') {
+        toggleThinking();
+      }
+      if (key.ctrl && input === 'd') {
+        toggleTodos();
+      }
+    },
+    { isActive: isExecuting }
+  );
+
+  // 动态 Tip：根据 TODO 显示状态调整提示
+  const dynamicTip = useMemo(() => {
+    if (todos.length > 0) {
+      return showTodos ? 'ctrl+d to hide todos' : 'ctrl+d to show todos';
     }
-  }, { isActive: isExecuting });
+    return TIPS[tipIndex];
+  }, [todos.length, showTodos, tipIndex]);
 
   // 计时器（等待确认时暂停）
   useEffect(() => {
@@ -84,7 +103,7 @@ export function StatusIndicator() {
 
     logger.info(`⏱️ [Timer] RUNNING - starting interval`);
     const interval = setInterval(() => {
-      setElapsedTime(prev => prev + 1);
+      setElapsedTime((prev) => prev + 1);
     }, 1000);
 
     return () => {
@@ -98,7 +117,7 @@ export function StatusIndicator() {
     if (!isExecuting || isPendingConfirm) return;
 
     const interval = setInterval(() => {
-      setTipIndex(prev => (prev + 1) % TIPS.length);
+      setTipIndex((prev) => (prev + 1) % TIPS.length);
     }, 8000);
 
     return () => clearInterval(interval);
@@ -132,9 +151,7 @@ export function StatusIndicator() {
       {/* Tip 行 - 仅在思考状态且未展开时显示 */}
       {state === 'thinking' && !showThinking && (
         <Box paddingLeft={2}>
-          <Text color={colors.textMuted}>
-            └ Tip: {TIPS[tipIndex]}
-          </Text>
+          <Text color={colors.textMuted}>└ Tip: {dynamicTip}</Text>
         </Box>
       )}
     </Box>

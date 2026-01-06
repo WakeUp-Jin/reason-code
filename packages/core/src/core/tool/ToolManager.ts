@@ -2,10 +2,18 @@ import { InternalTool, InternalToolContext } from './types.js';
 import { ListFilesTool } from './ListFiles/definitions.js';
 import { ReadFileTool } from './ReadFile/definitions.js';
 import { WriteFileTool } from './WriteFile/definitions.js';
+import { TodoWriteTool } from './TodoWrite/definitions.js';
+import { TodoReadTool } from './TodoRead/definitions.js';
 import { logger } from '../../utils/logger.js';
 
 // 注册的工具列表
-const toolsList: InternalTool[] = [ListFilesTool, ReadFileTool, WriteFileTool];
+const toolsList: InternalTool[] = [
+  ListFilesTool,
+  ReadFileTool,
+  WriteFileTool,
+  TodoWriteTool,
+  TodoReadTool,
+];
 
 /**
  * OpenAI 格式的工具定义

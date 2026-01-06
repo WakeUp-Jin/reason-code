@@ -6,7 +6,11 @@
 import { useEffect, useRef } from 'react';
 import { useExecutionState } from '../context/execution.js';
 import { useAppStore, type ToolCallStatus, type Message } from '../context/store.js';
-import { ToolCallStatus as CoreToolCallStatus, type ExecutionEvent } from '@reason-cli/core';
+import {
+  ToolCallStatus as CoreToolCallStatus,
+  type ExecutionEvent,
+  type TodoItem,
+} from '@reason-cli/core';
 import { logger } from '../util/logger.js';
 
 interface UseExecutionMessagesOptions {
@@ -36,7 +40,7 @@ function mapToolCallStatus(status: CoreToolCallStatus): ToolCallStatus {
 
 export function useExecutionMessages(options: UseExecutionMessagesOptions) {
   const { sessionId, assistantPlaceholderId } = options;
-  const { subscribe } = useExecutionState();
+  const { subscribe, setTodos } = useExecutionState();
 
   // Store actions - 使用 getState 获取最新的 actions，避免依赖变化
   const getStoreActions = () => {
@@ -213,6 +217,13 @@ export function useExecutionMessages(options: UseExecutionMessagesOptions) {
                 duration: toolCall.duration,
               },
             });
+          }
+
+          // ✅ TodoWrite 工具完成时，更新 ExecutionContext 的 todos 状态
+          if (toolCall.toolName === 'TodoWrite' && toolCall.result?.todos) {
+            const todos = toolCall.result.todos as TodoItem[];
+            setTodos(todos);
+            logger.debug('Updated todos from TodoWrite', { todosCount: todos.length });
           }
           break;
         }

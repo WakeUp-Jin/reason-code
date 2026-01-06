@@ -20,13 +20,14 @@ import {
   useRef,
   useMemo,
   useEffect,
-  type ReactNode
+  type ReactNode,
 } from 'react';
 import type {
   ExecutionSnapshot,
   ExecutionEvent,
   ExecutionStreamManager,
   ExecutionEventHandler,
+  TodoItem,
 } from '@reason-cli/core';
 import { logger } from '../util/logger.js';
 
@@ -56,6 +57,14 @@ interface ExecutionStateContextValue {
   // 确认中的工具信息（用于 Session 显示工具标题）
   pendingToolInfo: PendingToolInfo | null;
   setPendingToolInfo: (info: PendingToolInfo | null) => void;
+
+  // TODO 列表状态
+  todos: TodoItem[];
+  setTodos: (todos: TodoItem[]) => void;
+
+  // TODO 显示切换（ctrl+d）
+  showTodos: boolean;
+  toggleTodos: () => void;
 }
 
 const ExecutionStateContext = createContext<ExecutionStateContextValue | null>(null);
@@ -90,6 +99,10 @@ export function ExecutionProvider({ children }: ExecutionProviderProps) {
   const managerRef = useRef<ExecutionStreamManager | null>(null);
   const handlersRef = useRef<Set<ExecutionEventHandler>>(new Set());
 
+  // TODO 列表状态
+  const [todos, setTodos] = useState<TodoItem[]>([]);
+  const [showTodos, setShowTodos] = useState(true); // 默认显示
+
   // Snapshot 状态（高频更新）
   const [snapshot, setSnapshot] = useState<ExecutionSnapshot | null>(null);
 
@@ -98,19 +111,25 @@ export function ExecutionProvider({ children }: ExecutionProviderProps) {
 
   // ✨ 只在 snapshot.state 真正变化时更新 isExecuting
   useEffect(() => {
-    const newIsExecuting = snapshot !== null &&
+    const newIsExecuting =
+      snapshot !== null &&
       snapshot.state !== 'idle' &&
       snapshot.state !== 'completed' &&
       snapshot.state !== 'error' &&
       snapshot.state !== 'cancelled';
 
     // 只在值真正变化时才 setState，避免不必要的渲染
-    setIsExecuting(prev => prev !== newIsExecuting ? newIsExecuting : prev);
-  }, [snapshot?.state]);  // ← 只依赖 state 字段！
+    setIsExecuting((prev) => (prev !== newIsExecuting ? newIsExecuting : prev));
+  }, [snapshot?.state]); // ← 只依赖 state 字段！
 
   // 切换思考展示
   const toggleThinking = useCallback(() => {
-    setShowThinking(prev => !prev);
+    setShowThinking((prev) => !prev);
+  }, []);
+
+  // 切换 TODO 显示
+  const toggleTodos = useCallback(() => {
+    setShowTodos((prev) => !prev);
   }, []);
 
   // 订阅事件
@@ -143,12 +162,14 @@ export function ExecutionProvider({ children }: ExecutionProviderProps) {
       setSnapshot(snapshot);
 
       // 转发给外部订阅者
-      handlersRef.current.forEach(handler => handler(event));
+      handlersRef.current.forEach((handler) => handler(event));
 
       // 执行完成时重置思考展示
-      if (event.type === 'execution:complete' ||
-          event.type === 'execution:error' ||
-          event.type === 'execution:cancel') {
+      if (
+        event.type === 'execution:complete' ||
+        event.type === 'execution:error' ||
+        event.type === 'execution:cancel'
+      ) {
         setShowThinking(false);
       }
     });
@@ -157,26 +178,49 @@ export function ExecutionProvider({ children }: ExecutionProviderProps) {
   }, []);
 
   // 使用 useMemo 避免 State Context value 不必要的重新创建
-  const stateValue = useMemo<ExecutionStateContextValue>(() => ({
-    showThinking,
-    toggleThinking,
-    subscribe,
-    bindManager,
-    isPendingConfirm,
-    setIsPendingConfirm,
-    pendingToolInfo,
-    setPendingToolInfo,
-  }), [showThinking, toggleThinking, subscribe, bindManager, isPendingConfirm, pendingToolInfo]);
+  const stateValue = useMemo<ExecutionStateContextValue>(
+    () => ({
+      showThinking,
+      toggleThinking,
+      subscribe,
+      bindManager,
+      isPendingConfirm,
+      setIsPendingConfirm,
+      pendingToolInfo,
+      setPendingToolInfo,
+      todos,
+      setTodos,
+      showTodos,
+      toggleTodos,
+    }),
+    [
+      showThinking,
+      toggleThinking,
+      subscribe,
+      bindManager,
+      isPendingConfirm,
+      pendingToolInfo,
+      todos,
+      showTodos,
+      toggleTodos,
+    ]
+  );
 
   // ✨ 使用 useMemo 避免 IsExecuting Context value 不必要的重新创建
-  const isExecutingValue = useMemo<ExecutionIsExecutingContextValue>(() => ({
-    isExecuting,
-  }), [isExecuting]);
+  const isExecutingValue = useMemo<ExecutionIsExecutingContextValue>(
+    () => ({
+      isExecuting,
+    }),
+    [isExecuting]
+  );
 
   // 使用 useMemo 避免 Snapshot Context value 不必要的重新创建
-  const snapshotValue = useMemo<ExecutionSnapshotContextValue>(() => ({
-    snapshot,
-  }), [snapshot]);
+  const snapshotValue = useMemo<ExecutionSnapshotContextValue>(
+    () => ({
+      snapshot,
+    }),
+    [snapshot]
+  );
 
   return (
     <ExecutionStateContext.Provider value={stateValue}>

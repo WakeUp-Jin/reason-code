@@ -46,6 +46,7 @@ export const STATUS_PHRASES = [
  */
 export const TIPS = [
   'Press ctrl+t to show thinking process',
+  'Press ctrl+d to hide/show todos',
   'Press esc to interrupt',
   'Hit shift+tab to cycle modes',
 ] as const;
