@@ -22,7 +22,7 @@ export type ExecutionEvent =
   // 思考事件（推理模型）
   | { type: 'thinking:start' }
   | { type: 'thinking:delta'; delta: string }
-  | { type: 'thinking:complete'; content: string }
+  | { type: 'thinking:complete'; thinkingContent: string }
 
   // Assistant 消息事件（用于同步包含 tool_calls 的消息）
   | {

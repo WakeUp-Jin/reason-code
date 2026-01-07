@@ -295,22 +295,22 @@ export function useExecutionMessages(options: UseExecutionMessagesOptions) {
         }
 
         case 'thinking:complete': {
-          const { content } = event;
+          const { thinkingContent } = event;
 
-          logger.debug('Thinking complete event', { contentLength: content?.length || 0 });
+          logger.debug('Thinking complete event', { contentLength: thinkingContent?.length || 0 });
 
           // 只有当有内容时才创建 thinking 消息（推理模型的长推理内容）
-          if (content && content.trim().length > 0) {
+          if (thinkingContent && thinkingContent.trim().length > 0) {
             if (assistantPlaceholderId) {
               const message = insertMessageBefore(sessionId, assistantPlaceholderId, {
                 role: 'thinking',
-                content,
+                content: thinkingContent,
               });
               thinkingMessageIdRef.current = message.id;
             } else {
               const message = addMessage(sessionId, {
                 role: 'thinking',
-                content,
+                content: thinkingContent,
               });
               thinkingMessageIdRef.current = message.id;
             }

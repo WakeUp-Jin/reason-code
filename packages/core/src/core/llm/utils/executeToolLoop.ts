@@ -91,8 +91,9 @@ export async function executeToolLoop(
       const response = await llmService.complete(messages, tools);
 
       // 7. 完成思考并更新统计
-      ctx.executionStream?.completeThinking(response.reasoningContent);
-
+      if (response.reasoningContent) {
+        ctx.executionStream?.completeThinking(response.reasoningContent);
+      }
       if (response.usage) {
         ctx.executionStream?.updateStats({
           inputTokens: response.usage.promptTokens,

@@ -18,12 +18,16 @@ import { sleep } from '../utils/helpers.js';
  * 1. complete() - 上下文补全（推荐）
  * 2. generate() - 内置工具调用循环（可选）
  */
+/** 推理模型名称匹配模式 */
+const REASONING_MODEL_PATTERNS = ['deepseek-reasoner', '-think', '-reasoning'];
+
 export class DeepSeekService implements ILLMService {
   private client: OpenAI;
   private model: string;
   private maxRetries: number;
   private toolManager?: UnifiedToolManager;
   private maxIterations: number;
+  private isReasoningModel: boolean;
 
   constructor(
     openai: OpenAI,
@@ -41,7 +45,14 @@ export class DeepSeekService implements ILLMService {
     this.toolManager = options?.toolManager;
     this.maxIterations = options?.maxIterations || 5;
 
-    logger.debug(`初始化 DeepSeekService: model=${model}`);
+    // 自动检测是否为推理模型
+    this.isReasoningModel = REASONING_MODEL_PATTERNS.some((pattern) =>
+      model.toLowerCase().includes(pattern)
+    );
+
+    logger.debug(
+      `初始化 DeepSeekService: model=${model}, isReasoningModel=${this.isReasoningModel}`
+    );
   }
 
   /**
@@ -63,19 +74,33 @@ export class DeepSeekService implements ILLMService {
           `调用 DeepSeek API (尝试 ${attempt}/${this.maxRetries}): ${messages.length} 条消息, ${tools?.length || 0} 个工具`
         );
 
-        const response = await this.client.chat.completions.create({
+        // 构建请求参数
+        const requestBody: Record<string, any> = {
           model: this.model,
           messages,
           tools: tools && tools.length > 0 ? tools : undefined,
           tool_choice: options?.toolChoice,
-          temperature: options?.temperature,
-          max_tokens: options?.maxTokens || 8 * 1024,
-          top_p: options?.topP,
-          frequency_penalty: options?.frequencyPenalty,
-          presence_penalty: options?.presencePenalty,
+          max_tokens: 64 * 1024,
           stop: options?.stop,
           response_format: options?.responseFormat,
-        });
+        };
+
+        // 推理模型不支持 temperature/top_p 等采样参数
+        if (!this.isReasoningModel) {
+          requestBody.temperature = options?.temperature;
+          requestBody.top_p = options?.topP;
+          requestBody.frequency_penalty = options?.frequencyPenalty;
+          requestBody.presence_penalty = options?.presencePenalty;
+          requestBody.max_tokens = 8 * 1024;
+        }
+
+        // 合并外部传入的 extraBody（优先级最高）
+        const extraBody = options?.extraBody;
+
+        const response = await this.client.chat.completions.create(
+          requestBody as any,
+          extraBody ? { body: extraBody } : undefined
+        );
 
         const message = response.choices[0]?.message;
         if (!message) {

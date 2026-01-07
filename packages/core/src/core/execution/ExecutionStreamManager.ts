@@ -129,7 +129,9 @@ export class ExecutionStreamManager {
 
       // 思考事件
       case 'thinking:start':
-        return baseLog;
+        return {
+          ...baseLog,
+        };
 
       case 'thinking:delta':
         return {
@@ -141,8 +143,8 @@ export class ExecutionStreamManager {
       case 'thinking:complete':
         return {
           ...baseLog,
-          contentLength: event.content.length,
-          contentPreview: event.content.slice(0, 100),
+          contentLength: event.thinkingContent.length,
+          contentPreview: event.thinkingContent.slice(0, 100),
         };
 
       // Assistant 消息事件 - 关键！
@@ -319,16 +321,16 @@ export class ExecutionStreamManager {
     }
   }
 
-  completeThinking(content?: string): void {
+  completeThinking(thinkingContent?: string): void {
     if (this.snapshot.thinking) {
       // 如果传入了 content，使用传入的；否则使用累积的
-      if (content) {
-        this.snapshot.thinking.content = content;
+      if (thinkingContent) {
+        this.snapshot.thinking.content = thinkingContent;
       }
       this.snapshot.thinking.isComplete = true;
       this.emit({
         type: 'thinking:complete',
-        content: this.snapshot.thinking.content,
+        thinkingContent: this.snapshot.thinking.content,
       });
     }
   }
@@ -369,10 +371,10 @@ export class ExecutionStreamManager {
       id: callId,
       toolName,
       toolCategory,
-      params: {},  // 验证阶段可能还没完整参数
+      params: {}, // 验证阶段可能还没完整参数
       paramsSummary,
       thinkingContent,
-      status: ToolCallStatus.Pending,  // 使用 Pending 状态
+      status: ToolCallStatus.Pending, // 使用 Pending 状态
       startTime: Date.now(),
     };
 
@@ -395,8 +397,8 @@ export class ExecutionStreamManager {
     if (this.snapshot.currentToolCall?.id === callId) {
       const record = this.snapshot.currentToolCall;
       record.status = ToolCallStatus.Executing;
-      record.params = params;  // 更新完整参数
-      record.startTime = Date.now();  // ✅ 重新计时（从 executing 开始）
+      record.params = params; // 更新完整参数
+      record.startTime = Date.now(); // ✅ 重新计时（从 executing 开始）
 
       this.emit({
         type: 'tool:executing',
@@ -453,10 +455,7 @@ export class ExecutionStreamManager {
   awaitingApproval(toolCallId: string, toolName: string, confirmDetails: ConfirmDetails): void {
     // ✅ 新增：保存工具信息，以便取消时使用
     const paramsSummary =
-      confirmDetails.fileName ||
-      confirmDetails.filePath ||
-      confirmDetails.command ||
-      '';
+      confirmDetails.fileName || confirmDetails.filePath || confirmDetails.command || '';
 
     this.pendingConfirmInfo = {
       toolCallId,
@@ -467,7 +466,7 @@ export class ExecutionStreamManager {
 
     // 更新当前工具调用状态（如果存在）
     if (this.snapshot.currentToolCall?.id === toolCallId) {
-      this.snapshot.currentToolCall.status = ToolCallStatus.Pending;  // 等待确认
+      this.snapshot.currentToolCall.status = ToolCallStatus.Pending; // 等待确认
     }
 
     this.snapshot.state = ExecutionState.WaitingConfirm;

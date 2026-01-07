@@ -209,6 +209,7 @@ export async function handleToolCalls(
   const assistantMessage: Message = {
     role: 'assistant',
     content: response.content || '',
+    reasoning_content: response.reasoningContent || '',
     tool_calls: toolCalls,
   };
   contextManager.addToCurrentTurn(assistantMessage);

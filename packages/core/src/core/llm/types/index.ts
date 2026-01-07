@@ -108,6 +108,8 @@ export interface LLMChatOptions {
   stop?: string | string[];
   /** 结构化输出格式 */
   responseFormat?: any;
+  /** 额外参数 */
+  extraBody?: Record<string, any>;
 }
 
 /**
