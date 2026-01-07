@@ -32,6 +32,11 @@ import type {
 } from '@reason-cli/core';
 import { logger } from '../util/logger.js';
 import { eventLogger } from '../util/logUtils.js';
+import {
+  remountApp,
+  persistedThinkingExpanded,
+  setPersistedThinkingExpanded,
+} from '../app.js';
 
 // ==================== State Context（低频更新）====================
 
@@ -45,6 +50,10 @@ interface ExecutionStateContextValue {
   // 思考展示控制
   showThinking: boolean;
   toggleThinking: () => void;
+
+  // 思考内容展开控制（ctrl+o）
+  isThinkingExpanded: boolean;
+  toggleThinkingExpanded: () => void;
 
   // 事件订阅
   subscribe: (handler: ExecutionEventHandler) => () => void;
@@ -107,6 +116,8 @@ function getParamsSummary(details: ConfirmDetails): string | undefined {
 export function ExecutionProvider({ children }: ExecutionProviderProps) {
   // State 相关状态（低频更新）
   const [showThinking, setShowThinking] = useState(false);
+  // ✨ 从持久化变量初始化，确保 remount 后状态保持
+  const [isThinkingExpanded, setIsThinkingExpanded] = useState(persistedThinkingExpanded);
   const [pendingToolInfo, setPendingToolInfo] = useState<PendingToolInfo | null>(null);
   const managerRef = useRef<ExecutionStreamManager | null>(null);
   const handlersRef = useRef<Set<ExecutionEventHandler>>(new Set());
@@ -141,6 +152,17 @@ export function ExecutionProvider({ children }: ExecutionProviderProps) {
   // 切换思考展示
   const toggleThinking = useCallback(() => {
     setShowThinking((prev) => !prev);
+  }, []);
+
+  // 切换思考内容展开（ctrl+o）
+  // ✨ 使用 remountApp 彻底重新渲染，解决 Static 组件残留问题
+  const toggleThinkingExpanded = useCallback(() => {
+    // 1. 更新持久化状态（在 remount 前）
+    const newValue = !persistedThinkingExpanded;
+    setPersistedThinkingExpanded(newValue);
+
+    // 2. 重新挂载整个应用（会清屏并重新渲染）
+    remountApp();
   }, []);
 
   // 切换 TODO 显示
@@ -215,6 +237,8 @@ export function ExecutionProvider({ children }: ExecutionProviderProps) {
     () => ({
       showThinking,
       toggleThinking,
+      isThinkingExpanded,
+      toggleThinkingExpanded,
       subscribe,
       bindManager,
       isPendingConfirm,
@@ -227,6 +251,8 @@ export function ExecutionProvider({ children }: ExecutionProviderProps) {
     [
       showThinking,
       toggleThinking,
+      isThinkingExpanded,
+      toggleThinkingExpanded,
       subscribe,
       bindManager,
       isPendingConfirm,

@@ -33,6 +33,7 @@
       "text": "$white",
       "textMuted": "$gray",
       "textInverse": "$black",
+      "textThinking": "#8A8A8A",
 
       "background": "$black",
       "backgroundPanel": "$darkBg",
@@ -99,6 +100,7 @@
       "text": "$black",
       "textMuted": "$gray",
       "textInverse": "$white",
+      "textThinking": "#6A6A6A",
 
       "background": "$white",
       "backgroundPanel": "$darkBg",

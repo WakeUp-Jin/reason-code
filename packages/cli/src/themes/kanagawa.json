@@ -29,25 +29,21 @@
       "warning": "$yellow",
       "success": "$green",
       "info": "#76946A",
-
       "text": "$white",
       "textMuted": "$gray",
       "textInverse": "$black",
-
+      "textThinking": "#8A8A8A",
       "background": "$black",
       "backgroundPanel": "$darkBg",
       "backgroundElement": "$darkGray",
-
       "border": "$lightGray",
       "borderActive": "$yellow",
       "borderSubtle": "$darkGray",
-
       "diffAdded": "$green",
       "diffRemoved": "$red",
       "diffContext": "$gray",
       "diffAddedBg": "$greenBg",
       "diffRemovedBg": "$redBg",
-
       "syntaxComment": "$gray",
       "syntaxKeyword": "$purple",
       "syntaxFunction": "$blue",
@@ -55,16 +51,13 @@
       "syntaxNumber": "$orange",
       "syntaxType": "$cyan",
       "syntaxOperator": "#C0A36E",
-
       "messageUser": "$blue",
       "messageAssistant": "$purple",
       "messageSystem": "$gray",
-
       "statusPending": "$gray",
       "statusRunning": "$yellow",
       "statusSuccess": "$green",
       "statusError": "$red",
-
       "logo": "$blue",
       "logoAccent": "$purple"
     }
@@ -95,25 +88,21 @@
       "warning": "$yellow",
       "success": "$green",
       "info": "$green",
-
       "text": "$black",
       "textMuted": "$gray",
       "textInverse": "$white",
-
+      "textThinking": "#6A6A6A",
       "background": "$white",
       "backgroundPanel": "$darkBg",
       "backgroundElement": "$darkGray",
-
       "border": "$lightGray",
       "borderActive": "$yellow",
       "borderSubtle": "#DCD4C9",
-
       "diffAdded": "$green",
       "diffRemoved": "$red",
       "diffContext": "$gray",
       "diffAddedBg": "$greenBg",
       "diffRemovedBg": "$redBg",
-
       "syntaxComment": "$gray",
       "syntaxKeyword": "$purple",
       "syntaxFunction": "$blue",
@@ -121,19 +110,15 @@
       "syntaxNumber": "$orange",
       "syntaxType": "$cyan",
       "syntaxOperator": "#C0A36E",
-
       "messageUser": "$blue",
       "messageAssistant": "$purple",
       "messageSystem": "$gray",
-
       "statusPending": "$gray",
       "statusRunning": "$yellow",
       "statusSuccess": "$green",
       "statusError": "$red",
-
       "logo": "$blue",
       "logoAccent": "$purple"
     }
   }
 }
-

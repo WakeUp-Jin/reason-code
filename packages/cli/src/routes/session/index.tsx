@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Box, Text, Static } from 'ink';
+import { Box, Text, Static, useInput } from 'ink';
 import { useTheme } from '../../context/theme.js';
 import { useIsExecuting, useExecutionState } from '../../context/execution.js';
 import {
@@ -8,6 +8,7 @@ import {
   useDynamicMessages,
   useStreamingMessage,
   useAppStore,
+  useCurrentMessages,
 } from '../../context/store.js';
 import type { Message } from '../../context/store.js';
 import { Header } from './header.js';
@@ -29,7 +30,8 @@ type StaticItem =
 export function Session() {
   const { colors } = useTheme();
   const isExecuting = useIsExecuting();
-  const { isPendingConfirm, todos, showTodos } = useExecutionState();
+  const { isPendingConfirm, todos, showTodos, isThinkingExpanded, toggleThinkingExpanded } =
+    useExecutionState();
   const session = useCurrentSession();
   const staticMessages = useStaticMessages();
   const dynamicMessages = useDynamicMessages();
@@ -43,6 +45,13 @@ export function Session() {
   useExecutionMessages({
     sessionId: currentSessionId,
     assistantPlaceholderId: streamingMessage?.id || null,
+  });
+
+  // 监听 ctrl+o 切换思考内容展开状态
+  useInput((input, key) => {
+    if (key.ctrl && input === 'o') {
+      toggleThinkingExpanded();
+    }
   });
 
   // 如果没有当前会话，显示错误
@@ -73,25 +82,28 @@ export function Session() {
     }
   };
 
+  // 展开模式下使用所有消息，折叠模式下使用 static/dynamic 分离
+  const allMessages = useCurrentMessages();
+
   // 构建 Static 区域的 items - Header 作为第一个 item
-  // 使用 useMemo 缓存，避免不必要的重新渲染
-  const staticItems: StaticItem[] = useMemo(
-    () => [
+  const staticItems: StaticItem[] = useMemo(() => {
+    // 展开模式：所有消息都作为 static items
+    const messages = isThinkingExpanded ? allMessages : staticMessages;
+    return [
       { id: 'header', type: 'header' },
-      ...staticMessages
+      ...messages
         .filter((m) => m.role !== 'assistant' || m.content) // 过滤空 assistant 消息
         .map((m) => ({
           id: m.id,
           type: 'message' as const,
           message: m,
         })),
-    ],
-    [staticMessages]
-  );
+    ];
+  }, [isThinkingExpanded, allMessages, staticMessages]);
 
   return (
     <>
-      {/* Static 区域 - Header + 已完成消息，打印后固定 */}
+      {/* Static 区域 - 固定已完成消息（remount 后会重新渲染） */}
       <Static items={staticItems}>
         {(item: StaticItem) => {
           if (item.type === 'header') {
@@ -109,16 +121,17 @@ export function Session() {
         }}
       </Static>
 
-      {/* 动态区域 - 未完成的消息（阻塞点及之后） */}
-      {dynamicMessages.map((m) => {
-        const content = renderMessage(m);
-        if (!content) return null;
-        return (
-          <Box key={m.id} paddingLeft={2} paddingRight={2}>
-            {content}
-          </Box>
-        );
-      })}
+      {/* 动态区域 - 仅在折叠模式下显示未完成的消息 */}
+      {!isThinkingExpanded &&
+        dynamicMessages.map((m) => {
+          const content = renderMessage(m);
+          if (!content) return null;
+          return (
+            <Box key={m.id} paddingLeft={2} paddingRight={2}>
+              {content}
+            </Box>
+          );
+        })}
 
       {/* 执行状态指示器 - 保持不变 */}
       {isExecuting && !isPendingConfirm && (
@@ -137,23 +150,43 @@ export function Session() {
       {/* 流式消息 */}
       {/* {streamingMessage && !isPendingConfirm && <AssistantMessage message={streamingMessage} />} */}
 
-      {/* 输入区域和 Footer */}
-      <Box
-        flexDirection="column"
-        paddingLeft={2}
-        paddingRight={2}
-        paddingBottom={1}
-        borderStyle="single"
-        borderTop={true}
-        borderBottom={false}
-        borderLeft={false}
-        borderRight={false}
-        borderColor={colors.border || 'gray'}
-      >
-        <InputArea onCommandPanelChange={setIsCommandPanelVisible} />
-        {/* 仅在非命令面板模式下显示 Footer */}
-        {!isCommandPanelVisible && <Footer />}
-      </Box>
+      {/* 输入区域和 Footer - 思考展开时隐藏，但等待确认时始终显示 */}
+      {(!isThinkingExpanded || isPendingConfirm) && (
+        <Box
+          flexDirection="column"
+          paddingLeft={2}
+          paddingRight={2}
+          paddingBottom={1}
+          borderStyle="single"
+          borderTop={true}
+          borderBottom={false}
+          borderLeft={false}
+          borderRight={false}
+          borderColor={colors.border || 'gray'}
+        >
+          <InputArea onCommandPanelChange={setIsCommandPanelVisible} />
+          {/* 仅在非命令面板模式下显示 Footer */}
+          {!isCommandPanelVisible && <Footer />}
+        </Box>
+      )}
+
+      {/* 思考展开时显示提示 - 带分隔线（等待确认时不显示） */}
+      {isThinkingExpanded && !isPendingConfirm && (
+        <Box
+          flexDirection="column"
+          paddingLeft={2}
+          paddingRight={2}
+          paddingBottom={1}
+          borderStyle="single"
+          borderTop={true}
+          borderBottom={false}
+          borderLeft={false}
+          borderRight={false}
+          borderColor={colors.border}
+        >
+          <Text color={colors.textThinking}>Showing detailed transcript · ctrl+o to toggle</Text>
+        </Box>
+      )}
     </>
   );
 }

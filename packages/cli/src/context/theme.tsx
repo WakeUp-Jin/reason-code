@@ -25,6 +25,7 @@ export interface ThemeColors {
   text: string;
   textMuted: string;
   textInverse: string;
+  textThinking: string; // 思考模式专用文本颜色（斜体灰色）
 
   // 背景颜色
   background: string;
@@ -77,6 +78,7 @@ const kanagawaDark: ThemeColors = {
   text: '#DCD7BA', // 📝 主文本 - 亮米色，高可读性，用于正文
   textMuted: '#727169', // 🔇 次要文本 - 暗灰色，用于提示、注释、次要信息
   textInverse: '#1F1F28', // ⚪ 反色文本 - 深色背景上的亮色按钮内文字
+  textThinking: '#8A8A8A', // 💭 思考文本 - 中灰色，用于思考模式内容（斜体）
 
   // ===== 背景颜色 - 深色主题 =====
   background: '#1F1F28', // 🌑 最深背景 - 页面主背景色
@@ -117,6 +119,7 @@ const kanagawaLight: ThemeColors = {
   text: '#54433A',
   textMuted: '#9E9389',
   textInverse: '#F2E9DE',
+  textThinking: '#6A6A6A', // 💭 思考文本 - 深灰色，用于思考模式内容（斜体）
 
   background: '#F2E9DE',
   backgroundPanel: '#EAE4D7',

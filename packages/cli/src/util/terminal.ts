@@ -181,10 +181,24 @@ export function getTerminalSize(): { columns: number; rows: number } {
 }
 
 /**
- * 清屏
+ * 清屏（仅清除可见区域）
  */
 export function clearScreen(): void {
   process.stdout.write('\x1b[2J\x1b[H')
+}
+
+/**
+ * 彻底清屏（包括滚动缓冲区）
+ * 使终端回归初始状态，就像刚打开一样
+ */
+export function clearScreenFull(): void {
+  // 使用多种清屏序列组合，确保在各种终端上都能工作
+  // \x1b[?1049h - 切换到备用屏幕缓冲区（alternate screen buffer）
+  // \x1b[?1049l - 切换回主屏幕缓冲区
+  // \x1b[3J - 清除滚动缓冲区（scrollback buffer）
+  // \x1b[2J - 清除整个屏幕
+  // \x1b[H  - 移动光标到左上角 (0,0)
+  process.stdout.write('\x1b[3J\x1b[2J\x1b[H')
 }
 
 /**

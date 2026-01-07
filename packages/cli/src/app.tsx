@@ -1,5 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { render, Box } from 'ink';
+import type { Instance } from 'ink';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { ThemeProvider } from './context/theme.js';
@@ -21,28 +22,76 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PROJECT_ROOT = join(__dirname, '..', '..', '..');
 
+// ==================== 模块级状态持久化 ====================
+// 用于在 remount 时保持状态
+let appInitialized = false;
+let commandsRegistered = false;
+
+/** 思考内容展开状态（跨 remount 持久化） */
+export let persistedThinkingExpanded = false;
+
+/** 设置思考展开状态 */
+export function setPersistedThinkingExpanded(value: boolean): void {
+  persistedThinkingExpanded = value;
+}
+
+// ==================== Ink 实例管理 ====================
+
+/** 当前 Ink 渲染实例 */
+let inkInstance: Instance | null = null;
+
+/** 当前是否在备用屏幕 */
+let inAlternateScreen = false;
+
+/**
+ * 重新挂载整个应用
+ * 使用 alternate screen buffer 切换技术实现彻底清屏
+ */
+export function remountApp(): void {
+  if (inkInstance) {
+    // 1. 卸载当前 Ink 实例
+    inkInstance.unmount();
+    inkInstance = null;
+
+    // 2. 切换屏幕缓冲区（这会彻底清除当前屏幕内容）
+    // 如果当前在备用屏幕，切换到主屏幕再切回来
+    // 如果当前在主屏幕，切换到备用屏幕再切回来
+    // 这样可以"重置"当前屏幕
+    if (inAlternateScreen) {
+      // 退出备用屏幕（清除备用屏幕内容）再进入
+      process.stdout.write('\x1b[?1049l\x1b[?1049h');
+    } else {
+      // 进入备用屏幕再退出再进入（确保清除）
+      process.stdout.write('\x1b[?1049h\x1b[?1049l\x1b[2J\x1b[3J\x1b[H');
+    }
+
+    // 3. 重新渲染
+    setImmediate(() => {
+      inkInstance = render(<Root />);
+    });
+  }
+}
+
 // 主应用组件 - 启动时加载数据或创建新 Session
 function App() {
   const { columns: width } = useTerminalSize();
   const createSession = useAppStore((state) => state.createSession);
   const initializeFromDisk = useAppStore((state) => state.initializeFromDisk);
   const currentSessionId = useAppStore((state) => state.currentSessionId);
-  const initialized = useRef(false);
-  const commandsRegistered = useRef(false);
   const { saveAll } = usePersistence();
 
-  // 注册所有命令（只执行一次）
+  // 注册所有命令（只执行一次，使用模块级变量避免 remount 重复注册）
   useEffect(() => {
-    if (!commandsRegistered.current) {
-      commandsRegistered.current = true;
+    if (!commandsRegistered) {
+      commandsRegistered = true;
       registerCommands();
     }
   }, []);
 
-  // 启动时加载数据
+  // 启动时加载数据（只执行一次，使用模块级变量避免 remount 重复加载）
   useEffect(() => {
-    if (!initialized.current) {
-      initialized.current = true;
+    if (!appInitialized) {
+      appInitialized = true;
 
       // 加载配置和会话数据
       const loadedData = loadAllData();
@@ -130,9 +179,9 @@ export async function startTUI(): Promise<void> {
 
   // 1. 初始化 CLI 日志系统
   // 优先级：环境变量 > 配置文件 > 代码默认值
-  logger.loadConfigFromFile();  // 从 logger.config.json 加载（如果存在）
-  logger.configureFromEnv();    // 环境变量覆盖
-  logger.createSession();       // 创建日志 session
+  logger.loadConfigFromFile(); // 从 logger.config.json 加载（如果存在）
+  logger.configureFromEnv(); // 环境变量覆盖
+  logger.createSession(); // 创建日志 session
 
   logger.info('CLI starting', {
     platform: process.platform,
@@ -142,13 +191,13 @@ export async function startTUI(): Promise<void> {
 
   // 2. 配置并初始化 Core 日志系统
   // Core 和 CLI 使用相同的日志级别配置
-  coreLogger.loadConfigFromFile();  // 从 logger.config.json 加载（如果存在）
+  coreLogger.loadConfigFromFile(); // 从 logger.config.json 加载（如果存在）
   coreLogger.configure({
-    logsDir: coreLogsDir,  // CLI 注入日志目录
-    enabled: true,         // Core 默认启用
+    logsDir: coreLogsDir, // CLI 注入日志目录
+    enabled: true, // Core 默认启用
   });
-  coreLogger.configureFromEnv();    // 环境变量覆盖
-  coreLogger.createSession();       // 创建日志 session
+  coreLogger.configureFromEnv(); // 环境变量覆盖
+  coreLogger.createSession(); // 创建日志 session
 
   // 优雅关闭处理器
   const handleShutdown = (signal: string) => {
@@ -191,8 +240,14 @@ export async function startTUI(): Promise<void> {
   await clearTerminal();
 
   return new Promise((resolve) => {
-    const { waitUntilExit } = render(<Root />);
-    waitUntilExit().then(() => {
+    // 不使用备用屏幕，直接在主屏幕渲染
+    // 这样 remountApp 时可以用清屏序列
+    inAlternateScreen = false;
+
+    // 保存 Ink 实例，用于 remountApp
+    inkInstance = render(<Root />);
+
+    inkInstance.waitUntilExit().then(() => {
       logger.info('CLI exiting gracefully');
       logger.flush();
       coreLogger.flush();
