@@ -225,12 +225,11 @@ export function useExecutionMessages(options: UseExecutionMessagesOptions) {
           if (toolCall.toolName === 'TodoWrite') {
             const result = safeJsonParse<TodoWriteResult>(toolCall.result, {
               success: false,
-              todos: [],
-              message: '',
+              data: null,
             });
-            if (result.todos.length > 0) {
-              setTodos(result.todos);
-              logger.debug('Updated todos from TodoWrite', { count: result.todos.length });
+            if (result.data && result.data.todos.length > 0) {
+              setTodos(result.data.todos);
+              logger.debug('Updated todos from TodoWrite', { count: result.data.todos.length });
             }
           }
           break;

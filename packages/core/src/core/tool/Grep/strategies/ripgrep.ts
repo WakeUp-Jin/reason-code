@@ -12,7 +12,7 @@
 
 import { GrepMatch, GrepStrategyOptions, GREP_DEFAULTS } from '../types.js';
 import { Ripgrep } from '../../utils/ripgrep.js';
-import { searchLogger } from '../../../../utils/logUtils.js';
+import { createAbortError } from '../../utils/error-utils.js';
 
 /**
  * 使用 ripgrep 搜索文件内容
@@ -27,29 +27,28 @@ export async function grepWithRipgrep(
   cwd: string,
   options?: GrepStrategyOptions
 ): Promise<GrepMatch[]> {
-  try {
-    const output = await Ripgrep.search({
-      cwd,
-      pattern,
-      glob: options?.include,
-      binDir: options?.binDir,
-    });
-
-    if (!output) {
-      return [];
-    }
-
-    // 解析输出
-    const matches = parseRipgrepOutput(output, cwd);
-
-    // 限制结果数量
-    const limit = options?.limit ?? GREP_DEFAULTS.LIMIT;
-    return matches.slice(0, limit);
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    searchLogger.error('Grep', errorMessage, ['ripgrep']);
-    throw error;
+  if (options?.signal?.aborted) {
+    throw createAbortError();
   }
+
+  const output = await Ripgrep.search({
+    cwd,
+    pattern,
+    glob: options?.include,
+    binDir: options?.binDir,
+    signal: options?.signal,
+  });
+
+  if (!output) {
+    return [];
+  }
+
+  // 解析输出
+  const matches = parseRipgrepOutput(output, cwd);
+
+  // 限制结果数量
+  const limit = options?.limit ?? GREP_DEFAULTS.LIMIT;
+  return matches.slice(0, limit);
 }
 
 /**
@@ -92,4 +91,3 @@ function parseRipgrepOutput(output: string, cwd: string): GrepMatch[] {
 
   return matches;
 }
-

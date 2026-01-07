@@ -232,9 +232,9 @@ export class ToolScheduler {
             toolLogger.compressed(
               toolName,
               callId,
-              resultString,  // 完整原始输出
+              resultString, // 完整原始输出
               summaryResult.originalTokens,
-              summaryResult.output,  // 完整压缩输出
+              summaryResult.output, // 完整压缩输出
               summaryResult.processedTokens
             );
             processedOutput = summaryResult.output;
@@ -251,21 +251,37 @@ export class ToolScheduler {
       const duration = Date.now() - startTime;
       toolLogger.complete(toolName, callId, duration);
 
-      this.executionStream?.completeToolCall(
-        callId,
-        processedOutput,
-        generateSummary(toolName, args, result)
-      );
+      // 统一使用 generateSummary 处理所有情况（成功/失败/警告）
+      // 工具执行失败只是工具层面的失败，不是 Agent 整体错误
+      // LLM 可以从 result 中看到 success: false 和 error 信息
+      const summary = generateSummary(toolName, args, result);
 
-      // 9. 返回成功结果
+      // 检查是否是统一结果接口格式且失败
+      const isToolResultFormat = result && typeof result === 'object' && 'success' in result;
+      const isToolFailed = isToolResultFormat && result.success === false;
+
+      if (isToolFailed) {
+        // 工具执行失败（但工具自己捕获了错误，返回了 success: false）
+        // 仍然通过 completeToolCall 通知，但记录为失败
+        toolLogger.error(toolName, callId, result.error || 'Unknown error', args);
+      }
+
+      this.executionStream?.completeToolCall(callId, processedOutput, summary);
+
+      // 9. 返回结果
+      // 对于统一结果接口格式，根据 success 字段决定返回成功还是失败
+      if (isToolFailed) {
+        return this.setError(callId, toolName, result.error || 'Tool execution failed');
+      }
       return this.setSuccess(callId, toolName, result, processedOutput);
     } catch (error) {
+      // 兜底：捕获未预期的异常（如工具未使用统一结果接口时抛出的错误）
       const errorMessage = error instanceof Error ? error.message : String(error);
 
       // 记录工具执行失败（包含参数帮助调试）
       toolLogger.error(toolName, callId, errorMessage, args);
 
-      // 通知 ExecutionStream 错误
+      // 通知 ExecutionStream 错误（这是真正的异常，不是工具返回的失败）
       this.executionStream?.errorToolCall(callId, errorMessage);
 
       return this.setError(callId, toolName, errorMessage);

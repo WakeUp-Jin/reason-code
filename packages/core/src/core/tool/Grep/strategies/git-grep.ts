@@ -15,7 +15,7 @@
 
 import { spawn } from 'child_process';
 import { GrepMatch, GrepStrategyOptions, GREP_DEFAULTS } from '../types.js';
-import { searchLogger } from '../../../../utils/logUtils.js';
+import { createAbortError } from '../../utils/error-utils.js';
 
 /**
  * 使用 git grep 搜索文件内容
@@ -51,6 +51,7 @@ export async function grepWithGit(
       windowsHide: true,
     });
 
+    let aborted = false;
     let stdout = '';
     let stderr = '';
 
@@ -63,6 +64,10 @@ export async function grepWithGit(
     });
 
     proc.on('close', (code) => {
+      if (aborted) {
+        return;
+      }
+
       if (code === 0) {
         const matches = parseGitGrepOutput(stdout);
         const limit = options?.limit ?? GREP_DEFAULTS.LIMIT;
@@ -72,22 +77,28 @@ export async function grepWithGit(
         resolve([]);
       } else {
         const errorMessage = stderr || `git grep exited with code ${code}`;
-        searchLogger.error('Grep', errorMessage, ['git-grep']);
         reject(new Error(errorMessage));
       }
     });
 
     proc.on('error', (error) => {
-      searchLogger.error('Grep', error.message, ['git-grep']);
+      if (aborted) {
+        return;
+      }
       reject(error);
     });
 
     // 超时处理
     if (options?.signal) {
-      options.signal.addEventListener('abort', () => {
-        proc.kill();
-        reject(new Error('AbortError'));
-      });
+      options.signal.addEventListener(
+        'abort',
+        () => {
+          aborted = true;
+          proc.kill();
+          reject(createAbortError());
+        },
+        { once: true }
+      );
     }
   });
 }
@@ -130,4 +141,3 @@ function parseGitGrepOutput(output: string): GrepMatch[] {
 
   return matches;
 }
-

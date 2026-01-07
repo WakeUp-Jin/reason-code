@@ -22,6 +22,7 @@ import { canUseRipgrep } from '../../utils/tool-detection.js';
 import { searchLogger } from '../../../../utils/logUtils.js';
 import { globWithNpmPackage } from './glob-npm.js';
 import { globWithRipgrepBun } from './ripgrep-bun.js';
+import { isAbortError } from '../../utils/error-utils.js';
 
 /**
  * 选择最优 Glob 策略
@@ -33,7 +34,8 @@ export async function selectGlobStrategy(binDir?: string): Promise<GlobStrategy>
   const hasRipgrep = await canUseRipgrep(binDir);
 
   // Bun 环境：优先使用 ripgrep
-  if (isBun() && hasRipgrep) {
+  // 如果传入了 binDir，则视为“允许使用本地缓存/尝试自动下载”，即使当前不存在 rg 也会尝试 ripgrep-bun 策略。
+  if (isBun() && (hasRipgrep || binDir)) {
     return GlobStrategy.RIPGREP_BUN;
   }
 
@@ -44,6 +46,18 @@ export async function selectGlobStrategy(binDir?: string): Promise<GlobStrategy>
 }
 
 /**
+ * 策略执行结果
+ */
+export interface GlobStrategyResult {
+  /** 文件列表 */
+  files: GlobFileItem[];
+  /** 使用的策略 */
+  strategy: string;
+  /** 警告信息（如降级） */
+  warning?: string;
+}
+
+/**
  * 执行 Glob 搜索
  *
  * 自动选择最优策略并执行。
@@ -51,13 +65,13 @@ export async function selectGlobStrategy(binDir?: string): Promise<GlobStrategy>
  * @param pattern - glob 模式
  * @param cwd - 工作目录
  * @param options - 选项
- * @returns 文件列表和使用的策略
+ * @returns 文件列表、使用的策略和可能的警告
  */
 export async function executeGlobStrategy(
   pattern: string,
   cwd: string,
   options?: GlobStrategyOptions
-): Promise<{ files: GlobFileItem[]; strategy: string }> {
+): Promise<GlobStrategyResult> {
   // 选择策略
   const strategy = await selectGlobStrategy(options?.binDir);
   const runtime = getRuntimeName();
@@ -81,13 +95,22 @@ export async function executeGlobStrategy(
 
     return { files, strategy };
   } catch (error: unknown) {
+    // 用户取消：不可恢复，不做降级
+    if (isAbortError(error)) {
+      throw error;
+    }
+
     // 如果 ripgrep 策略失败，降级到 glob npm
     if (strategy === GlobStrategy.RIPGREP_BUN) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       searchLogger.strategyFallback(GlobStrategy.RIPGREP_BUN, GlobStrategy.GLOB_NPM, errorMessage);
 
       files = await globWithNpmPackage(pattern, cwd, options);
-      return { files, strategy: `${GlobStrategy.GLOB_NPM} (fallback)` };
+      return {
+        files,
+        strategy: GlobStrategy.GLOB_NPM,
+        warning: `从 ${GlobStrategy.RIPGREP_BUN} 降级到 ${GlobStrategy.GLOB_NPM}: ${errorMessage}`,
+      };
     }
 
     // glob npm 策略失败，无法降级
@@ -98,4 +121,3 @@ export async function executeGlobStrategy(
 // 导出策略实现
 export { globWithNpmPackage } from './glob-npm.js';
 export { globWithRipgrepBun } from './ripgrep-bun.js';
-

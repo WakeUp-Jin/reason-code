@@ -10,48 +10,80 @@ import { GrepArgs, GrepResult, GREP_DEFAULTS } from './types.js';
 import { executeGrepStrategy } from './strategies/index.js';
 import { searchLogger } from '../../../utils/logUtils.js';
 import { InternalToolContext } from '../types.js';
+import { ensureReasonBinDir } from '../utils/reasonPaths.js';
+import { RIPGREP_AUTO_DOWNLOAD_ENABLED } from '../utils/ripgrepPolicy.js';
+import { isAbortError, toErrorMessage } from '../utils/error-utils.js';
 
 /**
  * Grep 执行器
  *
  * @param args - Grep 参数
  * @param context - 工具上下文
- * @returns Grep 结果
+ * @returns Grep 结果（统一结果接口）
  */
-export async function grepExecutor(args: GrepArgs, context?: InternalToolContext): Promise<GrepResult> {
+export async function grepExecutor(
+  args: GrepArgs,
+  context?: InternalToolContext
+): Promise<GrepResult> {
   const startTime = Date.now();
   const cwd = context?.cwd || process.cwd();
 
+  // Ripgrep 的本地缓存/下载目录策略：
+  // - true：允许自动下载时，提供 reason 的 binDir（不存在则创建），供 ripgrep.ts 使用/下载
+  // - false：不提供 binDir（undefined），ripgrep.ts 只会尝试系统 PATH，不会触发下载
+  const binDirForRipgrep = RIPGREP_AUTO_DOWNLOAD_ENABLED ? ensureReasonBinDir() : undefined;
+
   // 解析搜索路径
-  let searchPath = args.path ? resolve(cwd, args.path) : cwd;
+  const searchPath = args.path ? resolve(cwd, args.path) : cwd;
 
   // 检查目录是否存在
   if (!existsSync(searchPath)) {
-    throw new Error(`目录不存在: ${searchPath}`);
+    return {
+      success: false,
+      error: `目录不存在: ${searchPath}`,
+      data: null,
+    };
   }
 
-  // 执行搜索
-  const { matches, strategy } = await executeGrepStrategy(args.pattern, searchPath, {
-    include: args.include,
-    limit: GREP_DEFAULTS.LIMIT,
-    signal: context?.abortSignal,
-  });
+  try {
+    // 执行搜索
+    const { matches, strategy, warning } = await executeGrepStrategy(args.pattern, searchPath, {
+      include: args.include,
+      limit: GREP_DEFAULTS.LIMIT,
+      binDir: binDirForRipgrep,
+      signal: context?.abortSignal,
+    });
 
-  // 计算是否截断
-  const truncated = matches.length >= GREP_DEFAULTS.LIMIT;
+    // 计算是否截断
+    const truncated = matches.length >= GREP_DEFAULTS.LIMIT;
 
-  // 记录完成
-  const duration = Date.now() - startTime;
-  searchLogger.complete('Grep', strategy, matches.length, duration);
+    // 记录完成
+    const duration = Date.now() - startTime;
+    searchLogger.complete('Grep', strategy, matches.length, duration);
 
-  return {
-    pattern: args.pattern,
-    directory: searchPath,
-    matches,
-    count: matches.length,
-    truncated,
-    strategy,
-  };
+    return {
+      success: true,
+      warning,
+      data: {
+        pattern: args.pattern,
+        directory: searchPath,
+        matches,
+        count: matches.length,
+        truncated,
+        strategy,
+      },
+    };
+  } catch (error: unknown) {
+    if (!isAbortError(error)) {
+      searchLogger.error('Grep', toErrorMessage(error), ['executor']);
+    }
+
+    return {
+      success: false,
+      error: isAbortError(error) ? 'AbortError' : toErrorMessage(error),
+      data: null,
+    };
+  }
 }
 
 /**
@@ -63,12 +95,19 @@ export async function grepExecutor(args: GrepArgs, context?: InternalToolContext
 export function renderGrepResultForAssistant(result: GrepResult): string {
   const lines: string[] = [];
 
-  if (result.count === 0) {
+  // 失败时
+  if (!result.success) {
+    lines.push(`Error: ${result.error}`);
+    return lines.join('\n');
+  }
+
+  const data = result.data;
+  if (!data || data.count === 0) {
     lines.push('No matches found');
   } else {
     // 按文件分组输出
-    const byFile = new Map<string, typeof result.matches>();
-    for (const match of result.matches) {
+    const byFile = new Map<string, typeof data.matches>();
+    for (const match of data.matches) {
       const existing = byFile.get(match.filePath) || [];
       existing.push(match);
       byFile.set(match.filePath, existing);
@@ -82,9 +121,17 @@ export function renderGrepResultForAssistant(result: GrepResult): string {
       lines.push('');
     }
 
-    if (result.truncated) {
-      lines.push(`(Results are truncated at ${GREP_DEFAULTS.LIMIT} matches. Consider using a more specific pattern or path.)`);
+    if (data.truncated) {
+      lines.push(
+        `(Results are truncated at ${GREP_DEFAULTS.LIMIT} matches. Consider using a more specific pattern or path.)`
+      );
     }
+  }
+
+  // 警告信息
+  if (result.warning) {
+    lines.push('');
+    lines.push(`Warning: ${result.warning}`);
   }
 
   return lines.join('\n');
@@ -97,11 +144,17 @@ export function renderGrepResultForAssistant(result: GrepResult): string {
  * @returns 摘要字符串
  */
 export function getGrepSummary(result: GrepResult): string {
-  if (result.count === 0) {
+  // 失败时
+  if (!result.success) {
+    return `Failed: ${result.error}`;
+  }
+
+  const data = result.data;
+  if (!data || data.count === 0) {
     return 'No matches found';
   }
 
-  const truncatedNote = result.truncated ? ' (truncated)' : '';
-  return `Found ${result.count} match(es)${truncatedNote}`;
+  const truncatedNote = data.truncated ? ' (truncated)' : '';
+  const warningNote = result.warning ? ' ⚠️' : '';
+  return `Found ${data.count} match(es)${truncatedNote}${warningNote}`;
 }
-

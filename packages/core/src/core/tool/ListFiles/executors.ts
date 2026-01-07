@@ -5,14 +5,15 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { InternalTool } from '../types.js';
+import type { ToolResult } from '../types.js';
 
 export interface ListFilesArgs {
   /** 目录路径，默认为当前工作目录 */
   directory?: string;
 }
 
-export interface ListFilesResult {
+/** ListFiles 业务数据 */
+export interface ListFilesData {
   /** 目录路径 */
   directory: string;
   /** 文件列表 */
@@ -25,28 +26,51 @@ export interface ListFilesResult {
   totalCount: number;
 }
 
+/** ListFiles 结果（统一结果接口） */
+export type ListFilesResult = ToolResult<ListFilesData>;
 
 /**
  * 列出文件执行器
  * @param args - 列出文件参数
  * @param config - 配置
- * @returns - 列出文件结果
+ * @returns - 列出文件结果（统一结果接口）
  */
-export async function listFilesExecutor(args: ListFilesArgs, config: any): Promise<ListFilesResult> {
-    const cwd = config?.cwd || process.cwd();
-    const targetDir = args.directory ? path.resolve(cwd, args.directory) : cwd;
+export async function listFilesExecutor(
+  args: ListFilesArgs,
+  config: any
+): Promise<ListFilesResult> {
+  const cwd = config?.cwd || process.cwd();
+  const targetDir = args.directory ? path.resolve(cwd, args.directory) : cwd;
 
-    // 检查目录是否存在
-    if (!fs.existsSync(targetDir)) {
-      throw new Error(`目录不存在: ${targetDir}`);
-    }
+  // 检查目录是否存在
+  if (!fs.existsSync(targetDir)) {
+    return {
+      success: false,
+      error: `目录不存在: ${targetDir}`,
+      data: null,
+    };
+  }
 
-    // 检查是否是目录
+  // 检查是否是目录
+  try {
     const stats = fs.statSync(targetDir);
     if (!stats.isDirectory()) {
-      throw new Error(`路径不是目录: ${targetDir}`);
+      return {
+        success: false,
+        error: `路径不是目录: ${targetDir}`,
+        data: null,
+      };
     }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      error: errorMessage,
+      data: null,
+    };
+  }
 
+  try {
     // 读取目录内容
     const entries = fs.readdirSync(targetDir, { withFileTypes: true });
 
@@ -84,30 +108,49 @@ export async function listFilesExecutor(args: ListFilesArgs, config: any): Promi
       });
 
     return {
-      directory: targetDir,
-      files,
-      totalCount: files.length,
+      success: true,
+      data: {
+        directory: targetDir,
+        files,
+        totalCount: files.length,
+      },
     };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      error: errorMessage,
+      data: null,
+    };
+  }
 }
 
 /**
  * 格式化工具结果
  * @param result - 列表文件结果
- * @returns 
+ * @returns
  */
 export function renderResultForAssistant(result: ListFilesResult): string {
-    const lines = [`目录: ${result.directory}`, `共 ${result.totalCount} 个项目:`, ''];
-
-    for (const file of result.files) {
-      const icon = file.type === 'directory' ? '📁' : '📄';
-      const size = file.size !== undefined ? ` (${formatSize(file.size)})` : '';
-      lines.push(`${icon} ${file.name}${size}`);
-    }
-
-    return lines.join('\n');
+  // 失败时
+  if (!result.success) {
+    return `Error: ${result.error}`;
   }
 
+  const data = result.data;
+  if (!data) {
+    return 'No data';
+  }
 
+  const lines = [`目录: ${data.directory}`, `共 ${data.totalCount} 个项目:`, ''];
+
+  for (const file of data.files) {
+    const icon = file.type === 'directory' ? '📁' : '📄';
+    const size = file.size !== undefined ? ` (${formatSize(file.size)})` : '';
+    lines.push(`${icon} ${file.name}${size}`);
+  }
+
+  return lines.join('\n');
+}
 
 /**
  * 格式化文件大小

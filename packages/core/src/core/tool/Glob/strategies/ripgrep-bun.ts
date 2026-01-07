@@ -20,6 +20,7 @@ import { GlobFileItem, GlobStrategyOptions, GLOB_DEFAULTS } from '../types.js';
 import { Ripgrep } from '../../utils/ripgrep.js';
 import { isBun } from '../../utils/runtime.js';
 import { searchLogger } from '../../../../utils/logUtils.js';
+import { createAbortError } from '../../utils/error-utils.js';
 
 /**
  * 使用 ripgrep + stat 搜索文件
@@ -37,50 +38,41 @@ export async function globWithRipgrepBun(
   const limit = options?.limit ?? GLOB_DEFAULTS.LIMIT;
   const files: GlobFileItem[] = [];
 
-  try {
-    // 使用 ripgrep 快速列出文件
-    for await (const file of Ripgrep.files({
-      cwd,
-      glob: [pattern],
-      binDir: options?.binDir,
-    })) {
-      // 检查是否被取消
-      if (options?.signal?.aborted) {
-        throw new Error('AbortError');
-      }
-
-      if (files.length >= limit) {
-        break;
-      }
-
-      const fullPath = resolve(cwd, file);
-
-      // 获取文件元数据
-      const mtime = await getFileMtime(fullPath);
-
-      files.push({
-        path: fullPath,
-        mtime,
-      });
-    }
-
-    // 智能排序（24小时优先）
-    sortByRecentFirst(files);
-
-    return files;
-  } catch (error: unknown) {
-    // 如果是 AbortError，直接抛出
-    if (error instanceof Error && (error.name === 'AbortError' || error.message === 'AbortError')) {
-      const abortError = new Error('AbortError');
-      abortError.name = 'AbortError';
-      throw abortError;
-    }
-
-    // 其他错误记录并抛出
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    searchLogger.error('Glob', errorMessage, ['ripgrep-bun']);
-    throw error;
+  if (options?.signal?.aborted) {
+    throw createAbortError();
   }
+
+  // 使用 ripgrep 快速列出文件
+  for await (const file of Ripgrep.files({
+    cwd,
+    glob: [pattern],
+    binDir: options?.binDir,
+    signal: options?.signal,
+  })) {
+    // 检查是否被取消
+    if (options?.signal?.aborted) {
+      throw createAbortError();
+    }
+
+    if (files.length >= limit) {
+      break;
+    }
+
+    const fullPath = resolve(cwd, file);
+
+    // 获取文件元数据
+    const mtime = await getFileMtime(fullPath);
+
+    files.push({
+      path: fullPath,
+      mtime,
+    });
+  }
+
+  // 智能排序（24小时优先）
+  sortByRecentFirst(files);
+
+  return files;
 }
 
 /**
@@ -139,4 +131,3 @@ function sortByRecentFirst(files: GlobFileItem[]): void {
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error;
 }
-

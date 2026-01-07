@@ -16,6 +16,7 @@ import { join, resolve } from 'path';
 import { pipeline } from 'stream/promises';
 import { createGunzip } from 'zlib';
 import { Readable } from 'stream';
+import { createAbortError } from './error-utils.js';
 
 /**
  * 平台配置
@@ -68,6 +69,24 @@ function getRipgrepBinaryName(): string {
   return process.platform === 'win32' ? 'rg.exe' : 'rg';
 }
 
+function tryGetSystemRipgrepPath(): string | null {
+  try {
+    const output = execSync('which rg 2>/dev/null || where rg 2>nul', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+
+    const firstLine = output.split(/\r?\n/)[0]?.trim();
+    if (firstLine && existsSync(firstLine)) {
+      return firstLine;
+    }
+  } catch {
+    // ignore
+  }
+
+  return null;
+}
+
 /**
  * 懒加载状态
  */
@@ -90,48 +109,49 @@ export const Ripgrep = {
    * @returns ripgrep 路径
    */
   async filepath(binDir?: string): Promise<string> {
-    // 返回缓存结果
     if (_ripgrepPath) {
       return _ripgrepPath;
     }
 
-    // 防止并发初始化
     if (_initPromise) {
       return _initPromise;
     }
 
-    _initPromise = (async () => {
-      // 1. 检查系统 PATH
-      try {
-        const systemPath = execSync('which rg 2>/dev/null || where rg 2>nul', {
-          encoding: 'utf-8',
-          stdio: ['pipe', 'pipe', 'pipe'],
-        }).trim();
-
-        if (systemPath && existsSync(systemPath)) {
-          _ripgrepPath = systemPath;
-          return systemPath;
-        }
-      } catch {
-        // 系统没有 rg，继续检查本地
+    _initPromise = (async (): Promise<string> => {
+      // 1) 优先使用系统 PATH 中的 rg（用户已安装、无需下载）
+      const systemPath = tryGetSystemRipgrepPath();
+      if (systemPath) {
+        _ripgrepPath = systemPath; // 缓存：后续调用不再重复探测
+        return systemPath;
       }
 
-      // 2. 检查本地缓存
-      if (binDir) {
-        const localPath = join(binDir, getRipgrepBinaryName());
-        if (existsSync(localPath)) {
-          _ripgrepPath = localPath;
-          return localPath;
-        }
+      // 2) 系统没有 rg：如果未提供 binDir，就既不能用缓存也不能下载（直接失败）
+      if (!binDir) {
+        throw new Error('Ripgrep not available: no system rg and no binDir specified for download');
+      }
 
-        // 3. 下载 ripgrep
-        await downloadRipgrep(binDir);
-        _ripgrepPath = localPath;
+      // 3) 检查本地缓存：binDir 下是否已有 rg/rg.exe
+      const localPath = join(binDir, getRipgrepBinaryName());
+      if (existsSync(localPath)) {
+        _ripgrepPath = localPath; // 缓存：直接复用本地二进制
         return localPath;
       }
 
-      throw new Error('Ripgrep not available and no binDir specified for download');
-    })();
+      // 4) 本地也没有：下载到 binDir（只有调用方传入 binDir 时才会发生）
+      await downloadRipgrep(binDir);
+
+      // 5) 下载完成后做一次存在性校验，避免下载/解压失败导致返回错误路径
+      if (!existsSync(localPath)) {
+        throw new Error(`Ripgrep download completed but binary not found at ${localPath}`);
+      }
+
+      _ripgrepPath = localPath; // 缓存：以后都用这一份
+      return localPath;
+    })().catch((err) => {
+      // 6) 重要：初始化失败时清空 _initPromise，避免“失败 Promise 被永久缓存”导致无法重试
+      _initPromise = null;
+      throw err;
+    });
 
     return _initPromise;
   },
@@ -151,7 +171,12 @@ export const Ripgrep = {
     cwd: string;
     glob?: string[];
     binDir?: string;
+    signal?: AbortSignal;
   }): AsyncGenerator<string, void, unknown> {
+    if (input.signal?.aborted) {
+      throw createAbortError();
+    }
+
     const rgPath = await Ripgrep.filepath(input.binDir);
 
     const args = [
@@ -182,6 +207,13 @@ export const Ripgrep = {
       windowsHide: true,
     });
 
+    let aborted = false;
+    const onAbort = () => {
+      aborted = true;
+      proc.kill();
+    };
+    input.signal?.addEventListener('abort', onAbort, { once: true });
+
     // 流式读取输出
     let buffer = '';
 
@@ -205,6 +237,11 @@ export const Ripgrep = {
     // 等待进程结束
     await new Promise<void>((resolve, reject) => {
       proc.on('close', (code) => {
+        if (aborted) {
+          reject(createAbortError());
+          return;
+        }
+
         if (code === 0 || code === 1) {
           // code 1 表示没有匹配，也是正常的
           resolve();
@@ -212,7 +249,13 @@ export const Ripgrep = {
           reject(new Error(`ripgrep exited with code ${code}`));
         }
       });
-      proc.on('error', reject);
+      proc.on('error', (err) => {
+        if (aborted) {
+          reject(createAbortError());
+          return;
+        }
+        reject(err);
+      });
     });
   },
 
@@ -231,7 +274,12 @@ export const Ripgrep = {
     pattern: string;
     glob?: string;
     binDir?: string;
+    signal?: AbortSignal;
   }): Promise<string> {
+    if (input.signal?.aborted) {
+      throw createAbortError();
+    }
+
     const rgPath = await Ripgrep.filepath(input.binDir);
 
     const args = [
@@ -253,6 +301,14 @@ export const Ripgrep = {
         windowsHide: true,
       });
 
+      let aborted = false;
+      const onAbort = () => {
+        aborted = true;
+        proc.kill();
+        reject(createAbortError());
+      };
+      input.signal?.addEventListener('abort', onAbort, { once: true });
+
       let stdout = '';
       let stderr = '';
 
@@ -265,6 +321,10 @@ export const Ripgrep = {
       });
 
       proc.on('close', (code) => {
+        if (aborted) {
+          return;
+        }
+
         if (code === 0) {
           resolve(stdout);
         } else if (code === 1) {
@@ -275,7 +335,12 @@ export const Ripgrep = {
         }
       });
 
-      proc.on('error', reject);
+      proc.on('error', (err) => {
+        if (aborted) {
+          return;
+        }
+        reject(err);
+      });
     });
   },
 
@@ -434,4 +499,3 @@ async function extractZip(archivePath: string, targetDir: string): Promise<void>
 }
 
 export default Ripgrep;
-

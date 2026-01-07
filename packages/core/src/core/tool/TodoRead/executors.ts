@@ -23,12 +23,17 @@ export async function todoReadExecutor(
     (t) => t.status !== 'completed' && t.status !== 'cancelled'
   ).length;
 
+  const message =
+    todos.length === 0
+      ? '待办事项列表为空。'
+      : `当前待办事项列表（剩余 ${pendingCount} 个任务）：\n${formattedList}`;
+
   return {
-    todos,
-    message:
-      todos.length === 0
-        ? '待办事项列表为空。'
-        : `当前待办事项列表（剩余 ${pendingCount} 个任务）：\n${formattedList}`,
+    success: true,
+    data: {
+      todos,
+      message,
+    },
   };
 }
 
@@ -36,5 +41,8 @@ export async function todoReadExecutor(
  * TodoRead 结果格式化（给 AI 看）
  */
 export function renderTodoReadResultForAssistant(result: TodoReadResult): string {
-  return result.message;
+  if (!result.success) {
+    return `错误: ${result.error}`;
+  }
+  return result.data?.message || '';
 }

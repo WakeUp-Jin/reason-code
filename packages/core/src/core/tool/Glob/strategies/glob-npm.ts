@@ -29,53 +29,41 @@ export async function globWithNpmPackage(
 ): Promise<GlobFileItem[]> {
   const limit = options?.limit ?? GLOB_DEFAULTS.LIMIT;
 
-  try {
-    // 使用 glob 包，一次性获取路径和元数据
-    const results = await glob(pattern, {
-      cwd,
-      withFileTypes: true,
-      stat: true,
-      nodir: true,
-      follow: false, // ⚠️ 不跟随符号链接（安全）
-      ignore: GLOB_DEFAULTS.EXCLUDE_DIRS.map((dir) => `**/${dir}/**`),
-      signal: options?.signal,
-    });
+  // 使用 glob 包，一次性获取路径和元数据
+  const results = await glob(pattern, {
+    cwd,
+    withFileTypes: true,
+    stat: true,
+    nodir: true,
+    follow: false, // ⚠️ 不跟随符号链接（安全）
+    ignore: GLOB_DEFAULTS.EXCLUDE_DIRS.map((dir) => `**/${dir}/**`),
+    signal: options?.signal,
+  });
 
-    // 转换为统一格式
-    const files: GlobFileItem[] = [];
-    for (const entry of results) {
-      if (files.length >= limit) {
-        break;
-      }
-
-      try {
-        files.push({
-          path: entry.fullpath(),
-          mtime: entry.mtimeMs ?? 0,
-        });
-      } catch (error: unknown) {
-        // 错误抑制：记录但继续处理
-        const errorCode = isNodeError(error) ? error.code || 'UNKNOWN' : 'UNKNOWN';
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        searchLogger.suppressed('glob-npm', entry.fullpath(), errorCode, errorMessage);
-      }
+  // 转换为统一格式
+  const files: GlobFileItem[] = [];
+  for (const entry of results) {
+    if (files.length >= limit) {
+      break;
     }
 
-    // 智能排序（24小时优先）
-    sortByRecentFirst(files);
-
-    return files;
-  } catch (error: unknown) {
-    // 如果是 AbortError，直接抛出
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw error;
+    try {
+      files.push({
+        path: entry.fullpath(),
+        mtime: entry.mtimeMs ?? 0,
+      });
+    } catch (error: unknown) {
+      // 错误抑制：记录但继续处理
+      const errorCode = isNodeError(error) ? error.code || 'UNKNOWN' : 'UNKNOWN';
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      searchLogger.suppressed('glob-npm', entry.fullpath(), errorCode, errorMessage);
     }
-
-    // 其他错误记录并抛出
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    searchLogger.error('Glob', errorMessage, ['glob-npm']);
-    throw error;
   }
+
+  // 智能排序（24小时优先）
+  sortByRecentFirst(files);
+
+  return files;
 }
 
 /**
@@ -105,4 +93,3 @@ function sortByRecentFirst(files: GlobFileItem[]): void {
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error;
 }
-

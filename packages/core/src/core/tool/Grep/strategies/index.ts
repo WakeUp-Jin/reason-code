@@ -26,6 +26,7 @@ import { grepWithRipgrep } from './ripgrep.js';
 import { grepWithGit } from './git-grep.js';
 import { grepWithSystemGrep } from './system-grep.js';
 import { grepWithJavaScript } from './javascript.js';
+import { isAbortError } from '../../utils/error-utils.js';
 
 /**
  * 策略执行器映射
@@ -44,7 +45,10 @@ const STRATEGY_EXECUTORS = {
  * @param binDir - 本地二进制缓存目录
  * @returns 可用策略列表
  */
-export async function getAvailableStrategies(cwd: string, binDir?: string): Promise<GrepStrategy[]> {
+export async function getAvailableStrategies(
+  cwd: string,
+  binDir?: string
+): Promise<GrepStrategy[]> {
   const strategies: GrepStrategy[] = [];
 
   // 检测各工具可用性
@@ -55,7 +59,8 @@ export async function getAvailableStrategies(cwd: string, binDir?: string): Prom
   ]);
 
   // 按优先级添加策略
-  if (hasRipgrep) {
+  // 如果传入了 binDir，则视为“允许使用本地缓存/尝试自动下载”，即使当前不存在 rg 也会尝试 ripgrep 策略。
+  if (hasRipgrep || binDir) {
     strategies.push(GrepStrategy.RIPGREP);
   }
   if (hasGitGrep) {
@@ -84,6 +89,18 @@ export async function selectGrepStrategy(cwd: string, binDir?: string): Promise<
 }
 
 /**
+ * 策略执行结果
+ */
+export interface GrepStrategyResult {
+  /** 匹配结果 */
+  matches: GrepMatch[];
+  /** 使用的策略 */
+  strategy: string;
+  /** 警告信息（如降级） */
+  warning?: string;
+}
+
+/**
  * 执行 Grep 搜索
  *
  * 自动选择最优策略并执行。
@@ -92,16 +109,17 @@ export async function selectGrepStrategy(cwd: string, binDir?: string): Promise<
  * @param pattern - 正则表达式模式
  * @param cwd - 工作目录
  * @param options - 选项
- * @returns 匹配结果和使用的策略
+ * @returns 匹配结果、使用的策略和可能的警告
  */
 export async function executeGrepStrategy(
   pattern: string,
   cwd: string,
   options?: GrepStrategyOptions
-): Promise<{ matches: GrepMatch[]; strategy: string }> {
+): Promise<GrepStrategyResult> {
   const runtime = getRuntimeName();
   const strategies = await getAvailableStrategies(cwd, options?.binDir);
   const triedStrategies: string[] = [];
+  const fallbackReasons: string[] = [];
 
   for (let i = 0; i < strategies.length; i++) {
     const strategy = strategies[i];
@@ -115,24 +133,31 @@ export async function executeGrepStrategy(
     try {
       const executor = STRATEGY_EXECUTORS[strategy];
       const matches = await executor(pattern, cwd, options);
+
+      // 如果发生了降级，返回警告信息
+      if (i > 0) {
+        const warning = `从 ${triedStrategies[0]} 降级到 ${strategy}: ${fallbackReasons.join(' -> ')}`;
+        return { matches, strategy, warning };
+      }
+
       return { matches, strategy };
     } catch (error: unknown) {
       // 如果是 AbortError，直接抛出
-      if (error instanceof Error && (error.name === 'AbortError' || error.message === 'AbortError')) {
+      if (isAbortError(error)) {
         throw error;
       }
+
+      const errorMessage = error instanceof Error ? error.message : String(error);
 
       // 如果还有下一个策略，降级
       if (i < strategies.length - 1) {
         const nextStrategy = strategies[i + 1];
-        const errorMessage = error instanceof Error ? error.message : String(error);
         searchLogger.strategyFallback(strategy, nextStrategy, errorMessage);
+        fallbackReasons.push(errorMessage);
         continue;
       }
 
       // 所有策略都失败了
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      searchLogger.error('Grep', errorMessage, triedStrategies);
       throw error;
     }
   }
@@ -146,4 +171,3 @@ export { grepWithRipgrep } from './ripgrep.js';
 export { grepWithGit } from './git-grep.js';
 export { grepWithSystemGrep } from './system-grep.js';
 export { grepWithJavaScript } from './javascript.js';
-

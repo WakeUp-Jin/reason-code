@@ -16,6 +16,7 @@
 import { spawn } from 'child_process';
 import { GrepMatch, GrepStrategyOptions, GREP_DEFAULTS } from '../types.js';
 import { searchLogger } from '../../../../utils/logUtils.js';
+import { createAbortError } from '../../utils/error-utils.js';
 
 /**
  * 使用系统 grep 搜索文件内容
@@ -58,6 +59,7 @@ export async function grepWithSystemGrep(
       windowsHide: true,
     });
 
+    let aborted = false;
     let stdout = '';
     const stderrChunks: string[] = [];
 
@@ -91,6 +93,10 @@ export async function grepWithSystemGrep(
     });
 
     proc.on('close', (code) => {
+      if (aborted) {
+        return;
+      }
+
       if (code === 0) {
         const matches = parseSystemGrepOutput(stdout);
         const limit = options?.limit ?? GREP_DEFAULTS.LIMIT;
@@ -101,7 +107,6 @@ export async function grepWithSystemGrep(
       } else {
         const stderr = stderrChunks.join('').trim();
         if (stderr) {
-          searchLogger.error('Grep', stderr, ['system-grep']);
           reject(new Error(stderr));
         } else {
           // 退出码 > 1 但没有 stderr，可能是被抑制的错误
@@ -111,16 +116,23 @@ export async function grepWithSystemGrep(
     });
 
     proc.on('error', (error) => {
-      searchLogger.error('Grep', error.message, ['system-grep']);
+      if (aborted) {
+        return;
+      }
       reject(error);
     });
 
     // 超时处理
     if (options?.signal) {
-      options.signal.addEventListener('abort', () => {
-        proc.kill();
-        reject(new Error('AbortError'));
-      });
+      options.signal.addEventListener(
+        'abort',
+        () => {
+          aborted = true;
+          proc.kill();
+          reject(createAbortError());
+        },
+        { once: true }
+      );
     }
   });
 }
@@ -168,4 +180,3 @@ function parseSystemGrepOutput(output: string): GrepMatch[] {
 
   return matches;
 }
-

@@ -18,6 +18,7 @@ import { join, relative } from 'path';
 import { glob } from 'glob';
 import { GrepMatch, GrepStrategyOptions, GREP_DEFAULTS } from '../types.js';
 import { searchLogger } from '../../../../utils/logUtils.js';
+import { createAbortError } from '../../utils/error-utils.js';
 
 /**
  * 使用 JavaScript 搜索文件内容
@@ -34,6 +35,10 @@ export async function grepWithJavaScript(
 ): Promise<GrepMatch[]> {
   const globPattern = options?.include ?? '**/*';
   const limit = options?.limit ?? GREP_DEFAULTS.LIMIT;
+
+  if (options?.signal?.aborted) {
+    throw createAbortError();
+  }
 
   // 创建正则表达式
   let regex: RegExp;
@@ -59,7 +64,7 @@ export async function grepWithJavaScript(
   for (const filePath of files) {
     // 检查是否被取消
     if (options?.signal?.aborted) {
-      throw new Error('AbortError');
+      throw createAbortError();
     }
 
     // 检查是否达到限制

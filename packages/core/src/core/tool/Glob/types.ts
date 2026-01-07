@@ -2,6 +2,8 @@
  * Glob Tool Type Definitions
  */
 
+import type { ToolResult } from '../types.js';
+
 /**
  * Glob Strategy Enum
  */
@@ -33,9 +35,9 @@ export interface GlobFileItem {
 }
 
 /**
- * Glob Tool Result
+ * Glob 业务数据
  */
-export interface GlobResult {
+export interface GlobData {
   /** Search directory */
   directory: string;
   /** File list */
@@ -47,6 +49,11 @@ export interface GlobResult {
   /** Strategy used */
   strategy: string;
 }
+
+/**
+ * Glob Tool Result (统一结果接口)
+ */
+export type GlobResult = ToolResult<GlobData>;
 
 /**
  * Glob Strategy Executor Function Type

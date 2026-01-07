@@ -28,6 +28,7 @@ import type {
   ExecutionStreamManager,
   ExecutionEventHandler,
   TodoItem,
+  ConfirmDetails,
 } from '@reason-cli/core';
 import { logger } from '../util/logger.js';
 import { eventLogger } from '../util/logUtils.js';
@@ -53,11 +54,9 @@ interface ExecutionStateContextValue {
 
   // 等待确认状态（用于暂停 StatusIndicator 定时器）
   isPendingConfirm: boolean;
-  setIsPendingConfirm: (value: boolean) => void;
 
   // 确认中的工具信息（用于 Session 显示工具标题）
   pendingToolInfo: PendingToolInfo | null;
-  setPendingToolInfo: (info: PendingToolInfo | null) => void;
 
   // TODO 列表状态
   todos: TodoItem[];
@@ -92,10 +91,22 @@ interface ExecutionProviderProps {
   children: ReactNode;
 }
 
+function getParamsSummary(details: ConfirmDetails): string | undefined {
+  switch (details.type) {
+    case 'info':
+      return details.fileName;
+    case 'edit':
+      return details.filePath;
+    case 'exec':
+      return details.command;
+    default:
+      return undefined;
+  }
+}
+
 export function ExecutionProvider({ children }: ExecutionProviderProps) {
   // State 相关状态（低频更新）
   const [showThinking, setShowThinking] = useState(false);
-  const [isPendingConfirm, setIsPendingConfirm] = useState(false);
   const [pendingToolInfo, setPendingToolInfo] = useState<PendingToolInfo | null>(null);
   const managerRef = useRef<ExecutionStreamManager | null>(null);
   const handlersRef = useRef<Set<ExecutionEventHandler>>(new Set());
@@ -122,6 +133,10 @@ export function ExecutionProvider({ children }: ExecutionProviderProps) {
     // 只在值真正变化时才 setState，避免不必要的渲染
     setIsExecuting((prev) => (prev !== newIsExecuting ? newIsExecuting : prev));
   }, [snapshot?.state]); // ← 只依赖 state 字段！
+
+  // ✅ 方案 A：以 Core snapshot.state 作为“等待确认”的唯一真相源
+  // 只会在 state 变化时变化（低频），不会随 snapshot 其他字段的高频更新而波动
+  const isPendingConfirm = snapshot?.state === 'waiting_confirm';
 
   // 切换思考展示
   const toggleThinking = useCallback(() => {
@@ -152,10 +167,32 @@ export function ExecutionProvider({ children }: ExecutionProviderProps) {
       if (event.type === 'execution:start') {
         setSnapshot(null);
         setShowThinking(false);
+        setPendingToolInfo(null);
+      }
+
+      // 等待确认：由 Core 事件驱动 pendingToolInfo（用于 UI 展示）
+      if (event.type === 'tool:awaiting_approval') {
+        setPendingToolInfo({
+          toolName: event.toolName,
+          paramsSummary: getParamsSummary(event.confirmDetails),
+        });
+      }
+
+      // 离开等待确认：清理 pendingToolInfo（确认通过/取消/失败/完成）
+      if (
+        event.type === 'tool:executing' ||
+        event.type === 'tool:complete' ||
+        event.type === 'tool:error' ||
+        event.type === 'tool:cancelled' ||
+        event.type === 'execution:complete' ||
+        event.type === 'execution:error' ||
+        event.type === 'execution:cancel'
+      ) {
+        setPendingToolInfo(null);
       }
 
       // 更新快照（高频）
-      setSnapshot(snapshot);
+      setSnapshot(manager.getSnapshot());
 
       // 转发给外部订阅者
       handlersRef.current.forEach((handler) => handler(event));
@@ -181,9 +218,7 @@ export function ExecutionProvider({ children }: ExecutionProviderProps) {
       subscribe,
       bindManager,
       isPendingConfirm,
-      setIsPendingConfirm,
       pendingToolInfo,
-      setPendingToolInfo,
       todos,
       setTodos,
       showTodos,

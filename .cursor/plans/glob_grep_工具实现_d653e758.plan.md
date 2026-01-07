@@ -412,6 +412,3 @@ try {
 需要安装的 npm 包:
 
 - `glob`: 文件名模式匹配 (已有或需安装)
-- `@zip.js/zip.js`: ZIP 解压 (ripgrep Windows 版本)
-
-## 关键文件参考

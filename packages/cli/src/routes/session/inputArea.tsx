@@ -4,7 +4,6 @@ import type { ConfirmDetails, ConfirmOutcome } from '@reason-cli/core';
 import { Prompt } from '../../component/prompt';
 import { useStore, useAppStore } from '../../context/store';
 import { useCurrentSession } from '../../context/store';
-import { useExecutionState } from '../../context/execution.js';
 import { commandRegistry, CommandPanel } from '../../component/command/index.js';
 import { PanelToolConfirm } from '../../component/panel/panel-tool-confirm.js';
 import { logger } from '../../util/logger.js';
@@ -20,20 +19,6 @@ interface ToolConfirmRequest {
   resolve: (outcome: ConfirmOutcome) => void;
 }
 
-/** 从 details 中提取参数摘要 */
-function getParamsSummary(details: ConfirmDetails): string | undefined {
-  switch (details.type) {
-    case 'info':
-      return details.fileName;  // Write: 文件名
-    case 'edit':
-      return details.filePath;  // Edit: 文件路径
-    case 'exec':
-      return details.command;   // Bash: 命令
-    default:
-      return undefined;
-  }
-}
-
 export interface InputAreaProps {
   onCommandPanelChange?: (isVisible: boolean) => void;
 }
@@ -46,27 +31,12 @@ export function InputArea({ onCommandPanelChange }: InputAreaProps) {
   const currentModel = useAppStore((state) => state.currentModel);
   const models = useAppStore((state) => state.models);
   const { saveCurrentSession } = usePersistence();
-  const { setIsPendingConfirm, setPendingToolInfo } = useExecutionState();
 
   // Agent Hook
   const { isLoading, error, sendMessage } = useAgent();
 
   // 工具确认状态（内部管理）
   const [pendingConfirm, setPendingConfirm] = useState<ToolConfirmRequest | null>(null);
-
-  // 同步 pendingConfirm 状态到 ExecutionContext（用于暂停 StatusIndicator 定时器 + Session 显示工具标题）
-  useEffect(() => {
-    setIsPendingConfirm(pendingConfirm !== null);
-    if (pendingConfirm) {
-      const paramsSummary = getParamsSummary(pendingConfirm.details);
-      setPendingToolInfo({
-        toolName: pendingConfirm.toolName,
-        paramsSummary,
-      });
-    } else {
-      setPendingToolInfo(null);
-    }
-  }, [pendingConfirm, setIsPendingConfirm, setPendingToolInfo]);
 
   // 命令面板状态
   const [commandPanelState, setCommandPanelState] = useState<{

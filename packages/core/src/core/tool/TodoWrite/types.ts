@@ -2,6 +2,8 @@
  * TodoWrite 工具类型定义
  */
 
+import type { ToolResult } from '../types.js';
+
 /**
  * TODO 任务状态
  */
@@ -30,16 +32,19 @@ export interface TodoWriteArgs {
 }
 
 /**
- * TodoWrite 工具返回结果
+ * TodoWrite 业务数据
  */
-export interface TodoWriteResult {
-  /** 操作是否成功 */
-  success: boolean;
+export interface TodoWriteData {
   /** 当前 TODO 列表 */
   todos: TodoItem[];
   /** 给 LLM 看的文本格式 */
   message: string;
 }
+
+/**
+ * TodoWrite 工具返回结果（统一结果接口）
+ */
+export type TodoWriteResult = ToolResult<TodoWriteData>;
 
 /**
  * Unicode 图标定义（CLI 显示用）

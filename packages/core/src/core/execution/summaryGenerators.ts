@@ -4,6 +4,17 @@
  */
 
 import type { SummaryGeneratorRegistry } from './types.js';
+import type { ToolResult } from '../tool/types.js';
+
+/**
+ * 生成警告后缀
+ */
+function getWarningSuffix(result: ToolResult<any>): string {
+  if (result.warning) {
+    return ` ⚠️ ${result.warning}`;
+  }
+  return '';
+}
 
 /**
  * 内置的摘要生成器
@@ -11,76 +22,116 @@ import type { SummaryGeneratorRegistry } from './types.js';
 export const defaultSummaryGenerators: SummaryGeneratorRegistry = {
   // 读取文件
   ReadFile: (_, params, result) => {
-    // 优先使用 lineCount，回退到 lines，最后计算 content 行数
-    const lines =
-      result?.lineCount ??
-      result?.lines ??
-      (result?.content ? result.content.split('\n').length : 0);
-    const filePath = params.file_path || params.path || params.filePath || 'file';
-    return `Read ${lines} lines from ${filePath}`;
+    if (!result.success) {
+      return `Failed: ${result.error}`;
+    }
+    const data = result.data;
+    const lines = data?.lineCount ?? 0;
+    const filePath = data?.filePath || params.file_path || params.path || params.filePath || 'file';
+    return `Read ${lines} lines from ${filePath}${getWarningSuffix(result)}`;
   },
 
   Read: (_, params, result) => {
-    // 优先使用 lineCount，回退到 lines，最后计算 content 行数
-    const lines =
-      result?.lineCount ??
-      result?.lines ??
-      (result?.content ? result.content.split('\n').length : 0);
-    const filePath = params.file_path || params.path || params.filePath || 'file';
-    return `Read ${lines} lines from ${filePath}`;
+    if (!result.success) {
+      return `Failed: ${result.error}`;
+    }
+    const data = result.data;
+    const lines = data?.lineCount ?? 0;
+    const filePath = data?.filePath || params.file_path || params.path || params.filePath || 'file';
+    return `Read ${lines} lines from ${filePath}${getWarningSuffix(result)}`;
   },
 
   // Glob 搜索
   Glob: (_, params, result) => {
-    const count = Array.isArray(result) ? result.length : 0;
-    return `Found ${count} files matching ${params.pattern}`;
+    if (!result.success) {
+      return `Failed: ${result.error}`;
+    }
+    const count = result.data?.count ?? 0;
+    return `Found ${count} files matching ${params.pattern}${getWarningSuffix(result)}`;
   },
 
   // Grep 搜索
   Grep: (_, params, result) => {
-    const matches = result?.matches || result?.length || 0;
-    return `Found ${matches} matches for "${params.pattern}"`;
+    if (!result.success) {
+      return `Failed: ${result.error}`;
+    }
+    const count = result.data?.count ?? 0;
+    return `Found ${count} matches for "${params.pattern}"${getWarningSuffix(result)}`;
   },
 
   // Bash 命令
-  Bash: (_, params, result) => {
-    const exitCode = result?.exitCode ?? 0;
+  Bash: (_, _params, result) => {
+    if (!result.success) {
+      return `Command failed: ${result.error}`;
+    }
+    const exitCode = result.data?.exitCode ?? 0;
     const status = exitCode === 0 ? 'completed' : `failed (exit ${exitCode})`;
-    return `Command ${status}`;
+    return `Command ${status}${getWarningSuffix(result)}`;
   },
 
   // 写入文件
-  WriteFile: (_, params) => {
-    const filePath = params.file_path || params.path || params.filePath || 'file';
-    return `Wrote to ${filePath}`;
+  WriteFile: (_, params, result) => {
+    if (!result.success) {
+      return `Failed: ${result.error}`;
+    }
+    const filePath =
+      result.data?.filePath || params.file_path || params.path || params.filePath || 'file';
+    return `Wrote to ${filePath}${getWarningSuffix(result)}`;
   },
 
-  Write: (_, params) => {
-    const filePath = params.file_path || params.path || params.filePath || 'file';
-    return `Wrote to ${filePath}`;
+  Write: (_, params, result) => {
+    if (!result.success) {
+      return `Failed: ${result.error}`;
+    }
+    const filePath =
+      result.data?.filePath || params.file_path || params.path || params.filePath || 'file';
+    return `Wrote to ${filePath}${getWarningSuffix(result)}`;
   },
 
   // 编辑文件
-  Edit: (_, params) => {
-    const filePath = params.file_path || params.path || params.filePath || 'file';
-    return `Edited ${filePath}`;
+  Edit: (_, params, result) => {
+    if (!result.success) {
+      return `Failed: ${result.error}`;
+    }
+    const filePath =
+      result.data?.filePath || params.file_path || params.path || params.filePath || 'file';
+    return `Edited ${filePath}${getWarningSuffix(result)}`;
   },
 
   // 列出文件
   ListFiles: (_, params, result) => {
-    // 支持对象形式 {totalCount, files} 和数组形式
-    const count =
-      result?.totalCount ??
-      result?.files?.length ??
-      (Array.isArray(result) ? result.length : 0);
-    const dirPath = params.path || params.directory || '.';
-    return `Listed ${count} items in ${dirPath}`;
+    if (!result.success) {
+      return `Failed: ${result.error}`;
+    }
+    const count = result.data?.totalCount ?? result.data?.files?.length ?? 0;
+    const dirPath = result.data?.directory || params.path || params.directory || '.';
+    return `Listed ${count} items in ${dirPath}${getWarningSuffix(result)}`;
+  },
+
+  // TodoRead
+  TodoRead: (_, _params, result) => {
+    if (!result.success) {
+      return `Failed: ${result.error}`;
+    }
+    const count = result.data?.todos?.length ?? 0;
+    return `Read ${count} todos${getWarningSuffix(result)}`;
+  },
+
+  // TodoWrite
+  TodoWrite: (_, _params, result) => {
+    if (!result.success) {
+      return `Failed: ${result.error}`;
+    }
+    const count = result.data?.todos?.length ?? 0;
+    return `Updated ${count} todos${getWarningSuffix(result)}`;
   },
 
   // 默认
   default: (toolName, _, result) => {
-    if (result?.success === false) return `${toolName} failed`;
-    return `${toolName} completed`;
+    if (!result.success) {
+      return `${toolName} failed: ${result.error}`;
+    }
+    return `${toolName} completed${getWarningSuffix(result)}`;
   },
 };
 
@@ -101,10 +152,7 @@ export function generateSummary(
 /**
  * 生成参数摘要
  */
-export function generateParamsSummary(
-  toolName: string,
-  params: Record<string, any>
-): string {
+export function generateParamsSummary(toolName: string, params: Record<string, any>): string {
   // 根据工具类型提取主要参数
   switch (toolName) {
     case 'Read':
@@ -129,13 +177,9 @@ export function generateParamsSummary(
 
     default:
       // 尝试找到第一个字符串参数
-      const firstString = Object.values(params).find(
-        v => typeof v === 'string'
-      );
+      const firstString = Object.values(params).find((v) => typeof v === 'string');
       if (firstString && typeof firstString === 'string') {
-        return firstString.length > 30
-          ? firstString.slice(0, 30) + '...'
-          : firstString;
+        return firstString.length > 30 ? firstString.slice(0, 30) + '...' : firstString;
       }
       return '';
   }

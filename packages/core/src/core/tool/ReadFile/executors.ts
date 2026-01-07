@@ -5,6 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import type { ToolResult } from '../types.js';
 
 /** 默认文件大小限制（字符数） */
 const DEFAULT_MAX_FILE_SIZE = 100_000;
@@ -20,7 +21,8 @@ export interface ReadFileArgs {
   limit?: number;
 }
 
-export interface ReadFileResult {
+/** ReadFile 业务数据 */
+export interface ReadFileData {
   /** 文件路径 */
   filePath: string;
   /** 文件内容 */
@@ -40,11 +42,14 @@ export interface ReadFileResult {
   isTruncated: boolean;
 }
 
+/** ReadFile 结果（统一结果接口） */
+export type ReadFileResult = ToolResult<ReadFileData>;
+
 /**
  * 读取文件执行器
  * @param args - 读取文件参数
  * @param context - 上下文配置
- * @returns - 读取文件结果
+ * @returns - 读取文件结果（统一结果接口）
  */
 export async function readFileExecutor(args: ReadFileArgs, context: any): Promise<ReadFileResult> {
   const cwd = context?.cwd || process.cwd();
@@ -52,58 +57,78 @@ export async function readFileExecutor(args: ReadFileArgs, context: any): Promis
   const encoding = args.encoding || 'utf-8';
   const maxFileSize = context?.maxFileSize ?? DEFAULT_MAX_FILE_SIZE;
 
-  //延时10秒
-  // await new Promise((resolve) => setTimeout(resolve, 10000));
-
   // 检查文件是否存在
   if (!fs.existsSync(targetPath)) {
-    throw new Error(`文件不存在: ${targetPath}`);
+    return {
+      success: false,
+      error: `文件不存在: ${targetPath}`,
+      data: null,
+    };
   }
 
-  // 检查是否是文件
-  const stats = fs.statSync(targetPath);
-  if (!stats.isFile()) {
-    throw new Error(`路径不是文件: ${targetPath}`);
+  try {
+    // 检查是否是文件
+    const stats = fs.statSync(targetPath);
+    if (!stats.isFile()) {
+      return {
+        success: false,
+        error: `路径不是文件: ${targetPath}`,
+        data: null,
+      };
+    }
+
+    // 读取文件内容
+    const fullContent = fs.readFileSync(targetPath, encoding);
+    const allLines = fullContent.split('\n');
+    const totalLines = allLines.length;
+
+    // 处理分页读取
+    const offset = args.offset ?? 0;
+    const limit = args.limit ?? totalLines;
+
+    // 计算实际读取范围
+    const startLine = Math.max(0, Math.min(offset, totalLines - 1));
+    const endLine = Math.min(startLine + limit, totalLines);
+    const selectedLines = allLines.slice(startLine, endLine);
+
+    let content = selectedLines.join('\n');
+    let isTruncated = false;
+    let warning: string | undefined;
+
+    // 检查内容是否超过阈值，需要截断
+    if (content.length > maxFileSize) {
+      isTruncated = true;
+      // 保留头尾
+      const halfSize = Math.floor(maxFileSize / 2) - 100;
+      const head = content.slice(0, halfSize);
+      const tail = content.slice(-halfSize);
+      const omittedChars = content.length - halfSize * 2;
+      content = `${head}\n\n... [内容已截断，省略 ${omittedChars} 字符] ...\n\n${tail}`;
+      warning = `内容已截断，省略 ${omittedChars} 字符`;
+    }
+
+    return {
+      success: true,
+      warning,
+      data: {
+        filePath: targetPath,
+        content,
+        size: stats.size,
+        lineCount: selectedLines.length,
+        totalLines,
+        readRange:
+          offset !== 0 || limit !== totalLines ? { start: startLine, end: endLine } : undefined,
+        isTruncated,
+      },
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      error: errorMessage,
+      data: null,
+    };
   }
-
-  // 读取文件内容
-  const fullContent = fs.readFileSync(targetPath, encoding);
-  const allLines = fullContent.split('\n');
-  const totalLines = allLines.length;
-
-  // 处理分页读取
-  const offset = args.offset ?? 0;
-  const limit = args.limit ?? totalLines;
-
-  // 计算实际读取范围
-  const startLine = Math.max(0, Math.min(offset, totalLines - 1));
-  const endLine = Math.min(startLine + limit, totalLines);
-  const selectedLines = allLines.slice(startLine, endLine);
-
-  let content = selectedLines.join('\n');
-  let isTruncated = false;
-
-  // 检查内容是否超过阈值，需要截断
-  if (content.length > maxFileSize) {
-    isTruncated = true;
-    // 保留头尾
-    const halfSize = Math.floor(maxFileSize / 2) - 100;
-    const head = content.slice(0, halfSize);
-    const tail = content.slice(-halfSize);
-    const omittedChars = content.length - halfSize * 2;
-    content = `${head}\n\n... [内容已截断，省略 ${omittedChars} 字符] ...\n\n${tail}`;
-  }
-
-  return {
-    filePath: targetPath,
-    content,
-    size: stats.size,
-    lineCount: selectedLines.length,
-    totalLines,
-    readRange:
-      offset !== 0 || limit !== totalLines ? { start: startLine, end: endLine } : undefined,
-    isTruncated,
-  };
 }
 
 /**
@@ -112,25 +137,40 @@ export async function readFileExecutor(args: ReadFileArgs, context: any): Promis
  * @returns - 格式化后的字符串
  */
 export function renderResultForAssistant(result: ReadFileResult): string {
-  const lines = [
-    `文件: ${result.filePath}`,
-    `大小: ${formatSize(result.size)}`,
-    `总行数: ${result.totalLines}`,
-  ];
-
-  if (result.readRange) {
-    lines.push(
-      `读取范围: 第 ${result.readRange.start + 1} - ${result.readRange.end} 行 (共 ${result.lineCount} 行)`
-    );
-  } else {
-    lines.push(`读取行数: ${result.lineCount}`);
+  // 失败时
+  if (!result.success) {
+    return `Error: ${result.error}`;
   }
 
-  if (result.isTruncated) {
+  const data = result.data;
+  if (!data) {
+    return 'No data';
+  }
+
+  const lines = [
+    `文件: ${data.filePath}`,
+    `大小: ${formatSize(data.size)}`,
+    `总行数: ${data.totalLines}`,
+  ];
+
+  if (data.readRange) {
+    lines.push(
+      `读取范围: 第 ${data.readRange.start + 1} - ${data.readRange.end} 行 (共 ${data.lineCount} 行)`
+    );
+  } else {
+    lines.push(`读取行数: ${data.lineCount}`);
+  }
+
+  if (data.isTruncated) {
     lines.push('⚠️ 内容已截断（超过大小限制）');
   }
 
-  lines.push('', '--- 内容 ---', result.content);
+  // 警告信息
+  if (result.warning) {
+    lines.push(`⚠️ ${result.warning}`);
+  }
+
+  lines.push('', '--- 内容 ---', data.content);
 
   return lines.join('\n');
 }

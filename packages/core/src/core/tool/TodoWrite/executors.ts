@@ -52,10 +52,15 @@ export async function todoWriteExecutor(
   // 验证 TODO 列表
   const validation = validateTodos(todos);
   if (!validation.valid) {
+    const currentTodos = getTodos(sessionId);
+    const formattedList = formatTodosForLLM(currentTodos);
     return {
       success: false,
-      todos: getTodos(sessionId),
-      message: `错误：${validation.error}`,
+      error: validation.error,
+      data: {
+        todos: currentTodos,
+        message: `错误：${validation.error}\n\n当前列表：\n${formattedList}`,
+      },
     };
   }
 
@@ -87,8 +92,10 @@ export async function todoWriteExecutor(
 
   return {
     success: true,
-    todos: finalTodos,
-    message: `已成功更新待办事项列表。剩余 ${pendingCount} 个任务。\n\n当前列表：\n${formattedList}`,
+    data: {
+      todos: finalTodos,
+      message: `已成功更新待办事项列表。剩余 ${pendingCount} 个任务。\n\n当前列表：\n${formattedList}`,
+    },
   };
 }
 
@@ -96,6 +103,9 @@ export async function todoWriteExecutor(
  * TodoWrite 结果格式化（给 AI 看）
  */
 export function renderTodoWriteResultForAssistant(result: TodoWriteResult): string {
-  return result.message;
+  if (!result.success) {
+    return `错误: ${result.error}`;
+  }
+  return result.data?.message || '';
 }
 

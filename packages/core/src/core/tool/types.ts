@@ -5,6 +5,25 @@
 
 import { Allowlist } from './Allowlist.js';
 
+// ============================================================
+// 统一工具结果接口
+// ============================================================
+
+/**
+ * 统一工具结果接口
+ * @template T - 工具业务数据类型
+ */
+export interface ToolResult<T = unknown> {
+  /** 执行是否成功 */
+  success: boolean;
+  /** 失败时的错误信息（简单字符串） */
+  error?: string;
+  /** 警告信息（如策略降级） */
+  warning?: string;
+  /** 工具业务数据，失败时为 null */
+  data: T | null;
+}
+
 /**
  * JSON Schema 参数定义
  */

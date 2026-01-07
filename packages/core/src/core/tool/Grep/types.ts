@@ -2,6 +2,8 @@
  * Grep 工具类型定义
  */
 
+import type { ToolResult } from '../types.js';
+
 /**
  * Grep 策略枚举
  */
@@ -43,9 +45,9 @@ export interface GrepMatch {
 }
 
 /**
- * Grep 工具结果
+ * Grep 业务数据
  */
-export interface GrepResult {
+export interface GrepData {
   /** 搜索模式 */
   pattern: string;
   /** 搜索目录 */
@@ -59,6 +61,11 @@ export interface GrepResult {
   /** 使用的策略 */
   strategy: string;
 }
+
+/**
+ * Grep 工具结果（统一结果接口）
+ */
+export type GrepResult = ToolResult<GrepData>;
 
 /**
  * Grep 策略执行函数类型
