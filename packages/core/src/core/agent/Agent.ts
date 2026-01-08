@@ -101,7 +101,7 @@ export class Agent {
     this.config = {
       name: config.name ?? 'agent',
       systemPrompt: config.systemPrompt ?? SIMPLE_AGENT_PROMPT,
-      maxLoops: config.maxLoops ?? 10,
+      maxLoops: config.maxLoops ?? 100,
       ...config,
     };
     this.contextManager = new ContextManager();

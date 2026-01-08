@@ -32,11 +32,12 @@ import type {
 } from '@reason-cli/core';
 import { logger } from '../util/logger.js';
 import { eventLogger } from '../util/logUtils.js';
-import {
-  remountApp,
-  persistedThinkingExpanded,
-  setPersistedThinkingExpanded,
-} from '../app.js';
+import { remountApp, persistedThinkingExpanded, setPersistedThinkingExpanded } from '../app.js';
+
+// ==================== 模块级变量（跨 remount 持久化）====================
+
+/** 当前 manager 的 unsubscribe 函数，用于清理旧订阅 */
+let managerUnsubscribe: (() => void) | null = null;
 
 // ==================== State Context（低频更新）====================
 
@@ -157,13 +158,19 @@ export function ExecutionProvider({ children }: ExecutionProviderProps) {
   // 切换思考内容展开（ctrl+o）
   // ✨ 使用 remountApp 彻底重新渲染，解决 Static 组件残留问题
   const toggleThinkingExpanded = useCallback(() => {
+    // 等待工具确认时，不允许切换（防止 resolve 丢失）
+    if (isPendingConfirm) {
+      logger.debug('toggleThinkingExpanded blocked: waiting for tool confirmation');
+      return;
+    }
+
     // 1. 更新持久化状态（在 remount 前）
     const newValue = !persistedThinkingExpanded;
     setPersistedThinkingExpanded(newValue);
 
     // 2. 重新挂载整个应用（会清屏并重新渲染）
     remountApp();
-  }, []);
+  }, [isPendingConfirm]);
 
   // 切换 TODO 显示
   const toggleTodos = useCallback(() => {
@@ -177,11 +184,34 @@ export function ExecutionProvider({ children }: ExecutionProviderProps) {
   }, []);
 
   // 绑定管理器
+  // ✨ 改进：清理旧订阅 + 立即同步快照（解决 remount 后状态不同步问题）
   const bindManager = useCallback((manager: ExecutionStreamManager) => {
+    // 1. 清理旧订阅（防止 remount 后重复订阅）
+    if (managerUnsubscribe) {
+      logger.debug('Cleaning up old manager subscription before rebind');
+      managerUnsubscribe();
+      managerUnsubscribe = null;
+    }
+
     managerRef.current = manager;
 
-    // 订阅管理器事件
-    const unsubscribe = manager.on((event: ExecutionEvent) => {
+    // 2. 立即同步当前快照（关键！解决 remount 后 UI 状态不同步）
+    const currentSnapshot = manager.getSnapshot();
+    if (currentSnapshot) {
+      logger.debug('Syncing snapshot on manager bind', { state: currentSnapshot.state });
+      setSnapshot(currentSnapshot);
+
+      // 同步 isExecuting 相关状态
+      const executing =
+        currentSnapshot.state !== 'idle' &&
+        currentSnapshot.state !== 'completed' &&
+        currentSnapshot.state !== 'error' &&
+        currentSnapshot.state !== 'cancelled';
+      setIsExecuting(executing);
+    }
+
+    // 3. 订阅管理器事件
+    managerUnsubscribe = manager.on((event: ExecutionEvent) => {
       // 记录事件接收（传递完整事件对象）
       eventLogger.receive(event.type, event);
 
@@ -229,7 +259,7 @@ export function ExecutionProvider({ children }: ExecutionProviderProps) {
       }
     });
 
-    return unsubscribe;
+    return managerUnsubscribe;
   }, []);
 
   // 使用 useMemo 避免 State Context value 不必要的重新创建

@@ -4,7 +4,7 @@
   "type": "module",
   "license": "Apache-2.0",
   "bin": {
-    "reason": "./dist/index.js"
+    "reason": "./bin/reason.cjs"
   },
   "scripts": {
     "dev": "bun --watch run src/index.ts",
