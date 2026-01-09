@@ -32,10 +32,7 @@ const rawArgs = process.argv.slice(2);
 const hasDevFlag = rawArgs.includes('--dev');
 const hasWatchFlag = rawArgs.includes('--watch');
 const forceDev =
-  hasWatchFlag ||
-  hasDevFlag ||
-  process.env.REASON_DEV === '1' ||
-  process.env.REASON_DEV === 'true';
+  hasWatchFlag || hasDevFlag || process.env.REASON_DEV === '1' || process.env.REASON_DEV === 'true';
 
 const args = rawArgs.filter((arg) => arg !== '--dev' && arg !== '--watch');
 
@@ -44,7 +41,8 @@ const distEntry = path.join(packageRoot, 'dist', 'index.js');
 const srcEntry = path.join(packageRoot, 'src', 'index.ts');
 
 if (!forceDev && fs.existsSync(distEntry)) {
-  run(process.execPath, [distEntry, ...args]);
+  // 使用 --no-deprecation 禁用弃用警告（如 punycode DEP0040）
+  run(process.execPath, ['--no-deprecation', distEntry, ...args]);
 } else {
   const bunArgs = [];
   if (hasWatchFlag) bunArgs.push('--watch');
