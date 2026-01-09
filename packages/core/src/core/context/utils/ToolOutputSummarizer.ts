@@ -7,13 +7,14 @@ import type { ILLMService } from '../../llm/types/index.js';
 import type { ToolOutputProcessResult } from '../types.js';
 import { TokenEstimator } from './tokenEstimator.js';
 import { TOOL_OUTPUT_SUMMARY_PROMPT } from '../../promptManager/summarization/toolOutputSummary.js';
-import { DEFAULT_THRESHOLDS } from './ContextChecker.js';
 
 /**
  * 默认配置
  */
 const DEFAULT_MAX_FILE_SIZE = 100_000;
 const DEFAULT_TRUNCATE_LINES = 1000;
+/** 工具输出超过此 Token 数触发总结 */
+const DEFAULT_TOOL_OUTPUT_SUMMARY_THRESHOLD = 2000;
 
 /**
  * 工具输出总结器类
@@ -38,7 +39,7 @@ export class ToolOutputSummarizer {
    * @param threshold - Token 阈值（默认 2000）
    * @returns 是否需要总结
    */
-  needsSummary(output: string, threshold: number = DEFAULT_THRESHOLDS.toolOutputSummary): boolean {
+  needsSummary(output: string, threshold: number = DEFAULT_TOOL_OUTPUT_SUMMARY_THRESHOLD): boolean {
     return TokenEstimator.estimate(output) > threshold;
   }
 

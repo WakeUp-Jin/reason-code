@@ -33,15 +33,9 @@ export {
   CurrentTurnContext,
 } from './context/index.js';
 
-// 上下文压缩和检查
-export {
-  TokenEstimator,
-  ContextChecker,
-  DEFAULT_THRESHOLDS,
-  HistoryCompressor,
-  ToolOutputSummarizer,
-} from './context/index.js';
-export type { ContextThresholds } from './context/index.js';
+// 上下文工具
+export { TokenEstimator, ToolOutputSummarizer } from './context/index.js';
+export type { CompressionConfig, TokenUsage } from './context/index.js';
 
 // Prompt 管理
 export * from './promptManager/index.js';

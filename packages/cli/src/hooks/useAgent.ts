@@ -227,6 +227,7 @@ export function useAgent(): UseAgentReturn {
         // 5. 执行 Agent，使用传入的确认回调
         const result = await agentInstance.run(message, {
           modelLimit,
+          sessionId: currentSessionId || 'none',
           onConfirmRequired: options?.onConfirmRequired,
           approvalMode: coreApprovalMode,
         });

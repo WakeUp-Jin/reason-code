@@ -7,7 +7,7 @@ import { ContextManager, ContextType, Message } from '../context/index.js';
 import { ToolManager } from '../tool/ToolManager.js';
 import { ILLMService } from '../llm/types/index.js';
 import { createLLMService } from '../llm/factory.js';
-import { executeToolLoop } from '../llm/utils/executeToolLoop.js';
+import { ToolLoopExecutor } from '../llm/utils/executeToolLoop.js';
 import { eventBus } from '../../evaluation/EventBus.js';
 import { SIMPLE_AGENT_PROMPT } from '../promptManager/index.js';
 import { ExecutionStreamManager } from '../execution/index.js';
@@ -47,6 +47,9 @@ export interface HistoryLoadOptions {
 export interface AgentRunOptions {
   /** 模型的 Token 限制（由 CLI 层传入） */
   modelLimit?: number;
+
+  /** 会话 ID（用于压缩时引用历史文件） */
+  sessionId: string;
 
   /** 工具确认回调（由 CLI 层提供） */
   onConfirmRequired?: (
@@ -173,7 +176,7 @@ export class Agent {
       this.contextManager.setUserInput(userInput);
 
       // 执行工具循环
-      const loopResult = await executeToolLoop(
+      const executor = new ToolLoopExecutor(
         this.llmService,
         this.contextManager,
         this.toolManager,
@@ -183,10 +186,12 @@ export class Agent {
           executionStream: this.executionStream,
           model: this.config.model,
           modelLimit: options?.modelLimit,
+          sessionId: options?.sessionId,
           onConfirmRequired: options?.onConfirmRequired,
           approvalMode: options?.approvalMode,
         }
       );
+      const loopResult = await executor.run();
 
       // 完成当前轮次（归档到历史）
       this.contextManager.finishTurn();

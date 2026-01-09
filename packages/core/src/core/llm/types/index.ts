@@ -144,6 +144,8 @@ export interface ToolLoopConfig {
   enableCompression?: boolean;
   /** 是否启用工具输出总结 */
   enableToolSummarization?: boolean;
+  /** 会话 ID（用于压缩时引用历史文件） */
+  sessionId?: string;
 
   // ============================================================
   // 工具权限验证配置
