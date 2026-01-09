@@ -1,0 +1,141 @@
+{
+  "name": "github",
+  "displayName": "GitHub",
+  "author": "GitHub",
+  "version": "1.0.0",
+  "dark": {
+    "defs": {
+      "black": "#0D1117",
+      "white": "#C9D1D9",
+      "gray": "#8B949E",
+      "red": "#F85149",
+      "green": "#3FB950",
+      "yellow": "#D29922",
+      "blue": "#58A6FF",
+      "purple": "#BC8CFF",
+      "cyan": "#39C5CF",
+      "orange": "#F0883E",
+      "darkGray": "#21262D",
+      "lightGray": "#30363D",
+      "darkBg": "#161B22",
+      "greenBg": "#1B4721",
+      "redBg": "#5C1A1A"
+    },
+    "theme": {
+      "primary": "$blue",
+      "secondary": "$purple",
+      "accent": "$orange",
+      "error": "$red",
+      "warning": "$yellow",
+      "success": "$green",
+      "info": "$cyan",
+
+      "text": "$white",
+      "textMuted": "$gray",
+      "textInverse": "$black",
+      "textThinking": "#8A8A8A",
+
+      "background": "$black",
+      "backgroundPanel": "$darkBg",
+      "backgroundElement": "$darkGray",
+
+      "border": "$lightGray",
+      "borderActive": "$blue",
+      "borderSubtle": "$darkGray",
+
+      "diffAdded": "$green",
+      "diffRemoved": "$red",
+      "diffContext": "$gray",
+      "diffAddedBg": "$greenBg",
+      "diffRemovedBg": "$redBg",
+
+      "syntaxComment": "$gray",
+      "syntaxKeyword": "#FF7B72",
+      "syntaxFunction": "#D2A8FF",
+      "syntaxString": "#A5D6FF",
+      "syntaxNumber": "#79C0FF",
+      "syntaxType": "#7EE787",
+      "syntaxOperator": "#FF7B72",
+
+      "messageUser": "$blue",
+      "messageAssistant": "$purple",
+      "messageSystem": "$gray",
+
+      "statusPending": "$gray",
+      "statusRunning": "$yellow",
+      "statusSuccess": "$green",
+      "statusError": "$red",
+
+      "logo": "$blue",
+      "logoAccent": "$green"
+    }
+  },
+  "light": {
+    "defs": {
+      "black": "#24292F",
+      "white": "#FFFFFF",
+      "gray": "#57606A",
+      "red": "#CF222E",
+      "green": "#1A7F37",
+      "yellow": "#9A6700",
+      "blue": "#0969DA",
+      "purple": "#8250DF",
+      "cyan": "#0598BC",
+      "orange": "#BC4C00",
+      "darkGray": "#F6F8FA",
+      "lightGray": "#D0D7DE",
+      "darkBg": "#EAEEF2",
+      "greenBg": "#DAFBE1",
+      "redBg": "#FFEBE9"
+    },
+    "theme": {
+      "primary": "$blue",
+      "secondary": "$purple",
+      "accent": "$orange",
+      "error": "$red",
+      "warning": "$yellow",
+      "success": "$green",
+      "info": "$cyan",
+
+      "text": "$black",
+      "textMuted": "$gray",
+      "textInverse": "$white",
+      "textThinking": "#6A6A6A",
+
+      "background": "$white",
+      "backgroundPanel": "$darkBg",
+      "backgroundElement": "$darkGray",
+
+      "border": "$lightGray",
+      "borderActive": "$blue",
+      "borderSubtle": "$darkGray",
+
+      "diffAdded": "$green",
+      "diffRemoved": "$red",
+      "diffContext": "$gray",
+      "diffAddedBg": "$greenBg",
+      "diffRemovedBg": "$redBg",
+
+      "syntaxComment": "$gray",
+      "syntaxKeyword": "#CF222E",
+      "syntaxFunction": "#8250DF",
+      "syntaxString": "#0A3069",
+      "syntaxNumber": "#0550AE",
+      "syntaxType": "#116329",
+      "syntaxOperator": "#CF222E",
+
+      "messageUser": "$blue",
+      "messageAssistant": "$purple",
+      "messageSystem": "$gray",
+
+      "statusPending": "$gray",
+      "statusRunning": "$yellow",
+      "statusSuccess": "$green",
+      "statusError": "$red",
+
+      "logo": "$blue",
+      "logoAccent": "$green"
+    }
+  }
+}
+

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "description": "日志配置文件模板 - 复制此文件为 logger.config.json 并根据需要修改",
+  "enabled": true,
+  "minLevel": "DEBUG",
+  "retentionDays": 7,
+  "bufferSize": 20,
+  "_comment": "日志级别说明: DEBUG=完整日志(开发), INFO=简洁日志(生产), WARN=警告, ERROR=错误"
+}

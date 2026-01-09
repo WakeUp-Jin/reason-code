@@ -2,22 +2,36 @@
   "name": "@reason-cli/cli",
   "version": "0.0.1",
   "type": "module",
+  "license": "Apache-2.0",
   "bin": {
-    "reason": "./dist/index.js"
+    "reason": "./bin/reason.cjs"
   },
   "scripts": {
-    "dev": "bun run src/index.ts",
+    "dev": "bun --watch run src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target node && chmod +x dist/index.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@reason-cli/core": "workspace:*",
-    "commander": "^12.0.0",
     "chalk": "^5.0.0",
-    "ora": "^8.0.0"
+    "commander": "^12.0.0",
+    "diff": "^5.1.0",
+    "fuzzysort": "^3.1.0",
+    "highlight.js": "^11.9.0",
+    "ink": "^6.6.0",
+    "ink-scroll-list": "^0.3.3",
+    "ink-scroll-view": "^0.3.5",
+    "ink-text-input": "^6.0.0",
+    "ora": "^8.0.0",
+    "react": "^19.2.3",
+    "valibot": "^1.0.0",
+    "zustand": "^4.4.7"
   },
   "devDependencies": {
-    "typescript": "catalog:",
-    "@types/node": "catalog:"
+    "@types/diff": "^5.0.9",
+    "@types/node": "catalog:",
+    "@types/react": "^19.2.7",
+    "react-devtools-core": "^7.0.1",
+    "typescript": "catalog:"
   }
 }

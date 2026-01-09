@@ -202,8 +202,58 @@ bun run --cwd packages/cli dev info
 
 ## 许可证
 
-MIT
+Apache-2.0
+
+本项目采用 Apache License 2.0 开源协议。详见 [LICENSE](LICENSE) 文件。
 
 ## 作者
 
 Reason CLI Team
+
+## 全局命令（reason）
+
+本项目的 CLI 命令名是 `reason`（入口在 `packages/cli`）。
+
+- 发布态优先：如果 `packages/cli/dist/index.js` 存在，则默认运行构建产物。
+- 开发回退：如果 dist 不存在，则自动回退运行源码 `packages/cli/src/index.ts`。
+
+### 本地全局使用（开发/调试）
+
+1) 先构建一次（可选，但推荐）：
+
+```bash
+bun run --cwd packages/cli build
+```
+
+2) 注册到 Bun 的全局 link：
+
+```bash
+bun link --cwd packages/cli
+```
+
+3) 把 Bun 全局 bin 加入 PATH（只需一次）：
+
+```bash
+bun pm bin -g
+```
+
+把上面输出的目录加入 `~/.zshrc`：
+
+```bash
+export PATH="<bun-global-bin>:$PATH"
+```
+
+验证：
+
+```bash
+which reason
+reason info
+```
+
+### 强制走源码（不依赖 dist）
+
+```bash
+reason --dev info
+# 或
+REASON_DEV=1 reason info
+```
