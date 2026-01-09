@@ -21,6 +21,7 @@ import { Ripgrep } from '../../utils/ripgrep.js';
 import { isBun } from '../../utils/runtime.js';
 import { searchLogger } from '../../../../utils/logUtils.js';
 import { createAbortError } from '../../utils/error-utils.js';
+import { logger } from '../../../../utils/logger.js';
 
 /**
  * 使用 ripgrep + stat 搜索文件
@@ -35,6 +36,7 @@ export async function globWithRipgrepBun(
   cwd: string,
   options?: GlobStrategyOptions
 ): Promise<GlobFileItem[]> {
+  const startTime = Date.now();
   const limit = options?.limit ?? GLOB_DEFAULTS.LIMIT;
   const files: GlobFileItem[] = [];
 
@@ -42,13 +44,23 @@ export async function globWithRipgrepBun(
     throw createAbortError();
   }
 
+  logger.debug(`🔍 [Glob:RipgrepBun] Starting`, { pattern, cwd, limit });
+
   // 使用 ripgrep 快速列出文件
+  let fileCount = 0;
   for await (const file of Ripgrep.files({
     cwd,
     glob: [pattern],
     binDir: options?.binDir,
     signal: options?.signal,
   })) {
+    fileCount++;
+
+    // 每 100 个文件记录一次进度
+    if (fileCount % 100 === 0) {
+      logger.debug(`🔍 [Glob:RipgrepBun] Progress`, { fileCount, elapsed: Date.now() - startTime });
+    }
+
     // 检查是否被取消
     if (options?.signal?.aborted) {
       throw createAbortError();
@@ -68,6 +80,13 @@ export async function globWithRipgrepBun(
       mtime,
     });
   }
+
+  logger.debug(`🔍 [Glob:RipgrepBun] Completed`, {
+    pattern,
+    totalFiles: fileCount,
+    returnedFiles: files.length,
+    elapsed: Date.now() - startTime,
+  });
 
   // 智能排序（24小时优先）
   sortByRecentFirst(files);

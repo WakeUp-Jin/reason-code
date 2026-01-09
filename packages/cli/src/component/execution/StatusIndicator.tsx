@@ -53,8 +53,7 @@ export function StatusIndicator() {
   const { colors } = useTheme();
   const snapshot = useExecutionSnapshot();
   const isExecuting = useIsExecuting();
-  const { showThinking, toggleThinking, isPendingConfirm, todos, showTodos, toggleTodos } =
-    useExecutionState();
+  const { showThinking, toggleThinking, isPendingConfirm, todos, showTodos } = useExecutionState();
   const [elapsedTime, setElapsedTime] = useState(0);
   const [tipIndex, setTipIndex] = useState(0);
 
@@ -63,14 +62,13 @@ export function StatusIndicator() {
     logger.info(`🎯 [StatusIndicator] isPendingConfirm changed`, { isPendingConfirm, isExecuting });
   }, [isPendingConfirm, isExecuting]);
 
-  // 快捷键监听：ctrl+t 切换 thinking，ctrl+d 切换 todos
+  // 快捷键监听：ctrl+y 切换 thinking（TODO 切换由 Session 统一处理：ctrl+t）
   useInput(
     (input, key) => {
-      if (key.ctrl && input === 't') {
+      // 兼容：不同终端/ink 解析下 ctrl+y 可能表现为 (key.ctrl && 'y') 或控制字符 \x19
+      const isCtrlY = (key.ctrl && input.toLowerCase() === 'y') || input === '\u0019';
+      if (isCtrlY) {
         toggleThinking();
-      }
-      if (key.ctrl && input === 'd') {
-        toggleTodos();
       }
     },
     { isActive: isExecuting }
@@ -79,7 +77,7 @@ export function StatusIndicator() {
   // 动态 Tip：根据 TODO 显示状态调整提示
   const dynamicTip = useMemo(() => {
     if (todos.length > 0) {
-      return showTodos ? 'ctrl+d to hide todos' : 'ctrl+d to show todos';
+      return showTodos ? 'ctrl+t to hide todos' : 'ctrl+t to show todos';
     }
     return TIPS[tipIndex];
   }, [todos.length, showTodos, tipIndex]);

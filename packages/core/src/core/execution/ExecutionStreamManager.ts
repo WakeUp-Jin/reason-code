@@ -260,10 +260,10 @@ export class ExecutionStreamManager {
     this.emit({ type: 'execution:complete', stats: { ...this.snapshot.stats } });
   }
 
-  cancel(): void {
+  cancel(reason?: string): void {
     this.stopPhraseRotation();
     this.snapshot.state = ExecutionState.Cancelled;
-    this.emit({ type: 'execution:cancel' });
+    this.emit({ type: 'execution:cancel', reason });
   }
 
   error(error: string): void {

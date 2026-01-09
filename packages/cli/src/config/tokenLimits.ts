@@ -1,7 +1,9 @@
 /**
  * Token 限制配置
- * 定义各模型的 Token 限制和上下文管理阈值
+ * 定义各模型的 Token 限制、定价和上下文管理阈值
  */
+
+import type { ModelPricing } from '@reason-cli/core';
 
 /**
  * 各模型的 Token 限制
@@ -83,5 +85,61 @@ export function getModelTokenLimit(model: string): number {
 
   // 返回默认值
   return DEFAULT_TOKEN_LIMIT;
+}
+
+/**
+ * 模型定价配置（每百万 Token，CNY）
+ */
+export const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  // DeepSeek 模型（CNY）
+  'deepseek-chat': { input: 2.0, output: 8.0 },
+  'deepseek-reasoner': { input: 4.0, output: 16.0 },
+
+  // OpenAI 模型（转换为 CNY，汇率约 7.2）
+  'gpt-4o': { input: 18.0, output: 72.0 },
+  'gpt-4o-mini': { input: 1.08, output: 4.32 },
+  'gpt-4-turbo': { input: 72.0, output: 216.0 },
+
+  // Anthropic 模型（转换为 CNY）
+  'claude-3-5-sonnet': { input: 21.6, output: 108.0 },
+  'claude-sonnet-4': { input: 21.6, output: 108.0 },
+  'claude-3-opus': { input: 108.0, output: 540.0 },
+
+  // Google 模型（转换为 CNY）
+  'gemini-2.0-flash': { input: 0.54, output: 2.16 },
+  'gemini-pro': { input: 3.6, output: 10.8 },
+  'gemini-1.5-pro': { input: 9.0, output: 36.0 },
+};
+
+/**
+ * 获取模型定价
+ *
+ * @param model - 模型名称
+ * @returns 定价配置，如果未找到返回 null
+ */
+export function getModelPricing(model: string): ModelPricing | null {
+  // 尝试精确匹配
+  const pricing = MODEL_PRICING[model];
+  if (pricing) {
+    return {
+      inputPricePerMillion: pricing.input,
+      outputPricePerMillion: pricing.output,
+      currency: 'CNY',
+    };
+  }
+
+  // 尝试模糊匹配
+  const normalizedModel = model.toLowerCase();
+  for (const [key, value] of Object.entries(MODEL_PRICING)) {
+    if (normalizedModel.includes(key.toLowerCase())) {
+      return {
+        inputPricePerMillion: value.input,
+        outputPricePerMillion: value.output,
+        currency: 'CNY',
+      };
+    }
+  }
+
+  return null;
 }
 

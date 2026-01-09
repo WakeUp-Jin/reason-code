@@ -14,7 +14,7 @@ export type ExecutionEvent =
   | { type: 'execution:start'; timestamp: number }
   | { type: 'execution:complete'; stats: ExecutionStats }
   | { type: 'execution:error'; error: string }
-  | { type: 'execution:cancel' }
+  | { type: 'execution:cancel'; reason?: string }
 
   // 状态事件
   | { type: 'state:change'; state: ExecutionState; phrase: string }

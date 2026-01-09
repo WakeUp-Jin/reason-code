@@ -87,6 +87,9 @@ export class ToolLoopExecutor {
   private agentName: string;
   private executionStream?: ExecutionStreamManager;
 
+  // 中断控制
+  private abortSignal?: AbortSignal;
+
   constructor(
     llmService: ILLMService,
     contextManager: ContextManager,
@@ -103,6 +106,7 @@ export class ToolLoopExecutor {
     this.modelLimit = config?.modelLimit ?? DEFAULT_MODEL_LIMIT;
     this.agentName = config?.agentName ?? 'agent';
     this.executionStream = config?.executionStream;
+    this.abortSignal = config?.abortSignal;
 
     // 提取工具调度器配置
     const enableToolSummarization = config?.enableToolSummarization ?? true;
@@ -136,6 +140,13 @@ export class ToolLoopExecutor {
   }
 
   /**
+   * 检查是否被中断
+   */
+  private isAborted(): boolean {
+    return this.abortSignal?.aborted ?? false;
+  }
+
+  /**
    * 运行工具循环
    * 主入口方法
    */
@@ -143,6 +154,11 @@ export class ToolLoopExecutor {
     loopLogger.start(this.maxLoops, this.enableCompression);
 
     while (this.loopCount < this.maxLoops) {
+      // 检查是否被中断
+      if (this.isAborted()) {
+        return this.buildCancelledResult();
+      }
+
       const result = await this.executeIteration();
       if (result.done) {
         return result.value!;
@@ -161,6 +177,11 @@ export class ToolLoopExecutor {
     this.executionStream?.incrementLoopCount();
 
     try {
+      // 0. 中断检查
+      if (this.isAborted()) {
+        return { done: true, value: this.buildCancelledResult() };
+      }
+
       // 1. 溢出检查
       const overflowResult = this.checkOverflow();
       if (overflowResult) {
@@ -170,23 +191,45 @@ export class ToolLoopExecutor {
       // 2. 获取上下文
       const messages = await this.contextManager.getContext(this.enableCompression);
 
-      // 3. 调用 LLM
+      // 3. 中断检查（获取上下文后）
+      if (this.isAborted()) {
+        return { done: true, value: this.buildCancelledResult() };
+      }
+
+      // 4. 调用 LLM（传递 abortSignal 以支持中断）
       const tools = this.toolManager.getFormattedTools();
       this.executionStream?.startThinking();
-      const response = await this.llmService.complete(messages, tools);
+      const response = await this.llmService.complete(messages, tools, {
+        abortSignal: this.abortSignal,
+      });
 
-      // 4. 更新统计
+      // 5. 中断检查（LLM 调用后）
+      if (this.isAborted()) {
+        return { done: true, value: this.buildCancelledResult() };
+      }
+
+      // 6. 更新统计
       this.updateStats(response);
 
-      // 5. 处理响应
+      // 7. 处理响应
       if (hasToolCalls(response)) {
         await this.handleToolCalls(response);
+
+        // 8. 中断检查（工具调用后）
+        if (this.isAborted()) {
+          return { done: true, value: this.buildCancelledResult() };
+        }
+
         return { done: false };
       }
 
-      // 6. 无工具调用，返回最终结果
+      // 9. 无工具调用，返回最终结果
       return { done: true, value: this.buildSuccessResult(response) };
     } catch (error) {
+      // 检查是否是中断错误
+      if (this.isAborted()) {
+        return { done: true, value: this.buildCancelledResult() };
+      }
       return { done: true, value: this.buildErrorResult(error) };
     }
   }
@@ -251,10 +294,10 @@ export class ToolLoopExecutor {
       });
     }
 
-    // 4. 执行工具
+    // 4. 执行工具（传递 abortSignal 以支持中断）
     const results = await this.toolScheduler.scheduleBatchFromToolCalls(
       toolCalls,
-      { abortSignal: undefined, cwd: process.cwd() },
+      { abortSignal: this.abortSignal, cwd: process.cwd() },
       { thinkingContent: response.content?.trim() }
     );
 
@@ -272,14 +315,19 @@ export class ToolLoopExecutor {
     const totalTokens = this.contextManager.getLastPromptTokens();
     loopLogger.complete(this.loopCount, totalTokens);
 
+    // 对于推理模型（如 DeepSeek Reasoner），最终回答可能在 reasoningContent 里
+    // 优先使用 content，如果为空则使用 reasoningContent
+    const finalContent = response.content || response.reasoningContent || '';
+
     this.contextManager.addToCurrentTurn({
       role: 'assistant',
-      content: response.content,
+      content: finalContent,
+      reasoning_content: response.reasoningContent,
     });
 
     return {
       success: true,
-      result: response.content,
+      result: finalContent,
       loopCount: this.loopCount,
     };
   }
@@ -309,6 +357,27 @@ export class ToolLoopExecutor {
     return {
       success: false,
       error: `超过最大循环次数 (${this.maxLoops})`,
+      loopCount: this.loopCount,
+    };
+  }
+
+  /**
+   * 构建取消结果
+   *
+   * 中断时：
+   * - 清理当前轮次中不完整的消息
+   * - 保留已完成的消息
+   */
+  private buildCancelledResult(): ToolLoopResult {
+    logger.info('Execution cancelled by user');
+
+    // 清理当前轮次中不完整的消息，保留已完成的
+    this.contextManager.sanitizeCurrentTurn();
+
+    return {
+      success: false,
+      cancelled: true,
+      error: '执行已暂停',
       loopCount: this.loopCount,
     };
   }

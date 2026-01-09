@@ -2,19 +2,35 @@
  * useAgent Hook
  * 管理 Agent 实例，处理初始化、模型切换和工具确认
  *
- * 重要：Agent 实例使用模块级变量存储，跨 remount 持久化
+ * 重要：
+ * - Agent 实例使用模块级变量存储，跨 remount 持久化
+ * - 采用内存优先架构：Core 维护运行时状态，文件异步持久化
+ * - Token 从内存实时计算，Cost 累计保存到检查点
  */
 
 import { useEffect, useState, useCallback } from 'react';
 import { Agent } from '@reason-cli/core';
-import type { ConfirmDetails, ConfirmOutcome, ApprovalMode } from '@reason-cli/core';
+import type {
+  ConfirmDetails,
+  ConfirmOutcome,
+  ApprovalMode,
+  CompressionCompleteEvent,
+} from '@reason-cli/core';
 import { configManager } from '../config/manager.js';
-import { getModelTokenLimit } from '../config/tokenLimits.js';
+import { getModelTokenLimit, getModelPricing } from '../config/tokenLimits.js';
 import { logger } from '../util/logger.js';
 import { agentLogger } from '../util/logUtils.js';
 import { useExecutionState } from '../context/execution.js';
 import { useAppStore } from '../context/store.js';
 import { convertToCoreMsgs } from '../util/messageConverter.js';
+import {
+  loadCheckpoint,
+  saveCheckpoint,
+  clearCheckpoint,
+  type SessionCheckpoint,
+} from '../util/storage.js';
+import { triggerAsyncSave, triggerAsyncSaveCheckpoint } from '../util/asyncStorage.js';
+import { updateAgentStats, resetAgentStats } from './useAgentStats.js';
 
 // ==================== 模块级变量（跨 remount 持久化）====================
 let agentInstance: Agent | null = null;
@@ -23,6 +39,9 @@ let agentInitFailed = false;
 let agentInitError: string | null = null;
 let agentInitPromise: Promise<void> | null = null;
 let currentModelInfo: { provider: string; model: string } | null = null;
+
+/** 当前会话是否已初始化上下文（避免重复加载） */
+let contextInitializedForSession: string | null = null;
 
 /** sendMessage 选项 */
 interface SendMessageOptions {
@@ -47,6 +66,14 @@ interface UseAgentReturn {
   switchModel: (provider: string, model: string) => Promise<void>;
   /** 当前模型信息 */
   currentModel: { provider: string; model: string } | null;
+  /** 获取 Token 使用情况（从内存） */
+  getTokenUsage: () => { used: number; limit: number; percentage: number } | null;
+  /** 获取累计费用（从内存） */
+  getTotalCost: (currency?: 'USD' | 'CNY') => number;
+  /** 中断当前执行 */
+  abort: () => void;
+  /** 是否正在执行 */
+  isRunning: () => boolean;
 }
 
 /**
@@ -62,6 +89,23 @@ function parseModelId(modelId: string): { provider: string; model: string } {
   return { provider: 'deepseek', model: modelId };
 }
 
+/**
+ * 构建 LLM 上下文
+ * 如果有检查点，使用摘要 + 部分历史；否则使用完整历史
+ */
+function buildContextForLLM(
+  sessionId: string,
+  messages: any[]
+): { needsInit: boolean; checkpoint: SessionCheckpoint | null } {
+  // 检查是否需要初始化
+  if (contextInitializedForSession === sessionId) {
+    return { needsInit: false, checkpoint: null };
+  }
+
+  const checkpoint = loadCheckpoint(sessionId);
+  return { needsInit: true, checkpoint };
+}
+
 export function useAgent(): UseAgentReturn {
   // 从模块级变量初始化状态
   const [isReady, setIsReady] = useState(agentInitialized && agentInstance !== null);
@@ -72,8 +116,9 @@ export function useAgent(): UseAgentReturn {
   );
   const { bindManager } = useExecutionState();
 
-  // 从 store 获取 approvalMode
+  // 从 store 获取配置
   const approvalMode = useAppStore((state) => state.config.approvalMode);
+  const exchangeRate = useAppStore((state) => state.config.exchangeRate);
 
   // 内部初始化函数
   const initAgentInternal = useCallback(async (): Promise<void> => {
@@ -102,7 +147,61 @@ export function useAgent(): UseAgentReturn {
         systemPrompt: 'You are a helpful AI assistant.',
       });
 
-      await agent.init();
+      // 获取当前会话信息
+      const { currentSessionId, messages } = useAppStore.getState();
+      const historyMessages = currentSessionId ? messages[currentSessionId] || [] : [];
+      const coreHistory = convertToCoreMsgs(historyMessages);
+
+      // 检查是否有检查点
+      const checkpoint = currentSessionId ? loadCheckpoint(currentSessionId) : null;
+
+      if (checkpoint) {
+        // 有检查点：从检查点恢复
+        logger.info('Initializing Agent with checkpoint', {
+          sessionId: currentSessionId,
+          loadAfterMessageId: checkpoint.loadAfterMessageId,
+        });
+
+        // 找到分割点
+        const splitIndex = historyMessages.findIndex(
+          (msg) => msg.id === checkpoint.loadAfterMessageId
+        );
+
+        if (splitIndex === -1) {
+          // 消息 ID 找不到，清除检查点，使用完整历史
+          logger.warn('Checkpoint message ID not found, clearing checkpoint');
+          if (currentSessionId) {
+            clearCheckpoint(currentSessionId);
+          }
+          await agent.init();
+          agent.loadHistory(coreHistory, { clearExisting: true, skipSystemPrompt: true });
+        } else {
+          // 使用 initWithCheckpoint
+          const partialHistory = coreHistory.slice(splitIndex + 1);
+          await agent.initWithCheckpoint(partialHistory, {
+            summary: checkpoint.summary,
+            loadAfterMessageId: checkpoint.loadAfterMessageId,
+            compressedAt: checkpoint.compressedAt,
+            stats: checkpoint.stats,
+          });
+        }
+      } else {
+        // 无检查点：正常初始化 + 加载完整历史
+        await agent.init();
+        if (coreHistory.length > 0) {
+          agent.loadHistory(coreHistory, { clearExisting: true, skipSystemPrompt: true });
+        }
+      }
+
+      // 设置模型定价
+      const pricing = getModelPricing(model);
+      if (pricing) {
+        agent.setModelPricing(pricing);
+      }
+      agent.setExchangeRate(exchangeRate);
+
+      // 标记当前会话已初始化上下文
+      contextInitializedForSession = currentSessionId;
 
       // 保存到模块级变量
       agentInstance = agent;
@@ -119,10 +218,23 @@ export function useAgent(): UseAgentReturn {
       setIsReady(true);
 
       // 记录 Agent 初始化
-      const sessionId = useAppStore.getState().currentSessionId || 'none';
-      agentLogger.init(provider, model, sessionId);
+      agentLogger.init(provider, model, currentSessionId || 'none');
 
-      logger.info('Agent initialized successfully', { provider, model });
+      // 更新统计数据到缓存
+      const tokenUsage = agent.getTokenUsage();
+      updateAgentStats({
+        contextTokens: tokenUsage.used,
+        maxTokens: tokenUsage.limit,
+        percentage: tokenUsage.percentage,
+        totalCost: agent.getTotalCost('USD'),
+      });
+
+      logger.info('Agent initialized successfully', {
+        provider,
+        model,
+        hasCheckpoint: !!checkpoint,
+        historyCount: coreHistory.length,
+      });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
 
@@ -139,7 +251,7 @@ export function useAgent(): UseAgentReturn {
       setIsLoading(false);
       agentInitPromise = null;
     }
-  }, [bindManager]);
+  }, [bindManager, exchangeRate]);
 
   // 初始化 Agent（处理各种情况）
   useEffect(() => {
@@ -183,10 +295,9 @@ export function useAgent(): UseAgentReturn {
     agentInitPromise = initAgentInternal();
   }, [bindManager, initAgentInternal]);
 
-  // 发送消息（集成历史加载）
+  // 发送消息（内存优先，不再每次重新加载历史）
   const sendMessage = useCallback(
     async (message: string, options?: SendMessageOptions): Promise<string | null> => {
-      // 使用模块级 agentInstance 而非 agentRef.current
       if (!agentInstance || !isReady) {
         logger.warn('Agent not ready');
         return null;
@@ -195,26 +306,43 @@ export function useAgent(): UseAgentReturn {
       try {
         setIsLoading(true);
 
-        // 1. 获取当前 session 的历史消息
-        const { currentSessionId, messages } = useAppStore.getState();
-        const historyMessages = currentSessionId ? messages[currentSessionId] || [] : [];
+        const { currentSessionId, messages, sessions } = useAppStore.getState();
+        const currentSession = sessions.find((s) => s.id === currentSessionId);
 
-        // 2. 转换为 Core 格式并加载历史
-        const coreHistory = convertToCoreMsgs(historyMessages);
-        agentInstance.loadHistory(coreHistory, {
-          clearExisting: true,
-          skipSystemPrompt: true,
-        });
+        // 检查是否需要重新初始化上下文（会话切换时）
+        if (currentSessionId && contextInitializedForSession !== currentSessionId) {
+          logger.info('Session changed, reinitializing context', {
+            from: contextInitializedForSession,
+            to: currentSessionId,
+          });
 
-        // 记录历史加载（DEBUG 级别）
-        logger.debug(
-          `Loaded ${coreHistory.length} history messages for session ${currentSessionId || 'none'}`
-        );
+          const historyMessages = messages[currentSessionId] || [];
+          const coreHistory = convertToCoreMsgs(historyMessages);
+          const checkpoint = loadCheckpoint(currentSessionId);
 
-        // 3. 获取当前模型的 Token 限制
+          if (checkpoint) {
+            const splitIndex = historyMessages.findIndex(
+              (msg) => msg.id === checkpoint.loadAfterMessageId
+            );
+            if (splitIndex !== -1) {
+              const partialHistory = coreHistory.slice(splitIndex + 1);
+              agentInstance.getContextManager().loadWithSummary(checkpoint.summary, partialHistory);
+              agentInstance.getSessionStats().restore(checkpoint.stats);
+            } else {
+              clearCheckpoint(currentSessionId);
+              agentInstance.loadHistory(coreHistory, { clearExisting: true, skipSystemPrompt: true });
+            }
+          } else {
+            agentInstance.loadHistory(coreHistory, { clearExisting: true, skipSystemPrompt: true });
+          }
+
+          contextInitializedForSession = currentSessionId;
+        }
+
+        // 获取当前模型的 Token 限制
         const modelLimit = currentModel ? getModelTokenLimit(currentModel.model) : undefined;
 
-        // 4. 将 CLI 层的 approvalMode 转换为 Core 层枚举
+        // 转换 approvalMode
         let coreApprovalMode: ApprovalMode;
         if (approvalMode === 'default') {
           coreApprovalMode = 'default' as ApprovalMode;
@@ -224,12 +352,57 @@ export function useAgent(): UseAgentReturn {
           coreApprovalMode = 'yolo' as ApprovalMode;
         }
 
-        // 5. 执行 Agent，使用传入的确认回调
+        // 压缩完成回调
+        const handleCompressionComplete = (event: CompressionCompleteEvent) => {
+          if (!currentSessionId) return;
+
+          const historyMessages = useAppStore.getState().messages[currentSessionId] || [];
+
+          // 计算被压缩的最后一条消息的 ID
+          const compressedCount = event.compressedCount;
+          if (compressedCount > 0 && compressedCount <= historyMessages.length) {
+            const lastCompressedMsg = historyMessages[compressedCount - 1];
+
+            const checkpoint: SessionCheckpoint = {
+              summary: event.summary,
+              loadAfterMessageId: lastCompressedMsg.id,
+              compressedAt: Date.now(),
+              stats: agentInstance!.getSessionStats().toCheckpoint(),
+            };
+
+            // 异步保存检查点
+            triggerAsyncSaveCheckpoint(currentSessionId, checkpoint);
+
+            logger.info('Compression complete, checkpoint saved', {
+              sessionId: currentSessionId,
+              compressedCount: event.compressedCount,
+              preservedCount: event.preservedCount,
+            });
+          }
+        };
+
+        // 执行 Agent
         const result = await agentInstance.run(message, {
           modelLimit,
           sessionId: currentSessionId || 'none',
           onConfirmRequired: options?.onConfirmRequired,
           approvalMode: coreApprovalMode,
+          onCompressionComplete: handleCompressionComplete,
+        });
+
+        // 异步保存历史（不阻塞）
+        if (currentSession && currentSessionId) {
+          const latestMessages = useAppStore.getState().messages[currentSessionId] || [];
+          triggerAsyncSave(currentSession, latestMessages);
+        }
+
+        // 更新统计数据
+        const tokenUsage = agentInstance.getTokenUsage();
+        updateAgentStats({
+          contextTokens: tokenUsage.used,
+          maxTokens: tokenUsage.limit,
+          percentage: tokenUsage.percentage,
+          totalCost: agentInstance.getTotalCost('USD'),
         });
 
         if (result.success) {
@@ -252,7 +425,6 @@ export function useAgent(): UseAgentReturn {
 
   // 切换模型
   const switchModel = useCallback(async (provider: string, model: string): Promise<void> => {
-    // 使用模块级 agentInstance
     if (!agentInstance) {
       logger.warn('Agent not initialized');
       return;
@@ -268,6 +440,12 @@ export function useAgent(): UseAgentReturn {
 
       await agentInstance.setModel(provider, model, providerConfig?.apiKey);
 
+      // 更新定价
+      const pricing = getModelPricing(model);
+      if (pricing) {
+        agentInstance.setModelPricing(pricing);
+      }
+
       // 更新模块级和组件级状态
       currentModelInfo = { provider, model };
       setCurrentModel(currentModelInfo);
@@ -281,6 +459,32 @@ export function useAgent(): UseAgentReturn {
     }
   }, []);
 
+  // 获取 Token 使用情况（从内存）
+  const getTokenUsage = useCallback(() => {
+    if (!agentInstance) return null;
+    return agentInstance.getTokenUsage();
+  }, []);
+
+  // 获取累计费用（从内存）
+  const getTotalCost = useCallback((currency: 'USD' | 'CNY' = 'CNY') => {
+    if (!agentInstance) return 0;
+    return agentInstance.getTotalCost(currency);
+  }, []);
+
+  // 中断当前执行
+  const abort = useCallback(() => {
+    if (agentInstance) {
+      agentInstance.abort();
+      logger.info('Agent execution aborted by user');
+    }
+  }, []);
+
+  // 检查是否正在执行
+  const isRunning = useCallback(() => {
+    if (!agentInstance) return false;
+    return agentInstance.isRunning();
+  }, []);
+
   return {
     isReady,
     isLoading,
@@ -288,5 +492,9 @@ export function useAgent(): UseAgentReturn {
     sendMessage,
     switchModel,
     currentModel,
+    getTokenUsage,
+    getTotalCost,
+    abort,
+    isRunning,
   };
 }

@@ -12,7 +12,13 @@ import { searchLogger } from '../../../utils/logUtils.js';
 import { InternalToolContext } from '../types.js';
 import { ensureReasonBinDir } from '../utils/reasonPaths.js';
 import { RIPGREP_AUTO_DOWNLOAD_ENABLED } from '../utils/ripgrepPolicy.js';
-import { isAbortError, toErrorMessage } from '../utils/error-utils.js';
+import {
+  isAbortError,
+  isTimeoutError,
+  toErrorMessage,
+  withTimeout,
+  TOOL_EXECUTION_TIMEOUT_MS,
+} from '../utils/error-utils.js';
 
 /**
  * Grep 执行器
@@ -46,13 +52,20 @@ export async function grepExecutor(
   }
 
   try {
-    // 执行搜索
-    const { matches, strategy, warning } = await executeGrepStrategy(args.pattern, searchPath, {
-      include: args.include,
-      limit: GREP_DEFAULTS.LIMIT,
-      binDir: binDirForRipgrep,
-      signal: context?.abortSignal,
-    });
+    // 执行搜索（带超时控制）
+    // 使用工厂函数模式，让超时时能够通过 signal 终止底层 ripgrep 进程
+    const { matches, strategy, warning } = await withTimeout(
+      (signal) =>
+        executeGrepStrategy(args.pattern, searchPath, {
+          include: args.include,
+          limit: GREP_DEFAULTS.LIMIT,
+          binDir: binDirForRipgrep,
+          signal, // 使用 withTimeout 提供的 signal，超时时会自动 abort
+        }),
+      TOOL_EXECUTION_TIMEOUT_MS,
+      'Grep',
+      context?.abortSignal
+    );
 
     // 计算是否截断
     const truncated = matches.length >= GREP_DEFAULTS.LIMIT;
@@ -74,8 +87,18 @@ export async function grepExecutor(
       },
     };
   } catch (error: unknown) {
-    if (!isAbortError(error)) {
+    // 超时或中止不记录为错误
+    if (!isAbortError(error) && !isTimeoutError(error)) {
       searchLogger.error('Grep', toErrorMessage(error), ['executor']);
+    }
+
+    // 超时返回特定错误信息
+    if (isTimeoutError(error)) {
+      return {
+        success: false,
+        error: toErrorMessage(error),
+        data: null,
+      };
     }
 
     return {

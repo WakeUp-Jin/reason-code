@@ -17,6 +17,8 @@ import { pipeline } from 'stream/promises';
 import { createGunzip } from 'zlib';
 import { Readable } from 'stream';
 import { createAbortError } from './error-utils.js';
+import { ripgrepLogger } from '../../../utils/logUtils.js';
+import { logger } from '../../../utils/logger.js';
 
 /**
  * 平台配置
@@ -54,6 +56,12 @@ const PLATFORM_CONFIG: Record<
  * Ripgrep 版本
  */
 const RIPGREP_VERSION = '14.1.1';
+
+/**
+ * 下载超时时间（毫秒）
+ * 默认 30 秒，防止网络问题导致无限等待
+ */
+const DOWNLOAD_TIMEOUT_MS = 30_000;
 
 /**
  * 获取平台标识
@@ -122,18 +130,27 @@ export const Ripgrep = {
       const systemPath = tryGetSystemRipgrepPath();
       if (systemPath) {
         _ripgrepPath = systemPath; // 缓存：后续调用不再重复探测
+        ripgrepLogger.useSystem(systemPath);
         return systemPath;
       }
 
       // 2) 系统没有 rg：如果未提供 binDir，就既不能用缓存也不能下载（直接失败）
       if (!binDir) {
-        throw new Error('Ripgrep not available: no system rg and no binDir specified for download');
+        const reason = 'No system rg and no binDir specified for download';
+        ripgrepLogger.unavailable(reason);
+        throw new Error(`Ripgrep not available: ${reason}`);
       }
 
       // 3) 检查本地缓存：binDir 下是否已有 rg/rg.exe
       const localPath = join(binDir, getRipgrepBinaryName());
-      if (existsSync(localPath)) {
+      const hasLocalCache = existsSync(localPath);
+
+      // 记录检测结果
+      ripgrepLogger.detection(false, hasLocalCache, !hasLocalCache, binDir);
+
+      if (hasLocalCache) {
         _ripgrepPath = localPath; // 缓存：直接复用本地二进制
+        ripgrepLogger.useLocalCache(localPath);
         return localPath;
       }
 
@@ -146,9 +163,10 @@ export const Ripgrep = {
       }
 
       _ripgrepPath = localPath; // 缓存：以后都用这一份
+      ripgrepLogger.useLocalCache(localPath);
       return localPath;
     })().catch((err) => {
-      // 6) 重要：初始化失败时清空 _initPromise，避免“失败 Promise 被永久缓存”导致无法重试
+      // 6) 重要：初始化失败时清空 _initPromise，避免"失败 Promise 被永久缓存"导致无法重试
       _initPromise = null;
       throw err;
     });
@@ -177,12 +195,19 @@ export const Ripgrep = {
       throw createAbortError();
     }
 
+    ripgrepLogger.detection(false, false, false, input.binDir);
+
     const rgPath = await Ripgrep.filepath(input.binDir);
 
     const args = [
       '--files', // 只列出文件，不搜索内容
       '--hidden', // 包含隐藏文件
       '--glob=!.git/**', // 排除 .git 目录
+      '--glob=!node_modules/**', // 排除 node_modules 目录
+      '--glob=!.turbo/**', // 排除 turbo 缓存目录
+      '--glob=!dist/**', // 排除构建输出目录
+      '--glob=!store/**', // 排除 store 缓存目录
+      '--glob=!logs/**', // 排除日志目录
     ];
 
     // 添加 glob 模式
@@ -201,6 +226,13 @@ export const Ripgrep = {
       });
     }
 
+    // 记录 ripgrep 进程启动参数
+    logger.debug(`🚀 [Ripgrep:Spawn] Starting process`, {
+      rgPath,
+      args,
+      cwd: input.cwd,
+    });
+
     const proc = spawn(rgPath, args, {
       cwd: input.cwd,
       stdio: ['ignore', 'pipe', 'ignore'],
@@ -210,53 +242,99 @@ export const Ripgrep = {
     let aborted = false;
     const onAbort = () => {
       aborted = true;
-      proc.kill();
+      logger.debug(`🛑 [Ripgrep:Abort] Killing process`, {
+        pid: proc.pid,
+        cwd: input.cwd,
+      });
+
+      // 关键：先销毁 stdout 流，让 for await 循环能够退出
+      // 否则 for await 会一直阻塞等待下一个 chunk
+      proc.stdout?.destroy();
+
+      proc.kill('SIGTERM'); // 优雅终止
+
+      // 如果 500ms 后还没结束，强制杀死
+      setTimeout(() => {
+        if (!proc.killed) {
+          logger.debug(`🛑 [Ripgrep:ForceKill] Process did not terminate, forcing kill`, {
+            pid: proc.pid,
+          });
+          proc.kill('SIGKILL');
+        }
+      }, 500);
     };
     input.signal?.addEventListener('abort', onAbort, { once: true });
 
     // 流式读取输出
     let buffer = '';
+    let yieldCount = 0;
 
-    for await (const chunk of proc.stdout as AsyncIterable<Buffer>) {
-      buffer += chunk.toString('utf-8');
-      const lines = buffer.split(/\r?\n/);
-      buffer = lines.pop() || '';
+    try {
+      for await (const chunk of proc.stdout as AsyncIterable<Buffer>) {
+        // 如果已经被中止，立即退出循环
+        if (aborted) {
+          break;
+        }
 
-      for (const line of lines) {
-        if (line) {
-          yield line;
+        buffer += chunk.toString('utf-8');
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line) {
+            yieldCount++;
+            yield line;
+          }
         }
       }
+    } catch (streamError: unknown) {
+      // 如果是因为 abort 导致的流错误，忽略它
+      // 流被 destroy() 时可能会抛出 ERR_STREAM_PREMATURE_CLOSE 等错误
+      if (!aborted) {
+        throw streamError;
+      }
+    }
+
+    // 如果已经被中止，直接抛出 AbortError
+    if (aborted) {
+      throw createAbortError();
     }
 
     // 处理剩余的 buffer
     if (buffer) {
+      yieldCount++;
       yield buffer;
     }
 
-    // 等待进程结束
-    await new Promise<void>((resolve, reject) => {
-      proc.on('close', (code) => {
-        if (aborted) {
-          reject(createAbortError());
-          return;
-        }
+    // 等待进程结束（如果进程还在运行）
+    // 注意：如果上面的 for await 正常结束，进程可能已经退出了
+    if (!proc.killed && proc.exitCode === null) {
+      await new Promise<void>((resolve, reject) => {
+        proc.on('close', (code) => {
+          if (aborted) {
+            reject(createAbortError());
+            return;
+          }
 
-        if (code === 0 || code === 1) {
-          // code 1 表示没有匹配，也是正常的
-          resolve();
-        } else {
-          reject(new Error(`ripgrep exited with code ${code}`));
-        }
+          if (code === 0 || code === 1) {
+            // code 1 表示没有匹配，也是正常的
+            resolve();
+          } else {
+            reject(new Error(`ripgrep exited with code ${code}`));
+          }
+        });
+        proc.on('error', (err) => {
+          if (aborted) {
+            reject(createAbortError());
+            return;
+          }
+          reject(err);
+        });
       });
-      proc.on('error', (err) => {
-        if (aborted) {
-          reject(createAbortError());
-          return;
-        }
-        reject(err);
-      });
-    });
+    }
+
+    // 清理事件监听器
+    input.signal?.removeEventListener('abort', onAbort);
   },
 
   /**
@@ -374,11 +452,14 @@ export const Ripgrep = {
  * @param binDir - 目标目录
  */
 async function downloadRipgrep(binDir: string): Promise<void> {
+  const downloadStartTime = Date.now();
   const platformKey = getPlatformKey();
   const config = PLATFORM_CONFIG[platformKey];
 
   if (!config) {
-    throw new Error(`Unsupported platform: ${platformKey}`);
+    const error = `Unsupported platform: ${platformKey}`;
+    ripgrepLogger.downloadError(error, '', 0);
+    throw new Error(error);
   }
 
   // 确保目录存在
@@ -391,33 +472,111 @@ async function downloadRipgrep(binDir: string): Promise<void> {
   const archivePath = join(binDir, filename);
   const binaryPath = join(binDir, getRipgrepBinaryName());
 
-  // 下载文件
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to download ripgrep: ${response.status} ${response.statusText}`);
-  }
+  // 记录下载开始
+  ripgrepLogger.downloadStart(url, binDir);
 
-  // 保存到文件
-  const fileStream = createWriteStream(archivePath);
-  await pipeline(Readable.fromWeb(response.body as any), fileStream);
+  // 创建 AbortController 用于超时控制
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, DOWNLOAD_TIMEOUT_MS);
 
-  // 解压
-  if (config.extension === 'tar.gz') {
-    await extractTarGz(archivePath, binDir, platformKey);
-  } else {
-    await extractZip(archivePath, binDir);
-  }
-
-  // 设置可执行权限（非 Windows）
-  if (process.platform !== 'win32') {
-    chmodSync(binaryPath, 0o755);
-  }
-
-  // 删除压缩包
   try {
-    unlinkSync(archivePath);
-  } catch {
-    // 忽略删除失败
+    // 下载文件（带超时控制）
+    const response = await fetch(url, {
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const error = `HTTP ${response.status} ${response.statusText}`;
+      const duration = Date.now() - downloadStartTime;
+      ripgrepLogger.downloadError(error, url, duration);
+      throw new Error(`Failed to download ripgrep: ${error}`);
+    }
+
+    // 获取文件大小（如果可用）
+    const contentLength = response.headers.get('content-length');
+    const totalBytes = contentLength ? parseInt(contentLength, 10) : null;
+
+    // 保存到文件（带进度日志）
+    const fileStream = createWriteStream(archivePath);
+    let downloadedBytes = 0;
+    let lastLogTime = Date.now();
+
+    // 创建一个 TransformStream 来追踪进度
+    const progressStream = new TransformStream({
+      transform(chunk, controller) {
+        downloadedBytes += chunk.length;
+        const now = Date.now();
+        // 每 2 秒记录一次进度，避免日志过多
+        if (now - lastLogTime > 2000) {
+          ripgrepLogger.downloadProgress(downloadedBytes, totalBytes);
+          lastLogTime = now;
+        }
+        controller.enqueue(chunk);
+      },
+    });
+
+    // 使用 pipeline 进行流式下载
+    const bodyStream = response.body;
+    if (!bodyStream) {
+      throw new Error('Response body is null');
+    }
+
+    await pipeline(
+      Readable.fromWeb(bodyStream.pipeThrough(progressStream) as any),
+      fileStream
+    );
+
+    // 清除超时
+    clearTimeout(timeoutId);
+
+    const downloadDuration = Date.now() - downloadStartTime;
+    ripgrepLogger.downloadProgress(downloadedBytes, totalBytes); // 最终进度
+
+    // 解压
+    const extractStartTime = Date.now();
+    ripgrepLogger.extractStart(archivePath, binDir);
+
+    if (config.extension === 'tar.gz') {
+      await extractTarGz(archivePath, binDir, platformKey);
+    } else {
+      await extractZip(archivePath, binDir);
+    }
+
+    const extractDuration = Date.now() - extractStartTime;
+    ripgrepLogger.extractComplete(extractDuration);
+
+    // 设置可执行权限（非 Windows）
+    if (process.platform !== 'win32') {
+      chmodSync(binaryPath, 0o755);
+    }
+
+    // 删除压缩包
+    try {
+      unlinkSync(archivePath);
+    } catch {
+      // 忽略删除失败
+    }
+
+    // 记录下载完成
+    const totalDuration = Date.now() - downloadStartTime;
+    ripgrepLogger.downloadComplete(totalDuration, binaryPath);
+  } catch (error: unknown) {
+    clearTimeout(timeoutId);
+    const duration = Date.now() - downloadStartTime;
+
+    // 处理超时错误
+    if (error instanceof Error && error.name === 'AbortError') {
+      const timeoutError = `Download timeout after ${DOWNLOAD_TIMEOUT_MS}ms`;
+      ripgrepLogger.downloadError(timeoutError, url, duration);
+      throw new Error(timeoutError);
+    }
+
+    // 处理其他错误
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    ripgrepLogger.downloadError(errorMessage, url, duration);
+    throw error;
   }
 }
 
@@ -449,11 +608,16 @@ async function extractTarGz(archivePath: string, targetDir: string, platformKey:
       if (code === 0) {
         resolve();
       } else {
-        reject(new Error(`Failed to extract tar.gz: ${stderr}`));
+        const error = `Failed to extract tar.gz: ${stderr}`;
+        ripgrepLogger.extractError(error, archivePath);
+        reject(new Error(error));
       }
     });
 
-    proc.on('error', reject);
+    proc.on('error', (err) => {
+      ripgrepLogger.extractError(err.message, archivePath);
+      reject(err);
+    });
   });
 }
 
@@ -490,11 +654,16 @@ async function extractZip(archivePath: string, targetDir: string): Promise<void>
       if (code === 0) {
         resolve();
       } else {
-        reject(new Error(`Failed to extract zip: ${stderr}`));
+        const error = `Failed to extract zip: ${stderr}`;
+        ripgrepLogger.extractError(error, archivePath);
+        reject(new Error(error));
       }
     });
 
-    proc.on('error', reject);
+    proc.on('error', (err) => {
+      ripgrepLogger.extractError(err.message, archivePath);
+      reject(err);
+    });
   });
 }
 

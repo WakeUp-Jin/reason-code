@@ -1,14 +1,15 @@
 import React, { useMemo } from 'react'
 import { Box, Spacer, Text, useInput } from 'ink'
 import { useTheme } from '../../context/theme.js'
-import { useCurrentMessages, useAppStore } from '../../context/store.js'
-import { useExecutionStats } from '../../hooks/useExecutionStats.js'
+import { useAppStore } from '../../context/store.js'
+import { useAgentStats } from '../../hooks/useAgentStats.js'
 import { getCurrencySymbol } from '../../util/token.js'
 
 export function Footer() {
   const { colors } = useTheme()
-  const messages = useCurrentMessages()
-  const realtimeStats = useExecutionStats()
+
+  // 从 Agent 内存获取统计数据
+  const agentStats = useAgentStats()
 
   // 获取 Model 信息
   const currentModel = useAppStore((state) => state.currentModel)
@@ -18,7 +19,6 @@ export function Footer() {
   // 获取货币配置和 approvalMode
   const config = useAppStore((state) => state.config)
   const currency = config.currency
-  const exchangeRate = config.exchangeRate
   const approvalMode = config.approvalMode
   const toggleApprovalMode = useAppStore((state) => state.toggleApprovalMode)
   const currencySymbol = getCurrencySymbol(currency)
@@ -30,49 +30,25 @@ export function Footer() {
     }
   })
 
-  // 计算 Context 信息（历史 + 实时叠加）
+  // 从 Agent 内存获取上下文信息
+  // Token: 当前上下文大小（实时计算）
+  // Cost: 累计费用
   const contextInfo = useMemo(() => {
-    const maxTokens = currentModelInfo?.maxTokens || 64_000
-    const pricing = currentModelInfo?.pricing
-
-    // ===== 第一层：历史数据（已完成的 assistant 消息）=====
-    let historicalTokens = 0
-    let historicalCost = 0
-
-    messages.forEach((msg) => {
-      if (msg.role === 'assistant' && msg.metadata?.tokenUsage) {
-        historicalTokens += msg.metadata.tokenUsage.totalTokens
+    // 如果 Agent 还没有数据，使用默认值
+    if (!agentStats.hasData) {
+      return {
+        tokens: 0,
+        percentage: 0,
+        cost: `${currencySymbol}0.0000`,
       }
-      if (msg.role === 'assistant' && msg.metadata?.cost) {
-        historicalCost += msg.metadata.cost.totalCost
-      }
-    })
-
-    // ===== 第二层：实时数据（正在进行的对话）=====
-    const realtimeTokens = realtimeStats.totalTokens
-
-    // 计算实时费用（模型定价是人民币）
-    let realtimeCost = 0
-    if (realtimeTokens > 0 && pricing) {
-      const costCNY =
-        (realtimeStats.inputTokens / 1_000_000) * pricing.input +
-        (realtimeStats.outputTokens / 1_000_000) * pricing.output
-
-      // 如果用户选择美元，转换为美元
-      realtimeCost = currency === 'USD' ? costCNY / exchangeRate : costCNY
     }
-
-    // ===== 第三层：总计（叠加）=====
-    const totalTokens = historicalTokens + realtimeTokens
-    const totalCost = historicalCost + realtimeCost
-    const percentage = Math.min(100, Math.round((totalTokens / maxTokens) * 100))
 
     return {
-      tokens: totalTokens,
-      percentage,
-      cost: `${currencySymbol}${totalCost.toFixed(4)}`,
+      tokens: agentStats.contextTokens,
+      percentage: Math.round(agentStats.percentage),
+      cost: `${currencySymbol}${agentStats.totalCost.toFixed(4)}`,
     }
-  }, [messages, realtimeStats, currentModelInfo, currency, exchangeRate, currencySymbol])
+  }, [agentStats, currencySymbol])
 
   // 格式化 approvalMode 显示
   const approvalModeDisplay = useMemo(() => {

@@ -154,7 +154,7 @@ export class HistoryContext extends BaseContext<Message> {
 
     // 如果有 sessionId，添加历史文件引用
     if (sessionId) {
-      content += `如需查看完整历史记录，可以读取文件：~/.reason-cli/sessions/${sessionId}.json\n\n---\n\n`;
+      content += `如需查看完整历史记录，可以读取文件：~/.reason-code/sessions/${sessionId}/history.json\n\n---\n\n`;
     }
 
     content += summary;

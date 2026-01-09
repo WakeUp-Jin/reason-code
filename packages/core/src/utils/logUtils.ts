@@ -375,4 +375,137 @@ export const searchLogger = {
       triedStrategies,
     });
   },
+
+  /**
+   * 搜索超时
+   * WARN: 搜索执行超时
+   */
+  timeout(tool: string, timeoutMs: number, pattern: string, path: string) {
+    logger.warn(`⏱️ [Search] ${tool} timeout`, {
+      timeoutMs,
+      pattern,
+      path,
+      suggestion: '请尝试使用更具体的搜索模式或路径',
+    });
+  },
+};
+
+/**
+ * Ripgrep 日志封装
+ * 用于追踪 ripgrep 二进制文件的检测、下载和使用
+ */
+export const ripgrepLogger = {
+  /**
+   * 记录 ripgrep 检测结果
+   * DEBUG: 检测系统 rg 和本地缓存的结果
+   */
+  detection(hasSystemRg: boolean, hasLocalCache: boolean, willDownload: boolean, binDir?: string) {
+    logger.debug(`🔍 [Ripgrep:Detection]`, {
+      hasSystemRg,
+      hasLocalCache,
+      willDownload,
+      binDir,
+    });
+  },
+
+  /**
+   * 记录使用系统 ripgrep
+   * INFO: 使用系统已安装的 rg
+   */
+  useSystem(path: string) {
+    logger.info(`✅ [Ripgrep] Using system rg`, { path });
+  },
+
+  /**
+   * 记录使用本地缓存
+   * INFO: 使用本地缓存的 rg
+   */
+  useLocalCache(path: string) {
+    logger.info(`✅ [Ripgrep] Using cached rg`, { path });
+  },
+
+  /**
+   * 记录下载开始
+   * INFO: 下载开始（包含 URL 和目标路径）
+   */
+  downloadStart(url: string, targetDir: string) {
+    logger.info(`⬇️ [Ripgrep:Download] Starting download`, {
+      url,
+      targetDir,
+    });
+  },
+
+  /**
+   * 记录下载进度
+   * DEBUG: 下载进度（避免日志过多，仅在关键节点记录）
+   */
+  downloadProgress(downloadedBytes: number, totalBytes: number | null) {
+    const percent = totalBytes ? ((downloadedBytes / totalBytes) * 100).toFixed(1) + '%' : 'unknown';
+    logger.debug(`⬇️ [Ripgrep:Download] Progress`, {
+      downloadedBytes,
+      totalBytes,
+      percent,
+    });
+  },
+
+  /**
+   * 记录下载完成
+   * INFO: 下载完成（包含耗时）
+   */
+  downloadComplete(duration: number, targetPath: string) {
+    logger.info(`✅ [Ripgrep:Download] Completed`, {
+      duration,
+      targetPath,
+    });
+  },
+
+  /**
+   * 记录下载失败
+   * ERROR: 下载失败（包含错误详情）
+   */
+  downloadError(error: string, url: string, duration: number) {
+    logger.error(`❌ [Ripgrep:Download] Failed`, {
+      error,
+      url,
+      duration,
+    });
+  },
+
+  /**
+   * 记录解压开始
+   * DEBUG: 解压开始
+   */
+  extractStart(archivePath: string, targetDir: string) {
+    logger.debug(`📦 [Ripgrep:Extract] Starting`, {
+      archivePath,
+      targetDir,
+    });
+  },
+
+  /**
+   * 记录解压完成
+   * DEBUG: 解压完成
+   */
+  extractComplete(duration: number) {
+    logger.debug(`📦 [Ripgrep:Extract] Completed`, { duration });
+  },
+
+  /**
+   * 记录解压失败
+   * ERROR: 解压失败
+   */
+  extractError(error: string, archivePath: string) {
+    logger.error(`❌ [Ripgrep:Extract] Failed`, {
+      error,
+      archivePath,
+    });
+  },
+
+  /**
+   * 记录 ripgrep 不可用
+   * WARN: ripgrep 不可用的原因
+   */
+  unavailable(reason: string) {
+    logger.warn(`⚠️ [Ripgrep] Unavailable`, { reason });
+  },
 };

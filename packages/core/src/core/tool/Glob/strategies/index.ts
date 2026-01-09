@@ -19,10 +19,11 @@
 import { GlobStrategy, GlobFileItem, GlobStrategyOptions } from '../types.js';
 import { isBun, getRuntimeName } from '../../utils/runtime.js';
 import { canUseRipgrep } from '../../utils/tool-detection.js';
-import { searchLogger } from '../../../../utils/logUtils.js';
+import { searchLogger, ripgrepLogger } from '../../../../utils/logUtils.js';
 import { globWithNpmPackage } from './glob-npm.js';
 import { globWithRipgrepBun } from './ripgrep-bun.js';
 import { isAbortError } from '../../utils/error-utils.js';
+import { logger } from '../../../../utils/logger.js';
 
 /**
  * 选择最优 Glob 策略
@@ -31,17 +32,36 @@ import { isAbortError } from '../../utils/error-utils.js';
  * @returns 选择的策略
  */
 export async function selectGlobStrategy(binDir?: string): Promise<GlobStrategy> {
+  const runtime = getRuntimeName();
+  const isBunEnv = isBun();
   const hasRipgrep = await canUseRipgrep(binDir);
 
+  // 记录策略选择的决策过程
+  logger.debug(`🎯 [Glob:StrategySelection] Evaluating`, {
+    runtime,
+    isBunEnv,
+    hasRipgrep,
+    hasBinDir: !!binDir,
+    binDir,
+  });
+
   // Bun 环境：优先使用 ripgrep
-  // 如果传入了 binDir，则视为“允许使用本地缓存/尝试自动下载”，即使当前不存在 rg 也会尝试 ripgrep-bun 策略。
-  if (isBun() && (hasRipgrep || binDir)) {
+  // 如果传入了 binDir，则视为"允许使用本地缓存/尝试自动下载"，即使当前不存在 rg 也会尝试 ripgrep-bun 策略。
+  if (isBunEnv && (hasRipgrep || binDir)) {
+    const reason = hasRipgrep
+      ? 'Bun environment with ripgrep available'
+      : 'Bun environment with binDir (will attempt download if needed)';
+    logger.debug(`🎯 [Glob:StrategySelection] Chose ${GlobStrategy.RIPGREP_BUN}`, { reason });
     return GlobStrategy.RIPGREP_BUN;
   }
 
   // 其他情况：使用 glob 包
   // - Node.js 环境（即使 ripgrep 可用）
   // - Bun 环境但 ripgrep 不可用
+  const reason = isBunEnv
+    ? 'Bun environment but ripgrep not available and no binDir'
+    : 'Node.js environment (prefer glob npm for better stat performance)';
+  logger.debug(`🎯 [Glob:StrategySelection] Chose ${GlobStrategy.GLOB_NPM}`, { reason });
   return GlobStrategy.GLOB_NPM;
 }
 

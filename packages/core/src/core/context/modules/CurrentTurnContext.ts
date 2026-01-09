@@ -1,6 +1,7 @@
 import { BaseContext } from '../base/BaseContext.js';
 import { ContextType, Message } from '../types.js';
 import { HistoryContext } from './HistoryContext.js';
+import { sanitizeMessages, SanitizeResult } from '../utils/messageSanitizer.js';
 
 /**
  * 当前运行记录上下文管理类
@@ -67,5 +68,25 @@ export class CurrentTurnContext extends BaseContext<Message> {
       }
     }
     return undefined;
+  }
+
+  /**
+   * 清理当前轮次的消息，保留已完成的部分
+   *
+   * 用于 ESC 中断时：
+   * - 保留已完成的 assistant + tool 消息对
+   * - 移除不完整的 assistant 消息（有 tool_calls 但缺少 tool 响应）
+   *
+   * @returns 清理结果
+   */
+  sanitize(): SanitizeResult {
+    const result = sanitizeMessages(this.items);
+
+    if (result.sanitized) {
+      // 替换为清理后的消息
+      this.replace(result.messages);
+    }
+
+    return result;
   }
 }

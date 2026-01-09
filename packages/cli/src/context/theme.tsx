@@ -1,148 +1,21 @@
+/**
+ * 主题 Context
+ * 
+ * 设计理念：
+ * - 使用 ANSI 颜色名称实现终端自适应（text, textMuted 等）
+ * - 使用 HEX 颜色保持品牌一致性（primary, error 等）
+ * - 不再区分 dark/light 模式，由终端自动适配
+ */
+
 import React, {
   createContext,
   useContext,
   useState,
   useMemo,
-  useEffect,
   type ReactNode,
-} from 'react';
-
-// 主题模式
-export type ThemeMode = 'dark' | 'light';
-
-// 主题颜色定义
-export interface ThemeColors {
-  // 基础颜色
-  primary: string;
-  secondary: string;
-  accent: string;
-  error: string;
-  warning: string;
-  success: string;
-  info: string;
-
-  // 文本颜色
-  text: string;
-  textMuted: string;
-  textInverse: string;
-  textThinking: string; // 思考模式专用文本颜色（斜体灰色）
-
-  // 背景颜色
-  background: string;
-  backgroundPanel: string;
-  backgroundElement: string;
-
-  // 边框颜色
-  border: string;
-  borderActive: string;
-  borderSubtle: string;
-
-  // Diff 颜色
-  diffAdded: string;
-  diffRemoved: string;
-  diffContext: string;
-  diffAddedBg: string;
-  diffRemovedBg: string;
-
-  // 语法高亮
-  syntaxComment: string;
-  syntaxKeyword: string;
-  syntaxFunction: string;
-  syntaxString: string;
-  syntaxNumber: string;
-  syntaxType: string;
-  syntaxOperator: string;
-}
-
-// 主题数据
-export interface Theme {
-  name: string;
-  mode: ThemeMode;
-  colors: ThemeColors;
-}
-
-// 默认 Kanagawa Dark 主题颜色 (Reason 紫色系)
-const kanagawaDark: ThemeColors = {
-  // ===== 核心功能色 - 紫色系 (Reason 品牌色) =====
-  primary: '#A78BFA', // 🟣 紫色主色调 - 用于 Agent 标识、主按钮、高亮边框
-  secondary: '#C4B5FD', // 🟣 淡紫色 - 次要按钮、标签、图标
-  accent: '#D8B4FE', // 🟣 亮紫色 - 强调元素、悬停状态、激活状态
-
-  // ===== 状态色 - 通用标准 =====
-  error: '#E82424', // 🔴 红色 - 错误消息、删除操作、失败状态
-  warning: '#D7A657', // 🟡 黄色 - 警告消息、需要注意的内容
-  success: '#98BB6C', // 🟢 绿色 - 成功消息、完成状态、添加操作
-  info: '#76946A', // 🔵 青绿色 - 提示信息、帮助文本
-
-  // ===== 文本颜色 =====
-  text: '#DCD7BA', // 📝 主文本 - 亮米色，高可读性，用于正文
-  textMuted: '#727169', // 🔇 次要文本 - 暗灰色，用于提示、注释、次要信息
-  textInverse: '#1F1F28', // ⚪ 反色文本 - 深色背景上的亮色按钮内文字
-  textThinking: '#8A8A8A', // 💭 思考文本 - 中灰色，用于思考模式内容（斜体）
-
-  // ===== 背景颜色 - 深色主题 =====
-  background: '#1F1F28', // 🌑 最深背景 - 页面主背景色
-  backgroundPanel: '#2A2A37', // 🌓 面板背景 - 卡片、对话框背景
-  backgroundElement: '#363646', // 🌔 元素背景 - 输入框、代码块、悬停状态
-
-  // ===== 边框颜色 =====
-  border: '#54546D', // ─ 默认边框 - 分割线、普通边框
-  borderActive: '#A78BFA', // 🟣 激活边框 - 聚焦时的紫色边框
-  borderSubtle: '#363646', // ─ 微妙边框 - 不明显的分割
-
-  // ===== Diff 颜色 - 代码对比 =====
-  diffAdded: '#98BB6C', // + 添加的行 - 绿色文本
-  diffRemoved: '#E82424', // - 删除的行 - 红色文本
-  diffContext: '#727169', // 上下文行 - 灰色文本
-  diffAddedBg: '#2D4F2D', // + 添加的行背景 - 深绿色
-  diffRemovedBg: '#4F2D2D', // - 删除的行背景 - 深红色
-
-  // ===== 语法高亮 - 代码编辑器 =====
-  syntaxComment: '#727169', // // 注释 - 灰色
-  syntaxKeyword: '#A78BFA', // 🟣 关键字 - 紫色 (if, const, function 等)
-  syntaxFunction: '#C4B5FD', // 🟣 函数名 - 淡紫色
-  syntaxString: '#98BB6C', // 🟢 字符串 - 绿色
-  syntaxNumber: '#D27E99', // 🔴 数字 - 玫红色
-  syntaxType: '#7FB4CA', // 🔵 类型 - 天蓝色 (interface, type 等)
-  syntaxOperator: '#C0A36E', // 🟡 运算符 - 金色 (+, -, *, / 等)
-};
-
-const kanagawaLight: ThemeColors = {
-  primary: '#2D4F67',
-  secondary: '#957FB8',
-  accent: '#D27E99',
-  error: '#E82424',
-  warning: '#D7A657',
-  success: '#76946A',
-  info: '#76946A',
-
-  text: '#54433A',
-  textMuted: '#9E9389',
-  textInverse: '#F2E9DE',
-  textThinking: '#6A6A6A', // 💭 思考文本 - 深灰色，用于思考模式内容（斜体）
-
-  background: '#F2E9DE',
-  backgroundPanel: '#EAE4D7',
-  backgroundElement: '#E3DCD2',
-
-  border: '#D4CBBF',
-  borderActive: '#D7A657',
-  borderSubtle: '#DCD4C9',
-
-  diffAdded: '#76946A',
-  diffRemoved: '#E82424',
-  diffContext: '#9E9389',
-  diffAddedBg: '#D4E4D4',
-  diffRemovedBg: '#E4D4D4',
-
-  syntaxComment: '#9E9389',
-  syntaxKeyword: '#957FB8',
-  syntaxFunction: '#2D4F67',
-  syntaxString: '#76946A',
-  syntaxNumber: '#D27E99',
-  syntaxType: '#4E8CA2',
-  syntaxOperator: '#C0A36E',
-};
+} from 'react'
+import { loadTheme } from '../themes/loader.js'
+import type { SemanticColors, ThemePalette } from '../themes/types.js'
 
 // 预定义主题列表
 export const AVAILABLE_THEMES = [
@@ -152,82 +25,287 @@ export const AVAILABLE_THEMES = [
   'dracula',
   'nord',
   'catppuccin',
-] as const;
+] as const
 
-export type ThemeName = (typeof AVAILABLE_THEMES)[number];
+export type ThemeName = (typeof AVAILABLE_THEMES)[number]
+
+// 主题数据
+export interface Theme {
+  name: string
+  displayName: string
+  palette: ThemePalette
+  colors: SemanticColors
+}
+
+// 兼容旧的 ThemeColors 接口（扁平化访问）
+export interface ThemeColors {
+  // 品牌色
+  primary: string
+  secondary: string
+  accent: string
+  
+  // 状态色
+  error: string
+  warning: string
+  success: string
+  info: string
+  
+  // 文本颜色
+  text: string
+  textMuted: string
+  textInverse: string
+  textThinking: string
+
+  // Markdown 颜色
+  markdownHeading: string
+  markdownInlineCode: string
+  markdownFilePath: string
+  
+  // 背景颜色
+  background: string
+  backgroundPanel: string
+  backgroundElement: string
+  backgroundUserMessage: string
+  
+  // 边框颜色
+  border: string
+  borderActive: string
+  borderSubtle: string
+  
+  // Diff 颜色
+  diffAdded: string
+  diffRemoved: string
+  diffContext: string
+  diffAddedBg: string
+  diffRemovedBg: string
+  
+  // 语法高亮
+  syntaxComment: string
+  syntaxKeyword: string
+  syntaxFunction: string
+  syntaxString: string
+  syntaxNumber: string
+  syntaxType: string
+  syntaxOperator: string
+}
+
+/**
+ * 将新的 SemanticColors 转换为扁平的 ThemeColors
+ * 用于兼容现有组件
+ */
+function flattenColors(colors: SemanticColors): ThemeColors {
+  return {
+    // 品牌色
+    primary: colors.brand.primary,
+    secondary: colors.brand.secondary,
+    accent: colors.brand.accent,
+    
+    // 状态色
+    error: colors.status.error,
+    warning: colors.status.warning,
+    success: colors.status.success,
+    info: colors.status.info,
+    
+    // 文本颜色
+    text: colors.text.primary,
+    textMuted: colors.text.secondary,
+    textInverse: colors.text.inverse,
+    textThinking: colors.text.thinking,
+
+    // Markdown 颜色
+    markdownHeading: colors.markdown.heading,
+    markdownInlineCode: colors.markdown.inlineCode,
+    markdownFilePath: colors.markdown.filePath,
+    
+    // 背景颜色
+    background: colors.background.primary,
+    backgroundPanel: colors.background.panel,
+    backgroundElement: colors.background.element,
+    backgroundUserMessage: colors.background.userMessage,
+    
+    // 边框颜色
+    border: colors.border.default,
+    borderActive: colors.border.active,
+    borderSubtle: colors.border.subtle,
+    
+    // Diff 颜色
+    diffAdded: colors.diff.added,
+    diffRemoved: colors.diff.removed,
+    diffContext: colors.diff.context,
+    diffAddedBg: colors.diff.addedBg,
+    diffRemovedBg: colors.diff.removedBg,
+    
+    // 语法高亮
+    syntaxComment: colors.syntax.comment,
+    syntaxKeyword: colors.syntax.keyword,
+    syntaxFunction: colors.syntax.function,
+    syntaxString: colors.syntax.string,
+    syntaxNumber: colors.syntax.number,
+    syntaxType: colors.syntax.type,
+    syntaxOperator: colors.syntax.operator,
+  }
+}
 
 // Context 值类型
 interface ThemeContextValue {
-  theme: Theme;
-  themeName: ThemeName;
-  mode: ThemeMode;
-  setThemeName: (name: ThemeName) => void;
-  setMode: (mode: ThemeMode) => void;
-  toggleMode: () => void;
-  colors: ThemeColors;
+  theme: Theme
+  themeName: ThemeName
+  setThemeName: (name: ThemeName) => void
+  
+  // 新的语义化颜色访问
+  semanticColors: SemanticColors
+  palette: ThemePalette
+  
+  // 兼容旧的扁平颜色访问
+  colors: ThemeColors
+  
+  // @deprecated 不再需要 mode，终端自动适配
+  mode: 'dark'
+  setMode: (mode: 'dark' | 'light') => void
+  toggleMode: () => void
 }
 
-const ThemeContext = createContext<ThemeContextValue | null>(null);
+const ThemeContext = createContext<ThemeContextValue | null>(null)
 
-// 获取主题颜色
-function getThemeColors(name: ThemeName, mode: ThemeMode): ThemeColors {
-  // 目前只实现 Kanagawa，其他主题后续添加
-  if (name === 'kanagawa') {
-    return mode === 'dark' ? kanagawaDark : kanagawaLight;
-  }
-  // 默认返回 Kanagawa
-  return mode === 'dark' ? kanagawaDark : kanagawaLight;
+// 默认主题（当加载失败时使用）
+const DEFAULT_PALETTE: ThemePalette = {
+  purple: '#957FB8',
+  blue: '#7E9CD8',
+  codeBlue: '#736FF3',
+  cyan: '#7FB4CA',
+  green: '#98BB6C',
+  yellow: '#DCA561',
+  orange: '#FFA066',
+  red: '#E82424',
+  gray: '#727169',
+  darkGray: '#363646',
+  lightGray: '#54546D',
+}
+
+const DEFAULT_COLORS: SemanticColors = {
+  text: {
+    primary: 'white',
+    secondary: 'gray',
+    thinking: 'gray',
+    inverse: 'black',
+  },
+  markdown: {
+    heading: '#19A34A',
+    inlineCode: '#736FF3',
+    filePath: '#736FF3',
+  },
+  background: {
+    primary: 'black',
+    panel: '#2A2A37',
+    element: '#363646',
+    userMessage: '#2D2B3A',
+  },
+  border: {
+    default: 'gray',
+    active: '#DCA561',
+    subtle: '#363646',
+  },
+  brand: {
+    primary: '#957FB8',
+    secondary: '#7E9CD8',
+    accent: '#FFA066',
+  },
+  status: {
+    error: '#E82424',
+    warning: '#DCA561',
+    success: '#98BB6C',
+    info: '#7FB4CA',
+    pending: 'gray',
+    running: '#DCA561',
+  },
+  syntax: {
+    keyword: '#957FB8',
+    function: '#7E9CD8',
+    string: '#98BB6C',
+    number: '#FFA066',
+    comment: 'gray',
+    type: '#7FB4CA',
+    operator: '#DCA561',
+  },
+  diff: {
+    added: '#98BB6C',
+    removed: '#E82424',
+    context: 'gray',
+    addedBg: '#2D4F2D',
+    removedBg: '#4F2D2D',
+  },
+  message: {
+    user: '#7E9CD8',
+    assistant: '#957FB8',
+    system: 'gray',
+  },
+  logo: {
+    primary: '#957FB8',
+    accent: '#7E9CD8',
+  },
 }
 
 interface ThemeProviderProps {
-  children: ReactNode;
-  defaultTheme?: ThemeName;
-  defaultMode?: ThemeMode;
+  children: ReactNode
+  defaultTheme?: ThemeName
 }
 
 export function ThemeProvider({
   children,
   defaultTheme = 'kanagawa',
-  defaultMode = 'dark',
 }: ThemeProviderProps) {
-  const [themeName, setThemeName] = useState<ThemeName>(defaultTheme);
-  const [mode, setMode] = useState<ThemeMode>(defaultMode);
-
-  const colors = useMemo(() => getThemeColors(themeName, mode), [themeName, mode]);
-
-  const theme = useMemo<Theme>(
-    () => ({
-      name: themeName,
-      mode,
-      colors,
-    }),
-    [themeName, mode, colors]
-  );
-
-  const toggleMode = () => {
-    setMode((prev) => (prev === 'dark' ? 'light' : 'dark'));
-  };
-
-  const value = useMemo<ThemeContextValue>(
-    () => ({
-      theme,
-      themeName,
-      mode,
-      setThemeName,
-      setMode,
-      toggleMode,
-      colors,
-    }),
-    [theme, themeName, mode, colors]
-  );
-
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+  const [themeName, setThemeName] = useState<ThemeName>(defaultTheme)
+  
+  // 加载主题
+  const resolvedTheme = useMemo(() => {
+    const loaded = loadTheme(themeName)
+    if (loaded) {
+      return loaded
+    }
+    // 回退到默认主题
+    return {
+      name: 'kanagawa',
+      displayName: 'Kanagawa',
+      palette: DEFAULT_PALETTE,
+      colors: DEFAULT_COLORS,
+    }
+  }, [themeName])
+  
+  // 构建 Theme 对象
+  const theme = useMemo<Theme>(() => ({
+    name: resolvedTheme.name,
+    displayName: resolvedTheme.displayName,
+    palette: resolvedTheme.palette,
+    colors: resolvedTheme.colors,
+  }), [resolvedTheme])
+  
+  // 扁平化颜色（兼容旧组件）
+  const flatColors = useMemo(() => flattenColors(resolvedTheme.colors), [resolvedTheme.colors])
+  
+  // Context 值
+  const value = useMemo<ThemeContextValue>(() => ({
+    theme,
+    themeName,
+    setThemeName,
+    semanticColors: resolvedTheme.colors,
+    palette: resolvedTheme.palette,
+    colors: flatColors,
+    // 兼容旧 API（不再有实际作用）
+    mode: 'dark' as const,
+    setMode: () => {},
+    toggleMode: () => {},
+  }), [theme, themeName, resolvedTheme, flatColors])
+  
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
 }
 
 export function useTheme(): ThemeContextValue {
-  const context = useContext(ThemeContext);
+  const context = useContext(ThemeContext)
   if (!context) {
-    throw new Error('useTheme must be used within ThemeProvider');
+    throw new Error('useTheme must be used within ThemeProvider')
   }
-  return context;
+  return context
 }
+
+// 导出类型
+export type { SemanticColors, ThemePalette }

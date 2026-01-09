@@ -8,7 +8,7 @@ export interface UserMessageProps {
 }
 
 /**
- * 单条用户消息组件 - 带左边框
+ * 单条用户消息组件 - 带左边框和背景色
  */
 export function UserMessage({ message }: UserMessageProps) {
   const { colors } = useTheme();
@@ -29,7 +29,7 @@ export function UserMessage({ message }: UserMessageProps) {
         padding={1}
         flexDirection="column"
         paddingLeft={1}
-        backgroundColor={colors.background}
+        backgroundColor={colors.backgroundUserMessage}
       >
         <Text color={colors.text}>{message.content}</Text>
         <Text color={colors.textMuted}>{username}</Text>

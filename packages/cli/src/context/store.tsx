@@ -525,6 +525,27 @@ export function useSessions(): Session[] {
   return useAppStore((state) => state.sessions);
 }
 
+// 获取已完成的消息（非流式）
+// 使用 useShallow 进行浅比较，避免不必要的重新渲染
+export function useCompletedMessages(): Message[] {
+  return useAppStore(
+    useShallow((state) => {
+      const id = state.currentSessionId;
+      const messages = id ? state.messages[id] || [] : [];
+      return messages.filter((m) => !m.isStreaming);
+    })
+  );
+}
+
+// 获取当前流式消息
+export function useStreamingMessage(): Message | null {
+  return useAppStore((state) => {
+    const id = state.currentSessionId;
+    const messages = id ? state.messages[id] || [] : [];
+    return messages.find((m) => m.isStreaming) || null;
+  });
+}
+
 // 找到第一个阻塞点（未完成的工具或流式消息）
 // 阻塞点之前的消息可以进入 Static 区域，阻塞点及之后的消息在动态区域渲染
 function findBlockingIndex(messages: Message[]): number {
@@ -570,25 +591,4 @@ export function useDynamicMessages(): Message[] {
       return messages.slice(blockingIndex).filter((m) => !m.isStreaming);
     })
   );
-}
-
-// 获取已完成的消息（非流式）- 保留用于向后兼容
-// 使用 useShallow 进行浅比较，避免不必要的重新渲染
-export function useCompletedMessages(): Message[] {
-  return useAppStore(
-    useShallow((state) => {
-      const id = state.currentSessionId;
-      const messages = id ? state.messages[id] || [] : [];
-      return messages.filter((m) => !m.isStreaming);
-    })
-  );
-}
-
-// 获取当前流式消息
-export function useStreamingMessage(): Message | null {
-  return useAppStore((state) => {
-    const id = state.currentSessionId;
-    const messages = id ? state.messages[id] || [] : [];
-    return messages.find((m) => m.isStreaming) || null;
-  });
 }

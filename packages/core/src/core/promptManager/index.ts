@@ -9,6 +9,7 @@ export {
   MAIN_AGENT_PROMPT,
   SUB_AGENT_A_PROMPT,
   SUB_AGENT_B_PROMPT,
+  INSIGHT_FORMAT_PROMPT,
 } from './system/agentPrompts.js';
 
 // ============ 压缩相关提示词 ============

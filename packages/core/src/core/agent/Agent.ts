@@ -9,9 +9,11 @@ import { ILLMService } from '../llm/types/index.js';
 import { createLLMService } from '../llm/factory.js';
 import { ToolLoopExecutor } from '../llm/utils/executeToolLoop.js';
 import { eventBus } from '../../evaluation/EventBus.js';
-import { SIMPLE_AGENT_PROMPT } from '../promptManager/index.js';
+import { INSIGHT_FORMAT_PROMPT, SIMPLE_AGENT_PROMPT } from '../promptManager/index.js';
 import { ExecutionStreamManager } from '../execution/index.js';
 import { ApprovalMode, ConfirmDetails, ConfirmOutcome } from '../tool/types.js';
+import { SessionStats, type CheckpointStats, type ModelPricing } from '../stats/index.js';
+import { logger } from '../../utils/logger.js';
 
 /**
  * Agent 配置
@@ -42,6 +44,34 @@ export interface HistoryLoadOptions {
 }
 
 /**
+ * 检查点数据（用于恢复会话状态）
+ */
+export interface SessionCheckpoint {
+  /** 压缩生成的摘要 */
+  summary: string;
+  /** 从这个消息 ID 之后开始加载 */
+  loadAfterMessageId: string;
+  /** 压缩时间戳 */
+  compressedAt: number;
+  /** 累计统计 */
+  stats: CheckpointStats;
+}
+
+/**
+ * 压缩完成回调参数
+ */
+export interface CompressionCompleteEvent {
+  /** 压缩生成的摘要 */
+  summary: string;
+  /** 被压缩的消息数量 */
+  compressedCount: number;
+  /** 保留的消息数量 */
+  preservedCount: number;
+  /** 压缩后的 token 数 */
+  compressedTokens: number;
+}
+
+/**
  * Agent 运行选项
  */
 export interface AgentRunOptions {
@@ -60,6 +90,9 @@ export interface AgentRunOptions {
 
   /** 批准模式 */
   approvalMode?: ApprovalMode;
+
+  /** 压缩完成回调（用于 CLI 保存检查点） */
+  onCompressionComplete?: (event: CompressionCompleteEvent) => void;
 }
 
 /**
@@ -100,6 +133,18 @@ export class Agent {
   private initialized = false;
   private executionStream: ExecutionStreamManager;
 
+  /** 会话统计（费用累计） */
+  private sessionStats: SessionStats;
+
+  /** 压缩完成回调 */
+  private onCompressionComplete?: (event: CompressionCompleteEvent) => void;
+
+  /** 中断控制器（用于取消执行） */
+  private abortController: AbortController | null = null;
+
+  /** 当前执行器（用于中断时清理） */
+  private currentExecutor: ToolLoopExecutor | null = null;
+
   constructor(config: AgentConfig) {
     this.config = {
       name: config.name ?? 'agent',
@@ -110,6 +155,7 @@ export class Agent {
     this.contextManager = new ContextManager();
     this.toolManager = new ToolManager();
     this.executionStream = new ExecutionStreamManager();
+    this.sessionStats = new SessionStats();
   }
 
   /**
@@ -126,9 +172,56 @@ export class Agent {
     });
 
     // 设置系统提示词
-    this.contextManager.setSystemPrompt(this.config.systemPrompt!);
+    let systemPrompt = this.config.systemPrompt ?? INSIGHT_FORMAT_PROMPT;
+    if (systemPrompt) {
+      this.contextManager.setSystemPrompt(systemPrompt);
+    }
 
     this.initialized = true;
+  }
+
+  /**
+   * 从检查点初始化 Agent
+   * 用于恢复之前的会话状态
+   *
+   * @param history - 完整历史消息（用于没有检查点时）
+   * @param checkpoint - 检查点数据（如有）
+   */
+  async initWithCheckpoint(
+    history: Message[],
+    checkpoint?: SessionCheckpoint
+  ): Promise<void> {
+    // 先执行基本初始化
+    await this.init();
+
+    if (checkpoint) {
+      // 有检查点：从检查点恢复
+      logger.info('Restoring from checkpoint', {
+        loadAfterMessageId: checkpoint.loadAfterMessageId,
+        compressedAt: new Date(checkpoint.compressedAt).toISOString(),
+      });
+
+      // 找到分割点
+      const splitIndex = history.findIndex(
+        (msg) => (msg as any).id === checkpoint.loadAfterMessageId
+      );
+
+      if (splitIndex === -1) {
+        // 消息 ID 找不到，加载完整历史
+        logger.warn('Checkpoint message ID not found, loading full history');
+        this.loadHistory(history);
+      } else {
+        // 使用摘要 + 分割点之后的消息
+        const partialHistory = history.slice(splitIndex + 1);
+        this.contextManager.loadWithSummary(checkpoint.summary, partialHistory);
+      }
+
+      // 恢复统计数据
+      this.sessionStats.restore(checkpoint.stats);
+    } else {
+      // 无检查点：加载完整历史
+      this.loadHistory(history);
+    }
   }
 
   /**
@@ -162,6 +255,9 @@ export class Agent {
       throw new Error('Agent not initialized. Call init() first.');
     }
 
+    // 创建新的中断控制器
+    this.abortController = new AbortController();
+
     // 重置事件收集器
     eventBus.reset();
 
@@ -189,9 +285,33 @@ export class Agent {
           sessionId: options?.sessionId,
           onConfirmRequired: options?.onConfirmRequired,
           approvalMode: options?.approvalMode,
+          abortSignal: this.abortController.signal,
         }
       );
+
+      // 保存当前执行器引用
+      this.currentExecutor = executor;
+
       const loopResult = await executor.run();
+
+      // 清理执行器引用
+      this.currentExecutor = null;
+
+      // 检查是否被中断
+      if (loopResult.cancelled) {
+        // 中断时不归档到历史，保留 currentTurn 中已完成的消息
+        // sanitize 已在 executor 中调用
+        this.executionStream.cancel('用户取消执行');
+
+        const collected = eventBus.getData();
+        return {
+          agents: collected.agents,
+          tools: collected.tools,
+          finalResponse: '',
+          success: false,
+          error: '执行已暂停',
+        };
+      }
 
       // 完成当前轮次（归档到历史）
       this.contextManager.finishTurn();
@@ -212,6 +332,9 @@ export class Agent {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
 
+      // 清理执行器引用
+      this.currentExecutor = null;
+
       // 执行流错误
       this.executionStream.error(errorMessage);
 
@@ -225,7 +348,32 @@ export class Agent {
         success: false,
         error: errorMessage,
       };
+    } finally {
+      // 清理中断控制器
+      this.abortController = null;
     }
+  }
+
+  /**
+   * 中断当前执行
+   *
+   * 调用后：
+   * - 取消正在进行的 LLM 调用和工具执行
+   * - 保留当前轮次中已完成的消息
+   * - 清理不完整的消息（有 tool_calls 但缺少 tool 响应）
+   */
+  abort(): void {
+    if (this.abortController) {
+      logger.info('Agent execution aborted by user');
+      this.abortController.abort();
+    }
+  }
+
+  /**
+   * 检查是否正在执行
+   */
+  isRunning(): boolean {
+    return this.abortController !== null;
   }
 
   /**
@@ -307,5 +455,57 @@ export class Agent {
   clearContext(): void {
     this.contextManager.clear(ContextType.HISTORY);
     this.contextManager.clearCurrentTurn();
+  }
+
+  // ============ 统计相关 ============
+
+  /**
+   * 获取会话统计
+   */
+  getSessionStats(): SessionStats {
+    return this.sessionStats;
+  }
+
+  /**
+   * 设置模型定价（用于费用计算）
+   */
+  setModelPricing(pricing: ModelPricing): void {
+    this.sessionStats.setPricing(pricing);
+  }
+
+  /**
+   * 设置汇率
+   */
+  setExchangeRate(rate: number): void {
+    this.sessionStats.setExchangeRate(rate);
+  }
+
+  /**
+   * 获取当前 Token 使用情况
+   * 从 ContextManager 实时计算
+   */
+  getTokenUsage(): { used: number; limit: number; percentage: number } {
+    const usage = this.contextManager.getTokenUsage();
+    return {
+      used: usage.used,
+      limit: usage.limit,
+      percentage: usage.percentage,
+    };
+  }
+
+  /**
+   * 获取累计费用
+   */
+  getTotalCost(currency: 'USD' | 'CNY' = 'CNY'): number {
+    return currency === 'USD'
+      ? this.sessionStats.getTotalCostUSD()
+      : this.sessionStats.getTotalCostCNY();
+  }
+
+  /**
+   * 获取格式化的费用字符串
+   */
+  getFormattedCost(currency: 'USD' | 'CNY' = 'CNY'): string {
+    return this.sessionStats.getFormattedCost(currency);
   }
 }

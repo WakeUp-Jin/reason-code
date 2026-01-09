@@ -3,6 +3,7 @@ import { SystemPromptContext } from './modules/SystemPromptContext.js';
 import { HistoryContext } from './modules/HistoryContext.js';
 import { CurrentTurnContext } from './modules/CurrentTurnContext.js';
 import { TokenEstimator } from './utils/tokenEstimator.js';
+import { sanitizeMessages } from './utils/messageSanitizer.js';
 import { logger } from '../../utils/logger.js';
 import type { ILLMService } from '../llm/types/index.js';
 
@@ -183,6 +184,42 @@ export class ContextManager {
     logger.debug(`加载历史消息: ${messages.length} 条`);
   }
 
+  /**
+   * 加载带摘要的历史（从检查点恢复时使用）
+   *
+   * @param summary - 压缩生成的摘要
+   * @param messages - 摘要之后的历史消息
+   */
+  loadWithSummary(summary: string, messages: Message[]): void {
+    // 清空现有历史
+    this.history.clear();
+
+    // 先添加摘要作为系统消息（user 角色，让 LLM 知道之前的对话内容）
+    const summaryMessage: Message = {
+      role: 'user',
+      content: `[历史对话摘要]\n以下是之前对话的摘要，请基于此继续对话：\n\n${summary}`,
+    };
+
+    // 加载摘要 + 后续消息
+    this.history.load([summaryMessage, ...messages]);
+
+    logger.debug(`加载带摘要的历史: 1 条摘要 + ${messages.length} 条消息`);
+  }
+
+  /**
+   * 获取历史消息数量
+   */
+  getHistoryCount(): number {
+    return this.history.getAll().length;
+  }
+
+  /**
+   * 获取历史消息（用于持久化）
+   */
+  getHistoryMessages(): Message[] {
+    return this.history.getAll();
+  }
+
   // ============ 当前轮次相关 ============
 
   /**
@@ -197,6 +234,17 @@ export class ContextManager {
    */
   clearCurrentTurn(): void {
     this.currentTurn.clear();
+  }
+
+  /**
+   * 清理当前轮次的消息，保留已完成的部分
+   *
+   * 用于 ESC 中断时：
+   * - 保留已完成的 assistant + tool 消息对
+   * - 移除不完整的 assistant 消息（有 tool_calls 但缺少 tool 响应）
+   */
+  sanitizeCurrentTurn(): void {
+    this.currentTurn.sanitize();
   }
 
   // ============ 轮次管理 ============
@@ -255,6 +303,10 @@ export class ContextManager {
 
   /**
    * 构建消息列表（内部方法）
+   *
+   * 在构建完成后会进行消息验证和清理，确保：
+   * - 每个带 tool_calls 的 assistant 消息后面有对应的 tool 消息
+   * - 没有孤立的 tool 消息
    */
   private buildMessages(): Message[] {
     const messages: Message[] = [];
@@ -273,7 +325,14 @@ export class ContextManager {
     // 4. 当前轮次的工具调用
     messages.push(...this.currentTurn.format());
 
-    return messages;
+    // 5. 验证并清理消息，确保符合 LLM API 规范
+    const { messages: sanitizedMessages, sanitized, removedCount } = sanitizeMessages(messages);
+
+    if (sanitized) {
+      logger.warn(`消息列表已清理，移除了 ${removedCount} 条不完整的消息`);
+    }
+
+    return sanitizedMessages;
   }
 
   /**

@@ -20,7 +20,7 @@ export interface PanelThemeProps {
  * 主题选择面板
  */
 export function PanelTheme({ onClose }: PanelThemeProps) {
-  const { themeName, setThemeName, mode } = useTheme();
+  const { themeName, setThemeName } = useTheme();
 
   // 转换为选项
   const options: SelectOption<ThemeName>[] = AVAILABLE_THEMES.map((name) => ({
@@ -43,7 +43,7 @@ export function PanelTheme({ onClose }: PanelThemeProps) {
 
   return (
     <PanelSelect
-      title={`Select Theme (${mode} mode)`}
+      title="Select Theme"
       placeholder="Search themes..."
       options={options}
       onSelect={handleSelect}

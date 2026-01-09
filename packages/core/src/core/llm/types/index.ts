@@ -110,6 +110,8 @@ export interface LLMChatOptions {
   responseFormat?: any;
   /** 额外参数 */
   extraBody?: Record<string, any>;
+  /** 中断信号（用于取消 API 请求） */
+  abortSignal?: AbortSignal;
 }
 
 /**
@@ -124,6 +126,8 @@ export interface ToolLoopResult {
   error?: string;
   /** 循环次数 */
   loopCount: number;
+  /** 是否被用户取消 */
+  cancelled?: boolean;
 }
 
 /**
@@ -159,6 +163,13 @@ export interface ToolLoopConfig {
     toolName: string,
     details: ConfirmDetails
   ) => Promise<ConfirmOutcome>;
+
+  // ============================================================
+  // 中断控制
+  // ============================================================
+
+  /** 中断信号（用于取消执行） */
+  abortSignal?: AbortSignal;
 }
 
 /** LLM Service 核心接口 */

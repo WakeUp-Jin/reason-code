@@ -43,6 +43,9 @@ export * from './promptManager/index.js';
 // 执行流
 export * from './execution/index.js';
 
+// 会话统计
+export * from './stats/index.js';
+
 // 日志系统
 export { logger } from '../utils/logger.js';
 export type { LoggerConfig, LogLevel } from '../utils/logger.js';

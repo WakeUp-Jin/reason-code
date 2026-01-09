@@ -8,19 +8,12 @@ function safeHomeDir(): string {
 }
 
 /**
- * 获取 reason 的“数据根目录”。
+ * 获取 reason-code 的"数据根目录"。
  *
- * 路径选择策略（折中方案）：
- * - Linux：遵循 XDG 生态（默认 ~/.local/share）
- * - macOS/Windows：使用 ~/.reason（更直观、更一致）
+ * 统一使用 ~/.reason-code
  */
 export function getReasonDataRootDir(): string {
-  if (process.platform === 'linux') {
-    const xdgDataHome = process.env.XDG_DATA_HOME || join(safeHomeDir(), '.local', 'share');
-    return join(xdgDataHome, 'reason');
-  }
-
-  return join(safeHomeDir(), '.reason');
+  return join(safeHomeDir(), '.reason-code');
 }
 
 /**

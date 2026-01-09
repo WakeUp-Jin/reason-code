@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
 import TextInput from 'ink-text-input';
 import { useTheme } from '../../context/theme.js';
@@ -39,6 +39,16 @@ export function Prompt({
   const models = useAppStore((state) => state.models);
   const currentModelInfo = models.find((m) => m.id === currentModel);
 
+  // 避免 ctrl+t/ctrl+y 被 ink-text-input 当作普通字符写入输入框
+  const valueRef = useRef(value);
+  const suppressTokenRef = useRef(0);
+  const suppressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suppressNextChangeRef = useRef<{
+    expectedChar: 't' | 'y';
+    baseValue: string;
+    token: number;
+  } | null>(null);
+
   // 检测命令前缀
   const isCommand = value.startsWith('/');
   const commandQuery = isCommand ? value.slice(1) : '';
@@ -48,6 +58,18 @@ export function Prompt({
     if (!isCommand) return [];
     return commandRegistry.search(commandQuery);
   }, [isCommand, commandQuery]);
+
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+
+  useEffect(() => {
+    return () => {
+      if (suppressTimerRef.current) {
+        clearTimeout(suppressTimerRef.current);
+      }
+    };
+  }, []);
 
   // 实时更新命令补全
   useEffect(() => {
@@ -63,9 +85,24 @@ export function Prompt({
     setSelectedCommandIndex(0);
   }, [filteredCommands]);
 
-  // 处理输入变化
+  // 处理输入变化 - 过滤掉 ctrl 组合键产生的字符
   const handleChange = useCallback(
     (newValue: string) => {
+      const pendingSuppress = suppressNextChangeRef.current;
+      if (pendingSuppress) {
+        suppressNextChangeRef.current = null;
+
+        const { baseValue, expectedChar } = pendingSuppress;
+        // 只吞掉“在当前值末尾追加一个 t/y”的变化，避免误吞粘贴/输入法等其他输入
+        if (
+          newValue.startsWith(baseValue) &&
+          newValue.length === baseValue.length + 1 &&
+          newValue.slice(baseValue.length).toLowerCase() === expectedChar
+        ) {
+          return;
+        }
+      }
+
       setValue(newValue);
       setCurrentInput(newValue);
       resetNavigation();
@@ -116,6 +153,33 @@ export function Prompt({
   useInput(
     (input, key) => {
       if (disabled) return;
+
+      // 拦截 ctrl+t (TODO 切换) 和 ctrl+y (thinking 切换)，防止字符输入
+      // 兼容：不同终端/ink 解析下可能表现为 (key.ctrl && 't'/'y') 或控制字符 \x14/\x19
+      const isCtrlT = (key.ctrl && input.toLowerCase() === 't') || input === '\u0014';
+      const isCtrlY = (key.ctrl && input.toLowerCase() === 'y') || input === '\u0019';
+      if (isCtrlT || isCtrlY) {
+        suppressTokenRef.current += 1;
+        const token = suppressTokenRef.current;
+
+        suppressNextChangeRef.current = {
+          expectedChar: isCtrlT ? 't' : 'y',
+          baseValue: valueRef.current,
+          token,
+        };
+
+        if (suppressTimerRef.current) {
+          clearTimeout(suppressTimerRef.current);
+        }
+        // 如果本次按键没有触发 onChange（例如返回控制字符），下一轮事件前清理，避免误吞后续正常输入
+        suppressTimerRef.current = setTimeout(() => {
+          if (suppressNextChangeRef.current?.token === token) {
+            suppressNextChangeRef.current = null;
+          }
+        }, 0);
+
+        return; // 不处理，让父组件的 useInput 处理
+      }
 
       // 命令补全模式下的特殊处理
       if (commandMode === 'autocomplete' && filteredCommands.length > 0) {

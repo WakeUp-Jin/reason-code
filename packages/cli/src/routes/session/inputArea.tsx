@@ -1,5 +1,5 @@
 import React, { useState, useEffect, type ReactNode } from 'react';
-import { Box } from 'ink';
+import { Box, useInput } from 'ink';
 import type { ConfirmDetails, ConfirmOutcome } from '@reason-cli/core';
 import { Prompt } from '../../component/prompt';
 import { useStore, useAppStore } from '../../context/store';
@@ -10,6 +10,7 @@ import { logger } from '../../util/logger.js';
 import { confirmLogger } from '../../util/logUtils.js';
 import { usePersistence } from '../../hooks/usePersistence.js';
 import { useAgent } from '../../hooks/useAgent.js';
+import { useIsExecuting } from '../../context/execution.js';
 
 /** 工具确认请求 */
 interface ToolConfirmRequest {
@@ -31,9 +32,21 @@ export function InputArea({ onCommandPanelChange }: InputAreaProps) {
   const currentModel = useAppStore((state) => state.currentModel);
   const models = useAppStore((state) => state.models);
   const { saveCurrentSession } = usePersistence();
+  const isExecuting = useIsExecuting();
 
   // Agent Hook
-  const { isLoading, error, sendMessage } = useAgent();
+  const { isLoading, error, sendMessage, abort } = useAgent();
+
+  // ESC 按键监听 - 在执行期间按 ESC 可以中断
+  useInput(
+    (input, key) => {
+      if (key.escape && isExecuting) {
+        logger.info('User pressed ESC to abort execution');
+        abort();
+      }
+    },
+    { isActive: isExecuting }
+  );
 
   // 工具确认状态（内部管理）
   const [pendingConfirm, setPendingConfirm] = useState<ToolConfirmRequest | null>(null);

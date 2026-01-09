@@ -4,4 +4,11 @@
 
 // Agent（CLI 和评估系统使用）
 export { Agent } from './Agent.js';
-export type { AgentConfig, AgentResult, AgentRunOptions, HistoryLoadOptions } from './Agent.js';
+export type {
+  AgentConfig,
+  AgentResult,
+  AgentRunOptions,
+  HistoryLoadOptions,
+  SessionCheckpoint,
+  CompressionCompleteEvent,
+} from './Agent.js';

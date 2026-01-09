@@ -19,3 +19,9 @@ export { CurrentTurnContext } from './modules/CurrentTurnContext.js';
 // 上下文工具
 export { TokenEstimator } from './utils/tokenEstimator.js';
 export { ToolOutputSummarizer } from './utils/ToolOutputSummarizer.js';
+export {
+  sanitizeMessages,
+  validateMessages,
+  sanitizeCurrentTurn,
+  type SanitizeResult,
+} from './utils/messageSanitizer.js';

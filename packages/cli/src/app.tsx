@@ -22,65 +22,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PROJECT_ROOT = join(__dirname, '..', '..', '..');
 
-// ==================== 模块级状态持久化 ====================
-// 用于在 remount 时保持状态
+// ==================== 模块级状态 ====================
 let appInitialized = false;
 let commandsRegistered = false;
-
-/** 思考内容展开状态（跨 remount 持久化） */
-export let persistedThinkingExpanded = false;
-
-/** 设置思考展开状态 */
-export function setPersistedThinkingExpanded(value: boolean): void {
-  persistedThinkingExpanded = value;
-}
 
 // ==================== Ink 实例管理 ====================
 
 /** 当前 Ink 渲染实例 */
 let inkInstance: Instance | null = null;
-
-/** 当前是否在备用屏幕 */
-let inAlternateScreen = false;
-
-/**
- * 重新挂载整个应用
- * 使用 alternate screen buffer 切换技术实现彻底清屏
- *
- * 清屏策略：
- * - 在备用屏幕：退出 → 进入（重置备用屏幕，获得干净画布）
- * - 在主屏幕：直接清屏（兼容模式）
- */
-export function remountApp(): void {
-  if (inkInstance) {
-    logger.debug('remountApp: starting', { inAlternateScreen });
-
-    // 1. 卸载当前 Ink 实例
-    inkInstance.unmount();
-    inkInstance = null;
-
-    // 2. 清屏策略
-    if (inAlternateScreen) {
-      // 已在备用屏幕：退出 → 进入（重置备用屏幕内容）
-      // 这会丢弃备用屏幕的所有内容，获得干净画布
-      process.stdout.write('\x1b[?1049l\x1b[?1049h');
-      logger.debug('remountApp: reset alternate screen');
-    } else {
-      // 在主屏幕：直接清屏（兼容模式）
-      // \x1b[2J - 清空屏幕
-      // \x1b[3J - 清空滚动缓冲区
-      // \x1b[H  - 移动光标到左上角
-      process.stdout.write('\x1b[2J\x1b[3J\x1b[H');
-      logger.debug('remountApp: cleared main screen');
-    }
-
-    // 3. 重新渲染
-    setImmediate(() => {
-      inkInstance = render(<Root />);
-      logger.debug('remountApp: re-rendered');
-    });
-  }
-}
 
 // 主应用组件 - 启动时加载数据或创建新 Session
 function App() {
@@ -90,7 +39,7 @@ function App() {
   const currentSessionId = useAppStore((state) => state.currentSessionId);
   const { saveAll } = usePersistence();
 
-  // 注册所有命令（只执行一次，使用模块级变量避免 remount 重复注册）
+  // 注册所有命令（只执行一次）
   useEffect(() => {
     if (!commandsRegistered) {
       commandsRegistered = true;
@@ -98,7 +47,7 @@ function App() {
     }
   }, []);
 
-  // 启动时加载数据（只执行一次，使用模块级变量避免 remount 重复加载）
+  // 启动时加载数据（只执行一次）
   useEffect(() => {
     if (!appInitialized) {
       appInitialized = true;
@@ -156,7 +105,7 @@ function Root() {
   const config = configManager.getConfig();
 
   return (
-    <ThemeProvider defaultTheme={config.ui.theme as any} defaultMode={config.ui.mode}>
+    <ThemeProvider defaultTheme={config.ui.theme as any}>
       <StoreProvider>
         <ToastProvider>
           <RouteProvider>
@@ -168,18 +117,6 @@ function Root() {
       </StoreProvider>
     </ThemeProvider>
   );
-}
-
-// 清空终端（包括滚动缓冲区）
-function clearTerminal(): Promise<void> {
-  return new Promise((resolve) => {
-    // \x1b[2J - 清空屏幕
-    // \x1b[3J - 清空滚动缓冲区（这是关键！）
-    // \x1b[H  - 移动光标到左上角
-    process.stdout.write('\x1b[2J\x1b[3J\x1b[H', () => {
-      resolve();
-    });
-  });
 }
 
 // TUI 启动函数
@@ -212,16 +149,6 @@ export async function startTUI(): Promise<void> {
   // 优雅关闭处理器
   const handleShutdown = (signal: string) => {
     logger.info(`Received ${signal}, shutting down...`);
-
-    // 退出备用屏幕（如果在的话），确保终端恢复正常
-    if (inAlternateScreen) {
-      process.stdout.write('\x1b[?1049l');
-      inAlternateScreen = false;
-    }
-
-    // TODO: 这里无法使用 Hook，所以需要手动保存
-    // 实际的保存会在 App 组件的 'exit' 事件监听器中处理
-
     logger.flush();
     coreLogger.flush();
     process.exit(0);
@@ -235,12 +162,6 @@ export async function startTUI(): Promise<void> {
 
   // 捕获未处理的异常
   process.on('uncaughtException', (error) => {
-    // 退出备用屏幕，确保错误信息可见
-    if (inAlternateScreen) {
-      process.stdout.write('\x1b[?1049l');
-      inAlternateScreen = false;
-    }
-
     logger.error('Uncaught exception', {
       name: error.name,
       message: error.message,
@@ -258,27 +179,11 @@ export async function startTUI(): Promise<void> {
     logger.flush();
   });
 
-  // 启动前清空终端（包括滚动缓冲区）
-  await clearTerminal();
-
   return new Promise((resolve) => {
-    // 进入备用屏幕（与 vim/less 类似）
-    // 这样可以在退出时恢复原来的终端内容
-    process.stdout.write('\x1b[?1049h');
-    inAlternateScreen = true;
-    logger.debug('Entered alternate screen buffer');
-
-    // 保存 Ink 实例，用于 remountApp
+    // 直接在主屏幕渲染（支持终端滚动）
     inkInstance = render(<Root />);
 
     inkInstance.waitUntilExit().then(() => {
-      // 退出时返回主屏幕
-      if (inAlternateScreen) {
-        process.stdout.write('\x1b[?1049l');
-        inAlternateScreen = false;
-        logger.debug('Exited alternate screen buffer');
-      }
-
       logger.info('CLI exiting gracefully');
       logger.flush();
       coreLogger.flush();
