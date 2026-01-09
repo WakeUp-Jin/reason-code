@@ -1,5 +1,6 @@
 import type { ExecutionStreamManager } from '../../execution/index.js';
 import type { ApprovalMode, ConfirmDetails, ConfirmOutcome } from '../../tool/types.js';
+import type { SessionStats } from '../../stats/index.js';
 
 /** 图片数据 */
 export interface ImageData {
@@ -170,6 +171,13 @@ export interface ToolLoopConfig {
 
   /** 中断信号（用于取消执行） */
   abortSignal?: AbortSignal;
+
+  // ============================================================
+  // 统计相关
+  // ============================================================
+
+  /** 会话统计（用于费用计算） */
+  sessionStats?: SessionStats;
 }
 
 /** LLM Service 核心接口 */

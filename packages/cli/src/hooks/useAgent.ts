@@ -30,7 +30,6 @@ import {
   type SessionCheckpoint,
 } from '../util/storage.js';
 import { triggerAsyncSave, triggerAsyncSaveCheckpoint } from '../util/asyncStorage.js';
-import { updateAgentStats, resetAgentStats } from './useAgentStats.js';
 
 // ==================== 模块级变量（跨 remount 持久化）====================
 let agentInstance: Agent | null = null;
@@ -66,10 +65,6 @@ interface UseAgentReturn {
   switchModel: (provider: string, model: string) => Promise<void>;
   /** 当前模型信息 */
   currentModel: { provider: string; model: string } | null;
-  /** 获取 Token 使用情况（从内存） */
-  getTokenUsage: () => { used: number; limit: number; percentage: number } | null;
-  /** 获取累计费用（从内存） */
-  getTotalCost: (currency?: 'USD' | 'CNY') => number;
   /** 中断当前执行 */
   abort: () => void;
   /** 是否正在执行 */
@@ -219,15 +214,6 @@ export function useAgent(): UseAgentReturn {
 
       // 记录 Agent 初始化
       agentLogger.init(provider, model, currentSessionId || 'none');
-
-      // 更新统计数据到缓存
-      const tokenUsage = agent.getTokenUsage();
-      updateAgentStats({
-        contextTokens: tokenUsage.used,
-        maxTokens: tokenUsage.limit,
-        percentage: tokenUsage.percentage,
-        totalCost: agent.getTotalCost('USD'),
-      });
 
       logger.info('Agent initialized successfully', {
         provider,
@@ -396,15 +382,6 @@ export function useAgent(): UseAgentReturn {
           triggerAsyncSave(currentSession, latestMessages);
         }
 
-        // 更新统计数据
-        const tokenUsage = agentInstance.getTokenUsage();
-        updateAgentStats({
-          contextTokens: tokenUsage.used,
-          maxTokens: tokenUsage.limit,
-          percentage: tokenUsage.percentage,
-          totalCost: agentInstance.getTotalCost('USD'),
-        });
-
         if (result.success) {
           return result.finalResponse;
         } else {
@@ -459,18 +436,6 @@ export function useAgent(): UseAgentReturn {
     }
   }, []);
 
-  // 获取 Token 使用情况（从内存）
-  const getTokenUsage = useCallback(() => {
-    if (!agentInstance) return null;
-    return agentInstance.getTokenUsage();
-  }, []);
-
-  // 获取累计费用（从内存）
-  const getTotalCost = useCallback((currency: 'USD' | 'CNY' = 'CNY') => {
-    if (!agentInstance) return 0;
-    return agentInstance.getTotalCost(currency);
-  }, []);
-
   // 中断当前执行
   const abort = useCallback(() => {
     if (agentInstance) {
@@ -492,8 +457,6 @@ export function useAgent(): UseAgentReturn {
     sendMessage,
     switchModel,
     currentModel,
-    getTokenUsage,
-    getTotalCost,
     abort,
     isRunning,
   };

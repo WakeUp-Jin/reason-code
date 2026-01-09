@@ -142,7 +142,7 @@ export function StatusIndicator() {
         <Text color={colors.warning}>{statusPhrase}</Text>
         <Text color={colors.textMuted}>
           (esc to interrupt · {formatTime(elapsedTime)}
-          {stats.totalTokens > 0 && ` · ↓ ${stats.totalTokens} tokens`})
+          {stats.outputTokens > 0 && ` · ↓ ${stats.outputTokens} tokens`})
         </Text>
       </Box>
 

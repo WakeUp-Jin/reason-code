@@ -18,6 +18,7 @@ import { logger } from '../../../utils/logger.js';
 import { loopLogger, contextLogger } from '../../../utils/logUtils.js';
 import { eventBus } from '../../../evaluation/EventBus.js';
 import { ExecutionStreamManager } from '../../execution/index.js';
+import { SessionStats } from '../../stats/index.js';
 
 /** 默认 Token 限制 */
 const DEFAULT_MODEL_LIMIT = 64_000;
@@ -87,6 +88,9 @@ export class ToolLoopExecutor {
   private agentName: string;
   private executionStream?: ExecutionStreamManager;
 
+  // 统计
+  private sessionStats?: SessionStats;
+
   // 中断控制
   private abortSignal?: AbortSignal;
 
@@ -106,6 +110,7 @@ export class ToolLoopExecutor {
     this.modelLimit = config?.modelLimit ?? DEFAULT_MODEL_LIMIT;
     this.agentName = config?.agentName ?? 'agent';
     this.executionStream = config?.executionStream;
+    this.sessionStats = config?.sessionStats;
     this.abortSignal = config?.abortSignal;
 
     // 提取工具调度器配置
@@ -260,10 +265,23 @@ export class ToolLoopExecutor {
       this.executionStream?.completeThinking(response.reasoningContent);
     }
     if (response.usage) {
+      // 更新 SessionStats 计算费用
+      if (this.sessionStats) {
+        this.sessionStats.update({
+          inputTokens: response.usage.promptTokens,
+          outputTokens: response.usage.completionTokens,
+        });
+      }
+
+      // 获取累计费用
+      const totalCost = this.sessionStats?.getTotalCostUSD() ?? 0;
+
+      // 更新执行流统计（携带 totalCost）
       this.executionStream?.updateStats({
         inputTokens: response.usage.promptTokens,
         outputTokens: response.usage.completionTokens,
-      });
+      }, totalCost);
+
       this.contextManager.updateTokenCount(response.usage.promptTokens);
     }
   }

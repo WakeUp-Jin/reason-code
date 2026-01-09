@@ -62,7 +62,7 @@ export type ExecutionEvent =
   | { type: 'content:complete'; content: string }
 
   // Token 统计事件
-  | { type: 'stats:update'; stats: Partial<ExecutionStats> };
+  | { type: 'stats:update'; stats: Partial<ExecutionStats>; totalCost?: number };
 
 /**
  * 事件处理器类型

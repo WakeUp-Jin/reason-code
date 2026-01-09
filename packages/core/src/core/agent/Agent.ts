@@ -286,6 +286,7 @@ export class Agent {
           onConfirmRequired: options?.onConfirmRequired,
           approvalMode: options?.approvalMode,
           abortSignal: this.abortController.signal,
+          sessionStats: this.sessionStats,
         }
       );
 

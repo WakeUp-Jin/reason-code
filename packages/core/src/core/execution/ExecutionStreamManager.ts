@@ -541,11 +541,11 @@ export class ExecutionStreamManager {
 
   // ==================== Token 统计 ====================
 
-  updateStats(stats: Partial<ExecutionStats>): void {
+  updateStats(stats: Partial<ExecutionStats>, totalCost?: number): void {
     Object.assign(this.snapshot.stats, stats);
     this.snapshot.stats.totalTokens =
       this.snapshot.stats.inputTokens + this.snapshot.stats.outputTokens;
-    this.emit({ type: 'stats:update', stats });
+    this.emit({ type: 'stats:update', stats, totalCost });
   }
 
   incrementLoopCount(): void {

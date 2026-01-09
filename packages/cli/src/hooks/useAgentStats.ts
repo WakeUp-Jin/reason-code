@@ -1,15 +1,16 @@
 /**
  * useAgentStats Hook
- * 从 Agent 内存中获取统计数据（Token 使用情况和累计费用）
+ * 从执行流事件中获取统计数据（Token 使用情况和累计费用）
  *
- * 这个 hook 提供：
- * - Token: 当前上下文大小（从 ContextManager 实时计算）
- * - Cost: 累计费用（从 SessionStats 获取）
+ * 简化版：直接使用 stats:update 事件中的数据
+ * - Token: LLM API 返回的 inputTokens（当前上下文大小）
+ * - Cost: SessionStats 计算的累计费用
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useExecutionState } from '../context/execution.js';
 import { useAppStore } from '../context/store.js';
+import { getModelTokenLimit } from '../config/tokenLimits.js';
 
 export interface AgentStats {
   /** 当前上下文的 token 数 */
@@ -18,14 +19,13 @@ export interface AgentStats {
   maxTokens: number;
   /** 使用百分比 */
   percentage: number;
-  /** 累计费用（当前货币） */
+  /** 累计费用（USD） */
   totalCost: number;
   /** 是否有数据 */
   hasData: boolean;
 }
 
-// 模块级变量：存储最新的统计数据
-let cachedStats: AgentStats = {
+const DEFAULT_STATS: AgentStats = {
   contextTokens: 0,
   maxTokens: 64000,
   percentage: 0,
@@ -34,54 +34,41 @@ let cachedStats: AgentStats = {
 };
 
 /**
- * 更新缓存的统计数据（由 useAgent 调用）
- */
-export function updateAgentStats(stats: Partial<AgentStats>): void {
-  cachedStats = { ...cachedStats, ...stats, hasData: true };
-}
-
-/**
  * 获取 Agent 统计数据
  * 用于 Footer 等组件显示 Token 和费用
  */
 export function useAgentStats(): AgentStats {
-  const [stats, setStats] = useState<AgentStats>(cachedStats);
+  const [stats, setStats] = useState<AgentStats>(DEFAULT_STATS);
   const { subscribe } = useExecutionState();
   const currency = useAppStore((state) => state.config.currency);
   const exchangeRate = useAppStore((state) => state.config.exchangeRate);
+  const currentModel = useAppStore((state) => state.currentModel);
 
-  // 监听执行流事件，更新统计
+  // 获取当前模型的 token 限制
+  const maxTokens = currentModel ? getModelTokenLimit(currentModel) : 64000;
+
+  // 监听执行流事件，实时更新统计
   useEffect(() => {
     const unsubscribe = subscribe((event) => {
-      // 当有 token 统计更新时
+      // 当有 token 统计更新时，直接使用事件数据
       if (event.type === 'stats:update') {
-        // 这里的 stats 是实时的输入/输出 token
-        // 我们需要从 Agent 获取完整的上下文 token
-        // 暂时使用缓存数据
-        setStats({ ...cachedStats });
-      }
+        const inputTokens = event.stats.inputTokens || 0;
+        const totalCost = event.totalCost || 0;
 
-      // 执行完成时刷新
-      if (event.type === 'execution:complete') {
-        setStats({ ...cachedStats });
+        setStats({
+          contextTokens: inputTokens,
+          maxTokens,
+          percentage: Math.round((inputTokens / maxTokens) * 100),
+          totalCost,
+          hasData: true,
+        });
       }
     });
 
     return unsubscribe;
-  }, [subscribe]);
+  }, [subscribe, maxTokens]);
 
-  // 定期刷新（每秒），确保数据同步
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (cachedStats.hasData) {
-        setStats({ ...cachedStats });
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // 转换费用货币
+  // 转换费用货币（USD → CNY）
   const displayCost = currency === 'USD'
     ? stats.totalCost
     : stats.totalCost * exchangeRate;
@@ -91,17 +78,3 @@ export function useAgentStats(): AgentStats {
     totalCost: displayCost,
   };
 }
-
-/**
- * 重置统计数据（会话切换时调用）
- */
-export function resetAgentStats(): void {
-  cachedStats = {
-    contextTokens: 0,
-    maxTokens: 64000,
-    percentage: 0,
-    totalCost: 0,
-    hasData: false,
-  };
-}
-
