@@ -26,6 +26,9 @@ type StaticItem =
   | { id: string; type: 'header' }
   | { id: string; type: 'message'; message: Message };
 
+// 需要隐藏的工具（不在消息区域显示，但保存到历史记录）
+const HIDDEN_TOOLS = new Set(['TodoWrite', 'TodoRead']);
+
 export function Session() {
   const { colors } = useTheme();
   const isExecuting = useIsExecuting();
@@ -77,6 +80,10 @@ export function Session() {
         if (!message.content) return null;
         return <AssistantMessage message={message} />;
       case 'tool':
+        // 过滤掉不需要显示的工具（如 TODO 工具，已有专门的 TodoDisplay 组件）
+        if (message.toolCall && HIDDEN_TOOLS.has(message.toolCall.toolName)) {
+          return null;
+        }
         return <ToolMessage message={message} />;
       case 'thinking':
         return <ThinkingMessage message={message} />;
