@@ -89,11 +89,16 @@ export function getModelTokenLimit(model: string): number {
 
 /**
  * 模型定价配置（每百万 Token，CNY）
+ *
+ * DeepSeek 定价说明：
+ * - input: 缓存未命中的输入价格 (¥2.0/1M)
+ * - output: 输出价格 (¥3.0/1M)
+ * - cacheHit: 缓存命中的输入价格 (¥0.2/1M)
  */
-export const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  // DeepSeek 模型（CNY）
-  'deepseek-chat': { input: 2.0, output: 8.0 },
-  'deepseek-reasoner': { input: 4.0, output: 16.0 },
+export const MODEL_PRICING: Record<string, { input: number; output: number; cacheHit?: number }> = {
+  // DeepSeek 模型（CNY）- 支持缓存定价
+  'deepseek-chat': { input: 2.0, output: 3.0, cacheHit: 0.2 },
+  'deepseek-reasoner': { input: 2.0, output: 3.0, cacheHit: 0.2 },
 
   // OpenAI 模型（转换为 CNY，汇率约 7.2）
   'gpt-4o': { input: 18.0, output: 72.0 },
@@ -124,7 +129,7 @@ export function getModelPricing(model: string): ModelPricing | null {
     return {
       inputPricePerMillion: pricing.input,
       outputPricePerMillion: pricing.output,
-      currency: 'CNY',
+      cacheHitPricePerMillion: pricing.cacheHit,
     };
   }
 
@@ -135,11 +140,10 @@ export function getModelPricing(model: string): ModelPricing | null {
       return {
         inputPricePerMillion: value.input,
         outputPricePerMillion: value.output,
-        currency: 'CNY',
+        cacheHitPricePerMillion: value.cacheHit,
       };
     }
   }
 
   return null;
 }
-

@@ -254,10 +254,10 @@ export class ExecutionStreamManager {
     this.emitStateChange();
   }
 
-  complete(): void {
+  complete(cost?: number): void {
     this.stopPhraseRotation();
     this.snapshot.state = ExecutionState.Completed;
-    this.emit({ type: 'execution:complete', stats: { ...this.snapshot.stats } });
+    this.emit({ type: 'execution:complete', stats: { ...this.snapshot.stats }, cost });
   }
 
   cancel(reason?: string): void {

@@ -59,7 +59,7 @@ export interface SessionCheckpoint {
   compressedAt: number;
   /** 累计统计 */
   stats: {
-    /** 累计费用（USD） */
+    /** 累计费用（CNY） */
     totalCost: number;
   };
 }

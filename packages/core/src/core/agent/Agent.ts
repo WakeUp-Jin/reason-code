@@ -261,6 +261,9 @@ export class Agent {
     // 重置事件收集器
     eventBus.reset();
 
+    // 记录执行前的累计费用（用于计算本次执行费用）
+    const costBeforeRun = this.sessionStats.getTotalCostCNY();
+
     // 发射 Agent 调用事件
     eventBus.emit('agent:call', { agentName: this.config.name! });
 
@@ -317,8 +320,11 @@ export class Agent {
       // 完成当前轮次（归档到历史）
       this.contextManager.finishTurn();
 
-      // 完成执行流
-      this.executionStream.complete();
+      // 计算本次执行的费用（CNY）= 当前累计 - 执行前累计
+      const costCNY = this.sessionStats.getTotalCostCNY() - costBeforeRun;
+      
+      // 完成执行流，传递本次执行费用
+      this.executionStream.complete(costCNY);
 
       // 从事件系统获取收集的数据
       const collected = eventBus.getData();

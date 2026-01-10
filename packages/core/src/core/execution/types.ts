@@ -74,9 +74,12 @@ export interface ExecutionStats {
   elapsedTime: number;             // 已用时间(秒)
 
   // Token 统计
-  inputTokens: number;             // 输入 token
-  outputTokens: number;            // 输出 token
+  inputTokens: number;             // 输入 token（prompt_tokens）
+  outputTokens: number;            // 输出 token（completion_tokens）
   totalTokens: number;             // 总 token
+  cacheHitTokens?: number;         // 缓存命中 token（DeepSeek）
+  cacheMissTokens?: number;        // 缓存未命中 token（DeepSeek）
+  reasoningTokens?: number;        // 推理 token（已包含在 outputTokens 中）
 
   // 工具统计
   toolCallCount: number;           // 工具调用次数

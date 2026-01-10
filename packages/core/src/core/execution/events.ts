@@ -12,7 +12,7 @@ import type { ConfirmDetails } from '../tool/types.js';
 export type ExecutionEvent =
   // 生命周期事件
   | { type: 'execution:start'; timestamp: number }
-  | { type: 'execution:complete'; stats: ExecutionStats }
+  | { type: 'execution:complete'; stats: ExecutionStats; cost?: number } // cost: 单次费用（CNY）
   | { type: 'execution:error'; error: string }
   | { type: 'execution:cancel'; reason?: string }
 

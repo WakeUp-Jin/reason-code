@@ -13,9 +13,12 @@ export interface Session {
 
 // Token 使用情况
 export interface TokenUsage {
-  inputTokens: number; // 输入 token 数
-  outputTokens: number; // 输出 token 数
+  inputTokens: number; // 输入 token 数（prompt_tokens）
+  outputTokens: number; // 输出 token 数（completion_tokens）
   totalTokens: number; // 总 token 数
+  cacheHitTokens?: number; // 缓存命中 token 数（DeepSeek）
+  cacheMissTokens?: number; // 缓存未命中 token 数（DeepSeek）
+  reasoningTokens?: number; // 推理 token 数（已包含在 outputTokens 中）
 }
 
 // 消息元数据
@@ -26,12 +29,8 @@ export interface MessageMetadata {
   // 模型信息
   model?: string;
 
-  // 成本信息（可选）
-  cost?: {
-    inputCost: number; // 输入成本（USD）
-    outputCost: number; // 输出成本（USD）
-    totalCost: number; // 总成本（USD）
-  };
+  // 成本信息（可选）- 单次费用（CNY）
+  cost?: number;
 
   // 生成信息（可选）
   generationInfo?: {
@@ -167,6 +166,9 @@ interface AppState {
   // 配置
   config: Config;
 
+  /** 当前会话累计费用（CNY） */
+  sessionTotalCost: number;
+
   // Session Actions
   createSession: (title?: string) => Session;
   deleteSession: (id: string) => void;
@@ -194,6 +196,9 @@ interface AppState {
   // Config Actions
   updateConfig: (updates: Partial<Config>) => void;
   toggleApprovalMode: () => void; // 循环切换批准模式
+
+  /** 设置会话费用（用于初始化和更新） */
+  setSessionTotalCost: (cost: number) => void;
 
   // Initialization from disk
   initializeFromDisk: (data: {
@@ -280,6 +285,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     },
   ],
   currentModel: 'deepseek/deepseek-chat',
+  sessionTotalCost: 0, // 当前会话累计费用（CNY）
   config: {
     theme: 'kanagawa',
     mode: 'dark',
@@ -470,6 +476,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         config: { ...state.config, approvalMode: nextMode },
       };
     });
+  },
+
+  // 设置会话费用（用于初始化和更新）
+  setSessionTotalCost: (cost) => {
+    set({ sessionTotalCost: cost });
   },
 
   // Initialization from disk

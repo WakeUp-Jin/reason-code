@@ -265,22 +265,25 @@ export class ToolLoopExecutor {
       this.executionStream?.completeThinking(response.reasoningContent);
     }
     if (response.usage) {
-      // 更新 SessionStats 计算费用
-      if (this.sessionStats) {
-        this.sessionStats.update({
-          inputTokens: response.usage.promptTokens,
-          outputTokens: response.usage.completionTokens,
-        });
-      }
-
-      // 获取累计费用
-      const totalCost = this.sessionStats?.getTotalCostUSD() ?? 0;
-
-      // 更新执行流统计（携带 totalCost）
-      this.executionStream?.updateStats({
+      // 构建完整的 TokenUsage
+      const tokenUsage = {
         inputTokens: response.usage.promptTokens,
         outputTokens: response.usage.completionTokens,
-      }, totalCost);
+        cacheHitTokens: response.usage.cacheHitTokens,
+        cacheMissTokens: response.usage.cacheMissTokens,
+        reasoningTokens: response.usage.reasoningTokens,
+      };
+      
+      // 更新 SessionStats 计算费用
+      if (this.sessionStats) {
+        this.sessionStats.update(tokenUsage);
+      }
+
+      // 获取累计费用（CNY）
+      const totalCost = this.sessionStats?.getTotalCostCNY() ?? 0;
+
+      // 更新执行流统计（携带完整 token 信息和 totalCost，单位为 CNY）
+      this.executionStream?.updateStats(tokenUsage, totalCost);
 
       this.contextManager.updateTokenCount(response.usage.promptTokens);
     }

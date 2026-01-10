@@ -195,6 +195,29 @@ export function useAgent(): UseAgentReturn {
       }
       agent.setExchangeRate(exchangeRate);
 
+      // 从历史消息累加费用（用于会话恢复）
+      // 兼容两种格式：数字（新）和对象（旧）
+      const historyCostCNY = historyMessages.reduce((sum, msg) => {
+        const cost = msg.metadata?.cost;
+        if (typeof cost === 'number') {
+          return sum + cost;
+        } else if (cost && typeof cost === 'object' && 'totalCost' in cost) {
+          // 兼容旧格式：{ inputCost, outputCost, totalCost }
+          const totalCost = (cost as any).totalCost;
+          return sum + (typeof totalCost === 'number' ? totalCost : 0);
+        }
+        return sum;
+      }, 0);
+
+      // 存入 Store（让 useAgentStats 能立即获取）
+      useAppStore.getState().setSessionTotalCost(historyCostCNY);
+
+      // 同时初始化 SessionStats（用于后续累加）
+      if (historyCostCNY > 0) {
+        agent.getSessionStats().initFromHistory(historyCostCNY);
+        logger.info('Restored history cost', { historyCostCNY });
+      }
+
       // 标记当前会话已初始化上下文
       contextInitializedForSession = currentSessionId;
 
@@ -316,10 +339,35 @@ export function useAgent(): UseAgentReturn {
               agentInstance.getSessionStats().restore(checkpoint.stats);
             } else {
               clearCheckpoint(currentSessionId);
-              agentInstance.loadHistory(coreHistory, { clearExisting: true, skipSystemPrompt: true });
+              agentInstance.loadHistory(coreHistory, {
+                clearExisting: true,
+                skipSystemPrompt: true,
+              });
             }
           } else {
             agentInstance.loadHistory(coreHistory, { clearExisting: true, skipSystemPrompt: true });
+          }
+
+          // 从历史消息累加费用
+          // 兼容两种格式：数字（新）和对象（旧）
+          const historyCostCNY = historyMessages.reduce((sum, msg) => {
+            const cost = msg.metadata?.cost;
+            if (typeof cost === 'number') {
+              return sum + cost;
+            } else if (cost && typeof cost === 'object' && 'totalCost' in cost) {
+              // 兼容旧格式：{ inputCost, outputCost, totalCost }
+              return sum + (typeof cost.totalCost === 'number' ? cost.totalCost : 0);
+            }
+            return sum;
+          }, 0);
+
+          // 存入 Store（让 useAgentStats 能立即获取）
+          useAppStore.getState().setSessionTotalCost(historyCostCNY);
+
+          // 同时初始化 SessionStats（用于后续累加）
+          if (historyCostCNY > 0) {
+            agentInstance.getSessionStats().initFromHistory(historyCostCNY);
+            logger.info('Restored history cost on session switch', { historyCostCNY });
           }
 
           contextInitializedForSession = currentSessionId;

@@ -86,6 +86,12 @@ export interface LLMResponse {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+    /** 缓存命中的 token 数（DeepSeek 专用） */
+    cacheHitTokens?: number;
+    /** 缓存未命中的 token 数（DeepSeek 专用） */
+    cacheMissTokens?: number;
+    /** 推理 token 数（已包含在 completionTokens 中，用于显示） */
+    reasoningTokens?: number;
   };
 }
 
