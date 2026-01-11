@@ -9,7 +9,7 @@ import { ILLMService } from '../llm/types/index.js';
 import { createLLMService } from '../llm/factory.js';
 import { ToolLoopExecutor } from '../llm/utils/executeToolLoop.js';
 import { eventBus } from '../../evaluation/EventBus.js';
-import { INSIGHT_FORMAT_PROMPT, SIMPLE_AGENT_PROMPT } from '../promptManager/index.js';
+import { buildSystemPrompt, type SystemPromptContext } from '../promptManager/index.js';
 import { ExecutionStreamManager } from '../execution/index.js';
 import { ApprovalMode, ConfirmDetails, ConfirmOutcome } from '../tool/types.js';
 import { SessionStats, type CheckpointStats, type ModelPricing } from '../stats/index.js';
@@ -27,9 +27,25 @@ export interface AgentConfig {
 
   // Agent 配置
   name?: string;
+  /**
+   * 自定义系统提示词（可选）
+   * 如果不提供，将使用 buildSystemPrompt() 自动构建
+   * @deprecated 推荐使用 init() 时传入 SystemPromptContext
+   */
   systemPrompt?: string;
   maxLoops?: number;
 }
+
+/**
+ * Agent 初始化选项
+ */
+export interface AgentInitOptions {
+  /** 系统提示词上下文（由 CLI 传入的动态参数） */
+  promptContext?: SystemPromptContext;
+}
+
+// 重新导出 SystemPromptContext 供外部使用
+export type { SystemPromptContext };
 
 /**
  * 历史消息加载选项
@@ -148,7 +164,6 @@ export class Agent {
   constructor(config: AgentConfig) {
     this.config = {
       name: config.name ?? 'agent',
-      systemPrompt: config.systemPrompt ?? SIMPLE_AGENT_PROMPT,
       maxLoops: config.maxLoops ?? 100,
       ...config,
     };
@@ -161,8 +176,12 @@ export class Agent {
   /**
    * 初始化 Agent
    * 创建 LLM 服务、设置系统提示词
+   *
+   * @param options - 初始化选项
+   *   - promptContext: 系统提示词上下文（推荐），由 CLI 传入动态参数
+   *   - 如果不提供 promptContext，将使用 config.systemPrompt 或默认提示词
    */
-  async init(): Promise<void> {
+  async init(options?: AgentInitOptions): Promise<void> {
     // 创建 LLM 服务
     this.llmService = await createLLMService({
       provider: this.config.provider,
@@ -171,12 +190,30 @@ export class Agent {
       baseURL: this.config.baseURL,
     });
 
-    // 设置系统提示词
-    let systemPrompt = this.config.systemPrompt ?? INSIGHT_FORMAT_PROMPT;
-    if (systemPrompt) {
-      this.contextManager.setSystemPrompt(systemPrompt);
+    // 构建系统提示词
+    let systemPrompt: string;
+
+    if (options?.promptContext) {
+      // 使用新的构建器（推荐方式）
+      systemPrompt = buildSystemPrompt(options.promptContext);
+      logger.info('System prompt built from context', {
+        workingDirectory: options.promptContext.workingDirectory,
+        modelName: options.promptContext.modelName,
+      });
+    } else if (this.config.systemPrompt) {
+      // 使用配置中的自定义提示词
+      systemPrompt = this.config.systemPrompt;
+    } else {
+      // 没有提供 promptContext 也没有自定义提示词，使用默认构建
+      // 使用占位符，CLI 层应该总是传入 promptContext
+      systemPrompt = buildSystemPrompt({
+        workingDirectory: process.cwd(),
+        modelName: this.config.model,
+      });
+      logger.warn('No promptContext provided, using default system prompt');
     }
 
+    this.contextManager.setSystemPrompt(systemPrompt);
     this.initialized = true;
   }
 
@@ -186,13 +223,15 @@ export class Agent {
    *
    * @param history - 完整历史消息（用于没有检查点时）
    * @param checkpoint - 检查点数据（如有）
+   * @param options - 初始化选项（包含 promptContext）
    */
   async initWithCheckpoint(
     history: Message[],
-    checkpoint?: SessionCheckpoint
+    checkpoint?: SessionCheckpoint,
+    options?: AgentInitOptions
   ): Promise<void> {
     // 先执行基本初始化
-    await this.init();
+    await this.init(options);
 
     if (checkpoint) {
       // 有检查点：从检查点恢复
@@ -322,7 +361,7 @@ export class Agent {
 
       // 计算本次执行的费用（CNY）= 当前累计 - 执行前累计
       const costCNY = this.sessionStats.getTotalCostCNY() - costBeforeRun;
-      
+
       // 完成执行流，传递本次执行费用
       this.executionStream.complete(costCNY);
 

@@ -19,9 +19,41 @@ import { loopLogger, contextLogger } from '../../../utils/logUtils.js';
 import { eventBus } from '../../../evaluation/EventBus.js';
 import { ExecutionStreamManager } from '../../execution/index.js';
 import { SessionStats } from '../../stats/index.js';
+import { writeFileSync, mkdirSync, existsSync } from 'fs';
+import { join, dirname } from 'path';
 
 /** 默认 Token 限制 */
 const DEFAULT_MODEL_LIMIT = 64_000;
+
+/** LLM 请求日志文件路径 */
+const LLM_REQUEST_LOG_FILE = join(process.cwd(), 'logs', 'llm-last-request.json');
+
+/**
+ * 保存最新的 LLM 请求参数到文件
+ * 每次调用会覆盖之前的内容
+ */
+function saveLLMRequest(messages: Message[], tools: any[]): void {
+  try {
+    const logDir = dirname(LLM_REQUEST_LOG_FILE);
+    if (!existsSync(logDir)) {
+      mkdirSync(logDir, { recursive: true });
+    }
+
+    const requestData = {
+      timestamp: new Date().toISOString(),
+      messagesCount: messages.length,
+      toolsCount: tools.length,
+      messages,
+      tools,
+    };
+
+    writeFileSync(LLM_REQUEST_LOG_FILE, JSON.stringify(requestData, null, 2), 'utf-8');
+    logger.debug('LLM request saved to log file', { path: LLM_REQUEST_LOG_FILE });
+  } catch (error) {
+    // 日志保存失败不影响主流程
+    logger.warn('Failed to save LLM request log', { error });
+  }
+}
 
 /**
  * 检查 LLM 响应是否包含工具调用
@@ -203,6 +235,10 @@ export class ToolLoopExecutor {
 
       // 4. 调用 LLM（传递 abortSignal 以支持中断）
       const tools = this.toolManager.getFormattedTools();
+
+      // 保存最新的 LLM 请求参数（每次覆盖）
+      saveLLMRequest(messages, tools);
+
       this.executionStream?.startThinking();
       const response = await this.llmService.complete(messages, tools, {
         abortSignal: this.abortSignal,
@@ -273,7 +309,7 @@ export class ToolLoopExecutor {
         cacheMissTokens: response.usage.cacheMissTokens,
         reasoningTokens: response.usage.reasoningTokens,
       };
-      
+
       // 更新 SessionStats 计算费用
       if (this.sessionStats) {
         this.sessionStats.update(tokenUsage);

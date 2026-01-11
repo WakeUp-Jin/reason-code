@@ -8,7 +8,9 @@ export type {
   AgentConfig,
   AgentResult,
   AgentRunOptions,
+  AgentInitOptions,
   HistoryLoadOptions,
   SessionCheckpoint,
   CompressionCompleteEvent,
+  SystemPromptContext,
 } from './Agent.js';

@@ -28,7 +28,7 @@ export {
 // 上下文模块
 export {
   BaseContext,
-  SystemPromptContext,
+  SystemPromptContext as SystemPromptModule,
   HistoryContext,
   CurrentTurnContext,
 } from './context/index.js';

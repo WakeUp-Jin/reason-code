@@ -15,7 +15,9 @@ import type {
   ConfirmOutcome,
   ApprovalMode,
   CompressionCompleteEvent,
+  SystemPromptContext,
 } from '@reason-cli/core';
+import os from 'os';
 import { configManager } from '../config/manager.js';
 import { getModelTokenLimit, getModelPricing } from '../config/tokenLimits.js';
 import { logger } from '../util/logger.js';
@@ -133,13 +135,25 @@ export function useAgent(): UseAgentReturn {
         );
       }
 
+      // 构建系统提示词上下文
+      const promptContext: SystemPromptContext = {
+        workingDirectory: process.cwd(),
+        modelName: model,
+        osInfo: `${os.type()} ${os.release()} (${os.arch()})`,
+        currentDate: new Date().toLocaleDateString('zh-CN', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          weekday: 'long',
+        }),
+      };
+
       // 创建 Agent
       const agent = new Agent({
         provider,
         model,
         apiKey: providerConfig.apiKey,
         baseURL: providerConfig.baseUrl,
-        systemPrompt: 'You are a helpful AI assistant.',
       });
 
       // 获取当前会话信息
@@ -168,21 +182,25 @@ export function useAgent(): UseAgentReturn {
           if (currentSessionId) {
             clearCheckpoint(currentSessionId);
           }
-          await agent.init();
+          await agent.init({ promptContext });
           agent.loadHistory(coreHistory, { clearExisting: true, skipSystemPrompt: true });
         } else {
           // 使用 initWithCheckpoint
           const partialHistory = coreHistory.slice(splitIndex + 1);
-          await agent.initWithCheckpoint(partialHistory, {
-            summary: checkpoint.summary,
-            loadAfterMessageId: checkpoint.loadAfterMessageId,
-            compressedAt: checkpoint.compressedAt,
-            stats: checkpoint.stats,
-          });
+          await agent.initWithCheckpoint(
+            partialHistory,
+            {
+              summary: checkpoint.summary,
+              loadAfterMessageId: checkpoint.loadAfterMessageId,
+              compressedAt: checkpoint.compressedAt,
+              stats: checkpoint.stats,
+            },
+            { promptContext }
+          );
         }
       } else {
         // 无检查点：正常初始化 + 加载完整历史
-        await agent.init();
+        await agent.init({ promptContext });
         if (coreHistory.length > 0) {
           agent.loadHistory(coreHistory, { clearExisting: true, skipSystemPrompt: true });
         }
@@ -356,7 +374,8 @@ export function useAgent(): UseAgentReturn {
               return sum + cost;
             } else if (cost && typeof cost === 'object' && 'totalCost' in cost) {
               // 兼容旧格式：{ inputCost, outputCost, totalCost }
-              return sum + (typeof cost.totalCost === 'number' ? cost.totalCost : 0);
+              const totalCost = (cost as { totalCost?: number }).totalCost;
+              return sum + (typeof totalCost === 'number' ? totalCost : 0);
             }
             return sum;
           }, 0);

@@ -309,6 +309,10 @@ export class ToolScheduler {
   /**
    * 批量调度原始 LLM 工具调用
    * 直接接受 LLM 返回的 toolCalls 数组，内部处理参数解析和循环
+   * 
+   * 自动判断是否可以并行执行：
+   * - 如果所有工具都是只读的，则并行执行
+   * - 否则串行执行
    *
    * @param toolCalls - LLM 返回的工具调用数组
    * @param context - 工具执行上下文
@@ -322,27 +326,91 @@ export class ToolScheduler {
     context?: InternalToolContext,
     options?: { thinkingContent?: string }
   ): Promise<ScheduleResult[]> {
-    const results: ScheduleResult[] = [];
-    let isFirstToolCall = true;
+    // 判断是否可以并行执行
+    const canParallel = this.canExecuteInParallel(toolCalls);
 
-    for (const toolCall of toolCalls) {
-      const result = await this.schedule(
-        {
-          callId: toolCall.id,
-          toolName: toolCall.function.name,
-          rawArgs: toolCall.function.arguments,
-          thinkingContent: isFirstToolCall ? options?.thinkingContent : undefined,
-        },
-        context
-      );
-      isFirstToolCall = false;
-      results.push(result);
+    if (canParallel && toolCalls.length > 1) {
+      // 并行执行（只读工具）
+      logger.info('Executing tools in parallel', {
+        count: toolCalls.length,
+        tools: toolCalls.map((tc) => tc.function.name),
+      });
 
-      // 等待避免请求过快
-      await sleep(500);
+      let isFirstToolCall = true;
+      const promises = toolCalls.map((toolCall) => {
+        const thinkingContent = isFirstToolCall ? options?.thinkingContent : undefined;
+        isFirstToolCall = false;
+
+        return this.schedule(
+          {
+            callId: toolCall.id,
+            toolName: toolCall.function.name,
+            rawArgs: toolCall.function.arguments,
+            thinkingContent,
+          },
+          context
+        );
+      });
+
+      return Promise.all(promises);
+    } else {
+      // 串行执行（写操作或有依赖）
+      if (toolCalls.length > 1) {
+        logger.info('Executing tools serially', {
+          count: toolCalls.length,
+          tools: toolCalls.map((tc) => tc.function.name),
+        });
+      }
+
+      const results: ScheduleResult[] = [];
+      let isFirstToolCall = true;
+
+      for (const toolCall of toolCalls) {
+        const result = await this.schedule(
+          {
+            callId: toolCall.id,
+            toolName: toolCall.function.name,
+            rawArgs: toolCall.function.arguments,
+            thinkingContent: isFirstToolCall ? options?.thinkingContent : undefined,
+          },
+          context
+        );
+        isFirstToolCall = false;
+        results.push(result);
+
+        // 等待避免请求过快
+        await sleep(500);
+      }
+
+      return results;
     }
+  }
 
-    return results;
+  /**
+   * 判断工具调用是否可以并行执行
+   * 只有全部是只读工具时才并行
+   */
+  private canExecuteInParallel(
+    toolCalls: Array<{ function: { name: string } }>
+  ): boolean {
+    return toolCalls.every((toolCall) => {
+      const tool = this.toolManager.getTool(toolCall.function.name);
+
+      if (!tool) {
+        // 工具不存在，保守处理：串行
+        return false;
+      }
+
+      // 检查工具是否是只读的
+      const isReadOnly = tool.isReadOnly?.() ?? false;
+
+      logger.debug('Tool parallel check', {
+        toolName: toolCall.function.name,
+        isReadOnly,
+      });
+
+      return isReadOnly;
+    });
   }
 
   /**

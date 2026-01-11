@@ -3,14 +3,21 @@
  * 统一导出所有提示词
  */
 
-// ============ 系统提示词 ============
+// ============ 系统提示词（模块化） ============
 export {
-  SIMPLE_AGENT_PROMPT,
-  MAIN_AGENT_PROMPT,
-  SUB_AGENT_A_PROMPT,
-  SUB_AGENT_B_PROMPT,
-  INSIGHT_FORMAT_PROMPT,
+  ROLE_DEFINITION,
+  CORE_CAPABILITIES,
+  TOOL_USAGE_GUIDE,
+  OUTPUT_STYLE_CONSTRAINTS,
+  INSIGHT_FORMAT_GUIDE,
 } from './system/agentPrompts.js';
+
+// ============ 系统提示词构建器 ============
+export {
+  buildSystemPrompt,
+  buildSimpleSystemPrompt,
+  type SystemPromptContext,
+} from './system/systemPromptBuilder.js';
 
 // ============ 压缩相关提示词 ============
 export {

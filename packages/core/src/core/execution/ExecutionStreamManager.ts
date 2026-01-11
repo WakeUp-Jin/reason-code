@@ -56,6 +56,9 @@ export class ExecutionStreamManager {
     paramsSummary: string;
   };
 
+  /** ✅ 新增：支持并行工具调用跟踪 */
+  private activeToolCalls: Map<string, ToolCallRecord> = new Map();
+
   constructor(options?: ExecutionStreamManagerOptions) {
     this.snapshot = this.createInitialSnapshot();
     this.onStream = options?.onStream;
@@ -247,6 +250,8 @@ export class ExecutionStreamManager {
 
   start(): void {
     this.snapshot = this.createInitialSnapshot();
+    // ✅ 清空并行工具调用 Map
+    this.activeToolCalls.clear();
     this.snapshot.state = ExecutionState.Thinking;
     this.snapshot.stats.startTime = Date.now();
     this.startPhraseRotation();
@@ -359,6 +364,7 @@ export class ExecutionStreamManager {
   /**
    * 工具开始验证（最早的状态）
    * 在参数解析和工具定义获取阶段调用
+   * ✅ 支持并行工具调用：使用 Map 存储多个活跃的工具调用
    */
   startValidating(
     callId: string,
@@ -378,7 +384,12 @@ export class ExecutionStreamManager {
       startTime: Date.now(),
     };
 
-    this.snapshot.currentToolCall = record;
+    // ✅ 使用 Map 存储，支持并行工具调用
+    this.activeToolCalls.set(callId, record);
+    // 保持 currentToolCall 兼容性（指向第一个活跃的工具调用）
+    if (!this.snapshot.currentToolCall) {
+      this.snapshot.currentToolCall = record;
+    }
     this.snapshot.state = ExecutionState.ToolExecuting;
     this.snapshot.stats.toolCallCount++;
 
@@ -392,10 +403,11 @@ export class ExecutionStreamManager {
   /**
    * 更新为执行中（从 validating/awaiting → executing）
    * 重新开始计时
+   * ✅ 支持并行工具调用：从 Map 中查找
    */
   updateToExecuting(callId: string, params: Record<string, any>): void {
-    if (this.snapshot.currentToolCall?.id === callId) {
-      const record = this.snapshot.currentToolCall;
+    const record = this.activeToolCalls.get(callId);
+    if (record) {
       record.status = ToolCallStatus.Executing;
       record.params = params; // 更新完整参数
       record.startTime = Date.now(); // ✅ 重新计时（从 executing 开始）
@@ -408,16 +420,23 @@ export class ExecutionStreamManager {
     }
   }
 
+  /**
+   * ✅ 支持并行工具调用：从 Map 中查找
+   */
   updateToolOutput(toolCallId: string, output: string): void {
-    if (this.snapshot.currentToolCall?.id === toolCallId) {
-      this.snapshot.currentToolCall.liveOutput = output;
+    const record = this.activeToolCalls.get(toolCallId);
+    if (record) {
+      record.liveOutput = output;
       this.emit({ type: 'tool:output', toolCallId, output });
     }
   }
 
+  /**
+   * ✅ 支持并行工具调用：从 Map 中查找并移除
+   */
   completeToolCall(toolCallId: string, result: any, resultSummary: string): void {
-    if (this.snapshot.currentToolCall?.id === toolCallId) {
-      const record = this.snapshot.currentToolCall;
+    const record = this.activeToolCalls.get(toolCallId);
+    if (record) {
       record.status = ToolCallStatus.Success;
       record.endTime = Date.now();
       record.duration = record.endTime - record.startTime;
@@ -425,24 +444,36 @@ export class ExecutionStreamManager {
       record.resultSummary = resultSummary;
 
       this.snapshot.toolCallHistory.push(record);
-      this.snapshot.currentToolCall = undefined;
-      this.snapshot.state = ExecutionState.Thinking;
+      // ✅ 从 Map 中移除已完成的工具调用
+      this.activeToolCalls.delete(toolCallId);
+      // 更新 currentToolCall 兼容性
+      this.updateCurrentToolCallFromMap();
+      // 只有当所有工具都完成时才切换状态
+      if (this.activeToolCalls.size === 0) {
+        this.snapshot.state = ExecutionState.Thinking;
+      }
 
       this.emit({ type: 'tool:complete', toolCall: { ...record } });
       this.emitStateChange();
     }
   }
 
+  /**
+   * ✅ 支持并行工具调用：从 Map 中查找并移除
+   */
   errorToolCall(toolCallId: string, error: string): void {
-    if (this.snapshot.currentToolCall?.id === toolCallId) {
-      const record = this.snapshot.currentToolCall;
+    const record = this.activeToolCalls.get(toolCallId);
+    if (record) {
       record.status = ToolCallStatus.Error;
       record.endTime = Date.now();
       record.duration = record.endTime - record.startTime;
       record.error = error;
 
       this.snapshot.toolCallHistory.push(record);
-      this.snapshot.currentToolCall = undefined;
+      // ✅ 从 Map 中移除
+      this.activeToolCalls.delete(toolCallId);
+      // 更新 currentToolCall 兼容性
+      this.updateCurrentToolCallFromMap();
 
       this.emit({ type: 'tool:error', toolCallId, error });
     }
@@ -451,6 +482,7 @@ export class ExecutionStreamManager {
   /**
    * 工具等待用户确认
    * 当工具需要用户批准时调用
+   * ✅ 支持并行工具调用：从 Map 中查找
    */
   awaitingApproval(toolCallId: string, toolName: string, confirmDetails: ConfirmDetails): void {
     // ✅ 新增：保存工具信息，以便取消时使用
@@ -464,9 +496,10 @@ export class ExecutionStreamManager {
       paramsSummary,
     };
 
-    // 更新当前工具调用状态（如果存在）
-    if (this.snapshot.currentToolCall?.id === toolCallId) {
-      this.snapshot.currentToolCall.status = ToolCallStatus.Pending; // 等待确认
+    // 更新工具调用状态（从 Map 中查找）
+    const record = this.activeToolCalls.get(toolCallId);
+    if (record) {
+      record.status = ToolCallStatus.Pending; // 等待确认
     }
 
     this.snapshot.state = ExecutionState.WaitingConfirm;
@@ -482,19 +515,26 @@ export class ExecutionStreamManager {
   /**
    * 工具调用被取消
    * 当用户拒绝或取消工具执行时调用
+   * ✅ 支持并行工具调用：从 Map 中查找并移除
    */
   cancelToolCall(toolCallId: string, reason: string): void {
-    if (this.snapshot.currentToolCall?.id === toolCallId) {
+    const record = this.activeToolCalls.get(toolCallId);
+    if (record) {
       // 已经 startToolCall/startValidating，更新记录
-      const record = this.snapshot.currentToolCall;
       record.status = ToolCallStatus.Cancelled;
       record.endTime = Date.now();
       record.duration = record.endTime - record.startTime;
       record.error = reason;
 
       this.snapshot.toolCallHistory.push(record);
-      this.snapshot.currentToolCall = undefined;
-      this.snapshot.state = ExecutionState.Thinking;
+      // ✅ 从 Map 中移除
+      this.activeToolCalls.delete(toolCallId);
+      // 更新 currentToolCall 兼容性
+      this.updateCurrentToolCallFromMap();
+      // 只有当所有工具都完成时才切换状态
+      if (this.activeToolCalls.size === 0) {
+        this.snapshot.state = ExecutionState.Thinking;
+      }
 
       // ✅ 包含工具信息
       this.emit({
@@ -521,6 +561,19 @@ export class ExecutionStreamManager {
 
       // 清理保存的信息
       this.pendingConfirmInfo = undefined;
+    }
+  }
+
+  /**
+   * ✅ 新增：从 Map 更新 currentToolCall（兼容旧接口）
+   * 选择第一个活跃的工具调用作为 currentToolCall
+   */
+  private updateCurrentToolCallFromMap(): void {
+    if (this.activeToolCalls.size > 0) {
+      // 获取第一个活跃的工具调用
+      this.snapshot.currentToolCall = this.activeToolCalls.values().next().value;
+    } else {
+      this.snapshot.currentToolCall = undefined;
     }
   }
 
@@ -576,5 +629,7 @@ export class ExecutionStreamManager {
   reset(): void {
     this.stopPhraseRotation();
     this.snapshot = this.createInitialSnapshot();
+    // ✅ 清空并行工具调用 Map
+    this.activeToolCalls.clear();
   }
 }

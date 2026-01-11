@@ -1,6 +1,7 @@
 import { InternalTool, InternalToolContext } from './types.js';
 import { ListFilesTool } from './ListFiles/definitions.js';
 import { ReadFileTool } from './ReadFile/definitions.js';
+import { ReadManyFilesTool } from './ReadManyFiles/definitions.js';
 import { WriteFileTool } from './WriteFile/definitions.js';
 import { TodoWriteTool } from './TodoWrite/definitions.js';
 import { TodoReadTool } from './TodoRead/definitions.js';
@@ -12,6 +13,7 @@ import { logger } from '../../utils/logger.js';
 const toolsList: InternalTool[] = [
   ListFilesTool,
   ReadFileTool,
+  ReadManyFilesTool,
   WriteFileTool,
   TodoWriteTool,
   TodoReadTool,

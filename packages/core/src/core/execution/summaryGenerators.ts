@@ -17,6 +17,16 @@ function getWarningSuffix(result: ToolResult<any>): string {
 }
 
 /**
+ * 格式化文件大小（用于摘要）
+ */
+function formatSizeForSummary(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+/**
  * 内置的摘要生成器
  */
 export const defaultSummaryGenerators: SummaryGeneratorRegistry = {
@@ -126,6 +136,23 @@ export const defaultSummaryGenerators: SummaryGeneratorRegistry = {
     return `Updated ${count} todos${getWarningSuffix(result)}`;
   },
 
+  // 批量读取文件
+  ReadManyFiles: (_, _params, result) => {
+    if (!result.success) {
+      return `Failed: ${result.error}`;
+    }
+    const data = result.data;
+    const fileCount = data?.totalFiles ?? 0;
+    const errorCount = data?.errors?.length ?? 0;
+    const totalSize = data?.totalSize ?? 0;
+    const sizeStr = formatSizeForSummary(totalSize);
+
+    if (errorCount > 0) {
+      return `Read ${fileCount} files (${sizeStr}), ${errorCount} errors${getWarningSuffix(result)}`;
+    }
+    return `Read ${fileCount} files (${sizeStr})${getWarningSuffix(result)}`;
+  },
+
   // 默认
   default: (toolName, _, result) => {
     if (!result.success) {
@@ -174,6 +201,13 @@ export function generateParamsSummary(toolName: string, params: Record<string, a
 
     case 'ListFiles':
       return params.path || params.directory || '.';
+
+    case 'ReadManyFiles': {
+      const paths = params.paths;
+      if (!paths || paths.length === 0) return '';
+      if (paths.length === 1) return paths[0];
+      return `${paths.length} files`;
+    }
 
     default:
       // 尝试找到第一个字符串参数
