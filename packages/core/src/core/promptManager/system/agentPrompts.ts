@@ -112,8 +112,8 @@ export const OUTPUT_STYLE_CONSTRAINTS = `## 输出风格
 export async function selectStrategy(): Promise<Strategy> {
   const hasRipgrep = await canUseRipgrep();
   
-  if (isBun() && hasRipgrep) {
-    return Strategy.RIPGREP_BUN;  // ← 最优性能
+  if (hasRipgrep) {
+    return Strategy.RIPGREP;  // ← 最优性能
   }
   
   return Strategy.GLOB_NPM;  // ← 稳定降级

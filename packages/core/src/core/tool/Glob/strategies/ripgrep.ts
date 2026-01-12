@@ -1,17 +1,14 @@
 /**
- * Ripgrep + Bun.stat 策略
+ * Ripgrep 策略
  *
- * 使用 ripgrep 列出文件，然后使用 Bun.stat() 获取元数据。
- * 这是 Bun 环境下的最优方案。
+ * 使用 ripgrep 列出文件，然后使用 stat 获取元数据。
+ * 当 ripgrep 可用时，这是首选方案。
  *
  * 优势：
- * - ripgrep 列出文件极快
- * - Bun.stat() 比 Node.js fs.stat() 快约 12 倍（~0.1ms vs ~1.2ms）
- * - 组合性能最佳
- *
- * 注意：
- * - 仅在 Bun 环境下使用
- * - Node.js 环境应使用 glob-npm 策略
+ * - ripgrep 列出文件极快（Rust 实现）
+ * - 自动根据运行时选择最优的 stat 实现
+ *   - Bun 环境：使用 Bun.file().stat()（更快）
+ *   - Node.js 环境：使用 fs.stat()
  */
 
 import { resolve } from 'path';
@@ -31,7 +28,7 @@ import { logger } from '../../../../utils/logger.js';
  * @param options - 选项
  * @returns 文件列表
  */
-export async function globWithRipgrepBun(
+export async function globWithRipgrep(
   pattern: string,
   cwd: string,
   options?: GlobStrategyOptions
@@ -44,7 +41,7 @@ export async function globWithRipgrepBun(
     throw createAbortError();
   }
 
-  logger.debug(`🔍 [Glob:RipgrepBun] Starting`, { pattern, cwd, limit });
+  logger.debug(`🔍 [Glob:Ripgrep] Starting`, { pattern, cwd, limit });
 
   // 使用 ripgrep 快速列出文件
   let fileCount = 0;
@@ -58,7 +55,7 @@ export async function globWithRipgrepBun(
 
     // 每 100 个文件记录一次进度
     if (fileCount % 100 === 0) {
-      logger.debug(`🔍 [Glob:RipgrepBun] Progress`, { fileCount, elapsed: Date.now() - startTime });
+      logger.debug(`🔍 [Glob:Ripgrep] Progress`, { fileCount, elapsed: Date.now() - startTime });
     }
 
     // 检查是否被取消
@@ -81,7 +78,7 @@ export async function globWithRipgrepBun(
     });
   }
 
-  logger.debug(`🔍 [Glob:RipgrepBun] Completed`, {
+  logger.debug(`🔍 [Glob:Ripgrep] Completed`, {
     pattern,
     totalFiles: fileCount,
     returnedFiles: files.length,
@@ -97,7 +94,9 @@ export async function globWithRipgrepBun(
 /**
  * 获取文件修改时间
  *
- * 在 Bun 环境下使用 Bun.file().stat()，否则使用 fs.stat()
+ * 自动根据运行时选择最优实现：
+ * - Bun 环境：使用 Bun.file().stat()
+ * - Node.js 环境：使用 fs.stat()
  *
  * @param filePath - 文件路径
  * @returns 修改时间（毫秒时间戳）
@@ -118,7 +117,7 @@ async function getFileMtime(filePath: string): Promise<number> {
     // 错误抑制：记录但返回 0
     const errorCode = isNodeError(error) ? error.code || 'UNKNOWN' : 'UNKNOWN';
     const errorMessage = error instanceof Error ? error.message : String(error);
-    searchLogger.suppressed('ripgrep-bun', filePath, errorCode, errorMessage);
+    searchLogger.suppressed('ripgrep', filePath, errorCode, errorMessage);
     return 0;
   }
 }
@@ -150,3 +149,4 @@ function sortByRecentFirst(files: GlobFileItem[]): void {
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error;
 }
+

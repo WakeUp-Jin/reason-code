@@ -64,6 +64,7 @@ await GrepTool.execute({
 ## 详细文档
 
 📖 **[完整实现指南](./本地文件搜索工具-完整实现指南.md)**
+📌 **[Glob vs ripgrep 性能与一致性笔记（重构用）](./Glob-vs-ripgrep-文件枚举与stat性能笔记.md)**
 
 包含以下内容：
 

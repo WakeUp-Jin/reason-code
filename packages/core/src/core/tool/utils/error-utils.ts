@@ -14,6 +14,15 @@ export function createAbortError(message = 'AbortError'): Error {
   return error;
 }
 
+/**
+ * 
+ * @param error - 错误对象
+ * @returns 是否是 AbortError
+ * 错误对象: AbortError: This operation was aborted
+error.name: "AbortError"
+error.message: "This operation was aborted"
+error.code: "ABORT_ERR
+ */
 export function isAbortError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   if (error.name === 'AbortError' || error.message === 'AbortError') return true;

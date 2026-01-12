@@ -8,9 +8,9 @@ import type { ToolResult } from '../types.js';
  * Glob Strategy Enum
  */
 export enum GlobStrategy {
-  /** ripgrep + Bun.stat() (optimal for Bun) */
-  RIPGREP_BUN = 'ripgrep-bun',
-  /** glob npm package (universal solution) */
+  /** ripgrep + stat (preferred when ripgrep is available) */
+  RIPGREP = 'ripgrep',
+  /** glob npm package (fallback solution) */
   GLOB_NPM = 'glob-npm',
 }
 

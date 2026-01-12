@@ -1,66 +1,57 @@
 /**
  * Glob 策略选择器
  *
- * 根据运行环境和工具可用性自动选择最优策略。
+ * 简化的策略选择逻辑：
+ * - ripgrep 可用 → 使用 ripgrep
+ * - ripgrep 不可用 → fallback 到 glob npm 包
  *
  * 策略矩阵：
- * | 环境     | ripgrep 可用 | 选择方案              | 性能        |
- * |----------|-------------|----------------------|-------------|
- * | Bun      | ✅          | ripgrep + Bun.stat() | ⭐⭐⭐⭐⭐ 62ms  |
- * | Bun      | ❌          | glob npm 包          | ⭐⭐⭐⭐ 103ms |
- * | Node.js  | ✅          | glob npm 包          | ⭐⭐⭐⭐ 103ms |
- * | Node.js  | ❌          | glob npm 包          | ⭐⭐⭐⭐ 103ms |
- *
- * 关键发现：
- * - Bun + ripgrep = 最快（62ms）
- * - Node.js 环境不使用 ripgrep（即使可用），避免慢速 stat
+ * | ripgrep 可用 | 选择方案     | 说明                           |
+ * |-------------|-------------|--------------------------------|
+ * | ✅          | ripgrep     | 使用 ripgrep 列出文件 + stat   |
+ * | ❌          | glob npm    | fallback 到 glob npm 包        |
  */
 
 import { GlobStrategy, GlobFileItem, GlobStrategyOptions } from '../types.js';
-import { isBun, getRuntimeName } from '../../utils/runtime.js';
+import { getRuntimeName } from '../../utils/runtime.js';
 import { canUseRipgrep } from '../../utils/tool-detection.js';
-import { searchLogger, ripgrepLogger } from '../../../../utils/logUtils.js';
+import { searchLogger } from '../../../../utils/logUtils.js';
 import { globWithNpmPackage } from './glob-npm.js';
-import { globWithRipgrepBun } from './ripgrep-bun.js';
+import { globWithRipgrep } from './ripgrep.js';
 import { isAbortError } from '../../utils/error-utils.js';
 import { logger } from '../../../../utils/logger.js';
 
 /**
  * 选择最优 Glob 策略
  *
+ * 简化逻辑：ripgrep 可用就用 ripgrep，否则用 glob npm 包
+ *
  * @param binDir - 本地二进制缓存目录
  * @returns 选择的策略
  */
 export async function selectGlobStrategy(binDir?: string): Promise<GlobStrategy> {
   const runtime = getRuntimeName();
-  const isBunEnv = isBun();
   const hasRipgrep = await canUseRipgrep(binDir);
 
   // 记录策略选择的决策过程
   logger.debug(`🎯 [Glob:StrategySelection] Evaluating`, {
     runtime,
-    isBunEnv,
     hasRipgrep,
     hasBinDir: !!binDir,
     binDir,
   });
 
-  // Bun 环境：优先使用 ripgrep
-  // 如果传入了 binDir，则视为"允许使用本地缓存/尝试自动下载"，即使当前不存在 rg 也会尝试 ripgrep-bun 策略。
-  if (isBunEnv && (hasRipgrep || binDir)) {
+  // ripgrep 可用（系统已安装或有 binDir 可供下载）→ 使用 ripgrep
+  if (hasRipgrep || binDir) {
     const reason = hasRipgrep
-      ? 'Bun environment with ripgrep available'
-      : 'Bun environment with binDir (will attempt download if needed)';
-    logger.debug(`🎯 [Glob:StrategySelection] Chose ${GlobStrategy.RIPGREP_BUN}`, { reason });
-    return GlobStrategy.RIPGREP_BUN;
+      ? 'ripgrep available in system'
+      : 'binDir provided (will attempt download if needed)';
+    logger.debug(`🎯 [Glob:StrategySelection] Chose ${GlobStrategy.RIPGREP}`, { reason });
+    return GlobStrategy.RIPGREP;
   }
 
-  // 其他情况：使用 glob 包
-  // - Node.js 环境（即使 ripgrep 可用）
-  // - Bun 环境但 ripgrep 不可用
-  const reason = isBunEnv
-    ? 'Bun environment but ripgrep not available and no binDir'
-    : 'Node.js environment (prefer glob npm for better stat performance)';
+  // ripgrep 不可用 → fallback 到 glob npm 包
+  const reason = 'ripgrep not available and no binDir for download';
   logger.debug(`🎯 [Glob:StrategySelection] Chose ${GlobStrategy.GLOB_NPM}`, { reason });
   return GlobStrategy.GLOB_NPM;
 }
@@ -103,8 +94,8 @@ export async function executeGlobStrategy(
 
   try {
     switch (strategy) {
-      case GlobStrategy.RIPGREP_BUN:
-        files = await globWithRipgrepBun(pattern, cwd, options);
+      case GlobStrategy.RIPGREP:
+        files = await globWithRipgrep(pattern, cwd, options);
         break;
 
       case GlobStrategy.GLOB_NPM:
@@ -121,15 +112,15 @@ export async function executeGlobStrategy(
     }
 
     // 如果 ripgrep 策略失败，降级到 glob npm
-    if (strategy === GlobStrategy.RIPGREP_BUN) {
+    if (strategy === GlobStrategy.RIPGREP) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      searchLogger.strategyFallback(GlobStrategy.RIPGREP_BUN, GlobStrategy.GLOB_NPM, errorMessage);
+      searchLogger.strategyFallback(GlobStrategy.RIPGREP, GlobStrategy.GLOB_NPM, errorMessage);
 
       files = await globWithNpmPackage(pattern, cwd, options);
       return {
         files,
         strategy: GlobStrategy.GLOB_NPM,
-        warning: `从 ${GlobStrategy.RIPGREP_BUN} 降级到 ${GlobStrategy.GLOB_NPM}: ${errorMessage}`,
+        warning: `从 ${GlobStrategy.RIPGREP} 降级到 ${GlobStrategy.GLOB_NPM}: ${errorMessage}`,
       };
     }
 
@@ -140,4 +131,4 @@ export async function executeGlobStrategy(
 
 // 导出策略实现
 export { globWithNpmPackage } from './glob-npm.js';
-export { globWithRipgrepBun } from './ripgrep-bun.js';
+export { globWithRipgrep } from './ripgrep.js';

@@ -10,7 +10,7 @@
  * 4. 文件列表生成：files() 函数用于 Glob 工具
  */
 
-import { spawn, execSync } from 'child_process';
+import { spawn, execSync, type ChildProcess } from 'child_process';
 import { existsSync, mkdirSync, chmodSync, unlinkSync, createWriteStream, statSync } from 'fs';
 import { join, resolve } from 'path';
 import { pipeline } from 'stream/promises';
@@ -19,6 +19,7 @@ import { Readable } from 'stream';
 import { createAbortError } from './error-utils.js';
 import { ripgrepLogger } from '../../../utils/logUtils.js';
 import { logger } from '../../../utils/logger.js';
+import { detectRuntime, RuntimeEnvironment } from './runtime.js';
 
 /**
  * 平台配置
@@ -191,12 +192,13 @@ export const Ripgrep = {
     binDir?: string;
     signal?: AbortSignal;
   }): AsyncGenerator<string, void, unknown> {
+    // 1. 初始检查
     if (input.signal?.aborted) {
       throw createAbortError();
     }
 
+    // 2. 准备 ripgrep 命令
     ripgrepLogger.detection(false, false, false, input.binDir);
-
     const rgPath = await Ripgrep.filepath(input.binDir);
 
     const args = [
@@ -217,7 +219,7 @@ export const Ripgrep = {
       }
     }
 
-    // 检查目录是否存在
+    // 3. 检查目录是否存在
     if (!existsSync(input.cwd)) {
       throw Object.assign(new Error(`No such file or directory: '${input.cwd}'`), {
         code: 'ENOENT',
@@ -226,115 +228,35 @@ export const Ripgrep = {
       });
     }
 
-    // 记录 ripgrep 进程启动参数
+    // 4. 启动进程（自动选择 Bun 或 Node.js）
+    const runtime = detectRuntime();
     logger.debug(`🚀 [Ripgrep:Spawn] Starting process`, {
       rgPath,
       args,
       cwd: input.cwd,
+      runtime,
     });
 
-    const proc = spawn(rgPath, args, {
+    const proc = this._createProcess(rgPath, args, {
       cwd: input.cwd,
       stdio: ['ignore', 'pipe', 'ignore'],
       windowsHide: true,
     });
 
-    let aborted = false;
-    const onAbort = () => {
-      aborted = true;
-      logger.debug(`🛑 [Ripgrep:Abort] Killing process`, {
-        pid: proc.pid,
-        cwd: input.cwd,
-      });
-
-      // 关键：先销毁 stdout 流，让 for await 循环能够退出
-      // 否则 for await 会一直阻塞等待下一个 chunk
-      proc.stdout?.destroy();
-
-      proc.kill('SIGTERM'); // 优雅终止
-
-      // 如果 500ms 后还没结束，强制杀死
-      setTimeout(() => {
-        if (!proc.killed) {
-          logger.debug(`🛑 [Ripgrep:ForceKill] Process did not terminate, forcing kill`, {
-            pid: proc.pid,
-          });
-          proc.kill('SIGKILL');
-        }
-      }, 500);
-    };
-    input.signal?.addEventListener('abort', onAbort, { once: true });
-
-    // 流式读取输出
-    let buffer = '';
-    let yieldCount = 0;
+    // 5. 设置 Abort 处理
+    const abortHandler = this._setupAbortHandler(proc, input.signal);
+    const checkAborted = () => abortHandler.aborted;
 
     try {
-      for await (const chunk of proc.stdout as AsyncIterable<Buffer>) {
-        // 如果已经被中止，立即退出循环
-        if (aborted) {
-          break;
-        }
+      // 6. 流式读取并返回结果
+      yield* this._readLinesFromStream(proc.stdout as Readable, checkAborted);
 
-        buffer += chunk.toString('utf-8');
-        const lines = buffer.split(/\r?\n/);
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line) {
-            yieldCount++;
-            yield line;
-          }
-        }
-      }
-    } catch (streamError: unknown) {
-      // 如果是因为 abort 导致的流错误，忽略它
-      // 流被 destroy() 时可能会抛出 ERR_STREAM_PREMATURE_CLOSE 等错误
-      if (!aborted) {
-        throw streamError;
-      }
+      // 7. 等待进程退出
+      await this._waitForProcessExit(proc, checkAborted);
+    } finally {
+      // 8. 清理资源
+      abortHandler.cleanup();
     }
-
-    // 如果已经被中止，直接抛出 AbortError
-    if (aborted) {
-      throw createAbortError();
-    }
-
-    // 处理剩余的 buffer
-    if (buffer) {
-      yieldCount++;
-      yield buffer;
-    }
-
-    // 等待进程结束（如果进程还在运行）
-    // 注意：如果上面的 for await 正常结束，进程可能已经退出了
-    if (!proc.killed && proc.exitCode === null) {
-      await new Promise<void>((resolve, reject) => {
-        proc.on('close', (code) => {
-          if (aborted) {
-            reject(createAbortError());
-            return;
-          }
-
-          if (code === 0 || code === 1) {
-            // code 1 表示没有匹配，也是正常的
-            resolve();
-          } else {
-            reject(new Error(`ripgrep exited with code ${code}`));
-          }
-        });
-        proc.on('error', (err) => {
-          if (aborted) {
-            reject(createAbortError());
-            return;
-          }
-          reject(err);
-        });
-      });
-    }
-
-    // 清理事件监听器
-    input.signal?.removeEventListener('abort', onAbort);
   },
 
   /**
@@ -354,12 +276,13 @@ export const Ripgrep = {
     binDir?: string;
     signal?: AbortSignal;
   }): Promise<string> {
+    // 1. 初始检查
     if (input.signal?.aborted) {
       throw createAbortError();
     }
 
+    // 2. 准备命令
     const rgPath = await Ripgrep.filepath(input.binDir);
-
     const args = [
       '-nH', // -n: 行号, -H: 文件名
       '--field-match-separator=|', // 使用 | 分隔字段
@@ -370,56 +293,40 @@ export const Ripgrep = {
     if (input.glob) {
       args.push('--glob', input.glob);
     }
-
     args.push(input.cwd);
 
-    return new Promise((resolve, reject) => {
-      const proc = spawn(rgPath, args, {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        windowsHide: true,
-      });
-
-      let aborted = false;
-      const onAbort = () => {
-        aborted = true;
-        proc.kill();
-        reject(createAbortError());
-      };
-      input.signal?.addEventListener('abort', onAbort, { once: true });
-
-      let stdout = '';
-      let stderr = '';
-
-      proc.stdout.on('data', (chunk) => {
-        stdout += chunk.toString('utf-8');
-      });
-
-      proc.stderr.on('data', (chunk) => {
-        stderr += chunk.toString('utf-8');
-      });
-
-      proc.on('close', (code) => {
-        if (aborted) {
-          return;
-        }
-
-        if (code === 0) {
-          resolve(stdout);
-        } else if (code === 1) {
-          // 没有匹配
-          resolve('');
-        } else {
-          reject(new Error(`ripgrep failed: ${stderr}`));
-        }
-      });
-
-      proc.on('error', (err) => {
-        if (aborted) {
-          return;
-        }
-        reject(err);
-      });
+    // 3. 启动进程（自动选择 Bun 或 Node.js）
+    const runtime = detectRuntime();
+    logger.debug(`🚀 [Ripgrep:Search] Starting process`, {
+      rgPath,
+      args,
+      runtime,
     });
+
+    const proc = this._createProcess(rgPath, args, {
+      cwd: input.cwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    // 4. 设置 Abort 处理
+    const abortHandler = this._setupAbortHandler(proc, input.signal);
+    const checkAborted = () => abortHandler.aborted;
+
+    try {
+      // 5. 读取所有输出
+      let result = '';
+      for await (const line of this._readLinesFromStream(proc.stdout as Readable, checkAborted)) {
+        result += line + '\n';
+      }
+
+      // 6. 等待进程退出
+      await this._waitForProcessExit(proc, checkAborted);
+
+      return result.trimEnd();
+    } finally {
+      // 7. 清理资源
+      abortHandler.cleanup();
+    }
   },
 
   /**
@@ -443,6 +350,192 @@ export const Ripgrep = {
   _resetCache(): void {
     _ripgrepPath = null;
     _initPromise = null;
+  },
+
+  // ==================== 私有方法：进程管理和流处理 ====================
+
+  /**
+   * 创建进程（自动选择 Bun 或 Node.js）
+   * @private
+   */
+  _createProcess(
+    command: string,
+    args: string[],
+    options: {
+      cwd: string;
+      stdio: [string, string, string];
+      windowsHide?: boolean;
+    }
+  ): ChildProcess {
+    const runtime = detectRuntime();
+
+    if (runtime === RuntimeEnvironment.BUN) {
+      return this._createBunProcess(command, args, options);
+    } else {
+      return this._createNodeProcess(command, args, options);
+    }
+  },
+
+  /**
+   * 创建 Bun 进程（包装为 Node.js ChildProcess 兼容接口）
+   * @private
+   */
+  _createBunProcess(command: string, args: string[], options: any): any {
+    // @ts-ignore - Bun 全局变量
+    const proc = Bun.spawn([command, ...args], {
+      cwd: options.cwd,
+      stdout: 'pipe',
+      stderr: options.stdio[2] === 'pipe' ? 'pipe' : 'ignore',
+    });
+
+    // 包装成 Node.js ChildProcess 兼容接口
+    const wrapper: any = {
+      // 将 Bun 的 ReadableStream 转换为 Node.js Readable
+      stdout: proc.stdout as any,
+      stderr: proc.stderr as any,
+      pid: proc.pid,
+      get killed() {
+        return proc.killed;
+      },
+      get exitCode() {
+        return proc.exitCode;
+      },
+      kill(signal?: string) {
+        proc.kill(signal as any);
+        return true;
+      },
+      on(event: string, handler: any) {
+        if (event === 'close') {
+          proc.exited.then(() => handler(proc.exitCode));
+        } else if (event === 'error') {
+          // Bun 进程错误处理（暂时不实现，因为 Bun.spawn 很少出错）
+        }
+        return wrapper;
+      },
+    };
+
+    return wrapper;
+  },
+
+  /**
+   * 创建 Node.js 进程
+   * @private
+   */
+  _createNodeProcess(command: string, args: string[], options: any): ChildProcess {
+    return spawn(command, args, {
+      cwd: options.cwd,
+      stdio: options.stdio,
+      windowsHide: options.windowsHide ?? true,
+    });
+  },
+
+  /**
+   * 设置 Abort 处理器
+   * @private
+   */
+  _setupAbortHandler(
+    proc: ChildProcess,
+    signal?: AbortSignal
+  ): { aborted: boolean; cleanup: () => void } {
+    const state = { aborted: false };
+
+    const onAbort = () => {
+      state.aborted = true;
+
+      logger.debug(`🛑 [Ripgrep:Abort] Killing process`, { pid: proc.pid });
+
+      // 先销毁流，再杀进程
+      (proc.stdout as any)?.destroy?.();
+      proc.kill('SIGTERM');
+
+      // 500ms 后强制杀死
+      setTimeout(() => {
+        if (!proc.killed) {
+          logger.debug(`🛑 [Ripgrep:ForceKill] Forcing kill`, { pid: proc.pid });
+          proc.kill('SIGKILL');
+        }
+      }, 500);
+    };
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    return {
+      get aborted() {
+        return state.aborted;
+      },
+      cleanup: () => signal?.removeEventListener('abort', onAbort),
+    };
+  },
+
+  /**
+   * 从流中逐行读取数据
+   * @private
+   */
+  async *_readLinesFromStream(
+    stream: Readable,
+    checkAborted: () => boolean
+  ): AsyncGenerator<string, void, unknown> {
+    let buffer = '';
+
+    try {
+      for await (const chunk of stream as AsyncIterable<Buffer>) {
+        if (checkAborted()) break;
+
+        buffer += chunk.toString('utf-8');
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line) yield line;
+        }
+      }
+    } catch (streamError: unknown) {
+      if (!checkAborted()) throw streamError;
+    }
+
+    if (buffer && !checkAborted()) {
+      yield buffer;
+    }
+  },
+
+  /**
+   * 等待进程退出
+   * @private
+   */
+  async _waitForProcessExit(
+    proc: ChildProcess,
+    checkAborted: () => boolean
+  ): Promise<void> {
+    if (checkAborted()) {
+      throw createAbortError();
+    }
+
+    if (proc.killed || proc.exitCode !== null) {
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      proc.on('close', (code) => {
+        if (checkAborted()) {
+          reject(createAbortError());
+          return;
+        }
+
+        if (code === 0 || code === 1) {
+          resolve();
+        } else {
+          reject(new Error(`ripgrep exited with code ${code}`));
+        }
+      });
+
+      proc.on('error', (err) => {
+        if (checkAborted()) {
+          reject(createAbortError());
+          return;
+        }
+        reject(err);
+      });
+    });
   },
 };
 
