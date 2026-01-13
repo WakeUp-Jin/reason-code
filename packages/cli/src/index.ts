@@ -1,9 +1,9 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
-import { Agent } from '@reason-cli/core';
+import { Agent } from '@reason-code/core';
 
 const program = new Command();
 

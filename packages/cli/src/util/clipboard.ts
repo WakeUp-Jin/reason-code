@@ -76,51 +76,39 @@ export async function copyToClipboard(text: string): Promise<boolean> {
  * 使用系统剪贴板命令复制
  */
 async function copyWithSystemClipboard(text: string): Promise<boolean> {
-  const { spawn } = await import('child_process')
+  let command: string
+  let args: string[]
 
-  return new Promise((resolve) => {
-    let command: string
-    let args: string[]
+  switch (process.platform) {
+    case 'darwin':
+      command = 'pbcopy'
+      args = []
+      break
+    case 'linux':
+      command = 'xclip'
+      args = ['-selection', 'clipboard']
+      break
+    case 'win32':
+      command = 'clip'
+      args = []
+      break
+    default:
+      return false
+  }
 
-    // 根据平台选择命令
-    switch (process.platform) {
-      case 'darwin':
-        command = 'pbcopy'
-        args = []
-        break
-      case 'linux':
-        // 优先使用 xclip，其次 xsel
-        command = 'xclip'
-        args = ['-selection', 'clipboard']
-        break
-      case 'win32':
-        command = 'clip'
-        args = []
-        break
-      default:
-        resolve(false)
-        return
-    }
+  try {
+    // @ts-ignore - Bun 全局变量
+    const proc = Bun.spawn([command, ...args], {
+      stdin: new Blob([text]),
+      stdout: 'ignore',
+      stderr: 'ignore',
+    })
 
-    try {
-      const proc = spawn(command, args, {
-        stdio: ['pipe', 'ignore', 'ignore'],
-      })
-
-      proc.stdin.write(text)
-      proc.stdin.end()
-
-      proc.on('close', (code) => {
-        resolve(code === 0)
-      })
-
-      proc.on('error', () => {
-        resolve(false)
-      })
-    } catch {
-      resolve(false)
-    }
-  })
+    await proc.exited
+    return proc.exitCode === 0
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -129,57 +117,40 @@ async function copyWithSystemClipboard(text: string): Promise<boolean> {
  * 这里使用系统命令
  */
 export async function readFromClipboard(): Promise<string | null> {
-  const { spawn } = await import('child_process')
+  let command: string
+  let args: string[]
 
-  return new Promise((resolve) => {
-    let command: string
-    let args: string[]
+  switch (process.platform) {
+    case 'darwin':
+      command = 'pbpaste'
+      args = []
+      break
+    case 'linux':
+      command = 'xclip'
+      args = ['-selection', 'clipboard', '-o']
+      break
+    case 'win32':
+      return null
+    default:
+      return null
+  }
 
-    // 根据平台选择命令
-    switch (process.platform) {
-      case 'darwin':
-        command = 'pbpaste'
-        args = []
-        break
-      case 'linux':
-        command = 'xclip'
-        args = ['-selection', 'clipboard', '-o']
-        break
-      case 'win32':
-        // Windows 没有简单的命令行读取剪贴板的方法
-        resolve(null)
-        return
-      default:
-        resolve(null)
-        return
-    }
+  try {
+    // @ts-ignore - Bun 全局变量
+    const proc = Bun.spawn([command, ...args], {
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'ignore',
+    })
 
-    try {
-      const proc = spawn(command, args, {
-        stdio: ['ignore', 'pipe', 'ignore'],
-      })
+    const output = proc.stdout ? await new Response(proc.stdout).text() : ''
+    await proc.exited
 
-      let output = ''
-
-      proc.stdout.on('data', (data) => {
-        output += data.toString()
-      })
-
-      proc.on('close', (code) => {
-        if (code === 0) {
-          resolve(output)
-        } else {
-          resolve(null)
-        }
-      })
-
-      proc.on('error', () => {
-        resolve(null)
-      })
-    } catch {
-      resolve(null)
-    }
-  })
+    if (proc.exitCode === 0) return output
+    return null
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -198,4 +169,3 @@ export async function copyWithNotification(
     onError?.()
   }
 }
-

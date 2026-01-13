@@ -13,9 +13,9 @@
  * - 只能在 Git 仓库中使用
  */
 
-import { spawn } from 'child_process';
 import { GrepMatch, GrepStrategyOptions, GREP_DEFAULTS } from '../types.js';
-import { createAbortError } from '../../utils/error-utils.js';
+import { runCommand } from '../../utils/spawn.js';
+import { isAbortError } from '../../utils/error-utils.js';
 
 /**
  * 使用 git grep 搜索文件内容
@@ -30,77 +30,47 @@ export async function grepWithGit(
   cwd: string,
   options?: GrepStrategyOptions
 ): Promise<GrepMatch[]> {
-  return new Promise((resolve, reject) => {
-    const args = [
-      'grep',
-      '--untracked', // 包括未追踪的文件
-      '-n', // 显示行号
-      '-E', // 扩展正则表达式
-      '--ignore-case', // 忽略大小写
-      pattern,
-    ];
+  const args = [
+    'grep',
+    '--untracked', // 包括未追踪的文件
+    '-n', // 显示行号
+    '-E', // 扩展正则表达式
+    '--ignore-case', // 忽略大小写
+    pattern,
+  ];
 
-    // 添加文件过滤
-    if (options?.include) {
-      args.push('--', options.include);
-    }
+  // 添加文件过滤
+  if (options?.include) {
+    args.push('--', options.include);
+  }
 
-    const proc = spawn('git', args, {
+  try {
+    const result = await runCommand('git', args, {
       cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
+      signal: options?.signal,
     });
 
-    let aborted = false;
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (chunk) => {
-      stdout += chunk.toString('utf-8');
-    });
-
-    proc.stderr.on('data', (chunk) => {
-      stderr += chunk.toString('utf-8');
-    });
-
-    proc.on('close', (code) => {
-      if (aborted) {
-        return;
-      }
-
-      if (code === 0) {
-        const matches = parseGitGrepOutput(stdout);
-        const limit = options?.limit ?? GREP_DEFAULTS.LIMIT;
-        resolve(matches.slice(0, limit));
-      } else if (code === 1) {
-        // 没有匹配
-        resolve([]);
-      } else {
-        const errorMessage = stderr || `git grep exited with code ${code}`;
-        reject(new Error(errorMessage));
-      }
-    });
-
-    proc.on('error', (error) => {
-      if (aborted) {
-        return;
-      }
-      reject(error);
-    });
-
-    // 超时处理
-    if (options?.signal) {
-      options.signal.addEventListener(
-        'abort',
-        () => {
-          aborted = true;
-          proc.kill();
-          reject(createAbortError());
-        },
-        { once: true }
-      );
+    // exitCode === 0: 有匹配
+    // exitCode === 1: 没有匹配
+    // exitCode > 1: 错误
+    if (result.exitCode === 0) {
+      const matches = parseGitGrepOutput(result.stdout);
+      const limit = options?.limit ?? GREP_DEFAULTS.LIMIT;
+      return matches.slice(0, limit);
+    } else if (result.exitCode === 1) {
+      // 没有匹配
+      return [];
+    } else {
+      const errorMessage = result.stderr || `git grep exited with code ${result.exitCode}`;
+      throw new Error(errorMessage);
     }
-  });
+  } catch (error) {
+    // 重新抛出 AbortError
+    if (isAbortError(error)) {
+      throw error;
+    }
+    throw error;
+  }
 }
 
 /**

@@ -56,6 +56,9 @@ export interface ToolCallRecord {
 
   // 工具调用前的思考内容（LLM 在调用工具前的 content）
   thinkingContent?: string;
+
+  // 使用的策略（如 ripgrep、git-grep、javascript 等）
+  strategy?: string;
 }
 
 /**

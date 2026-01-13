@@ -10,16 +10,19 @@
  * 4. 文件列表生成：files() 函数用于 Glob 工具
  */
 
-import { spawn, execSync, type ChildProcess } from 'child_process';
-import { existsSync, mkdirSync, chmodSync, unlinkSync, createWriteStream, statSync } from 'fs';
-import { join, resolve } from 'path';
+import { existsSync, mkdirSync, chmodSync, unlinkSync, createWriteStream } from 'fs';
+import { join } from 'path';
 import { pipeline } from 'stream/promises';
-import { createGunzip } from 'zlib';
 import { Readable } from 'stream';
 import { createAbortError } from './error-utils.js';
 import { ripgrepLogger } from '../../../utils/logUtils.js';
 import { logger } from '../../../utils/logger.js';
-import { detectRuntime, RuntimeEnvironment } from './runtime.js';
+import {
+  createProcess,
+  setupAbortHandler,
+  readLinesFromStream,
+  waitForProcessExit,
+} from './spawn.js';
 
 /**
  * 平台配置
@@ -80,11 +83,17 @@ function getRipgrepBinaryName(): string {
 
 function tryGetSystemRipgrepPath(): string | null {
   try {
-    const output = execSync('which rg 2>/dev/null || where rg 2>nul', {
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
+    const cmd = process.platform === 'win32' ? 'where' : 'which';
+    // @ts-ignore - Bun 全局变量
+    const result = Bun.spawnSync([cmd, 'rg'], {
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'ignore',
+    });
 
+    if (result.exitCode !== 0) return null;
+
+    const output = new TextDecoder().decode(result.stdout).trim();
     const firstLine = output.split(/\r?\n/)[0]?.trim();
     if (firstLine && existsSync(firstLine)) {
       return firstLine;
@@ -229,30 +238,28 @@ export const Ripgrep = {
     }
 
     // 4. 启动进程（自动选择 Bun 或 Node.js）
-    const runtime = detectRuntime();
     logger.debug(`🚀 [Ripgrep:Spawn] Starting process`, {
       rgPath,
       args,
       cwd: input.cwd,
-      runtime,
     });
 
-    const proc = this._createProcess(rgPath, args, {
+    const proc = createProcess(rgPath, args, {
       cwd: input.cwd,
       stdio: ['ignore', 'pipe', 'ignore'],
       windowsHide: true,
     });
 
     // 5. 设置 Abort 处理
-    const abortHandler = this._setupAbortHandler(proc, input.signal);
+    const abortHandler = setupAbortHandler(proc, input.signal, 'Ripgrep');
     const checkAborted = () => abortHandler.aborted;
 
     try {
       // 6. 流式读取并返回结果
-      yield* this._readLinesFromStream(proc.stdout as Readable, checkAborted);
+      yield* readLinesFromStream(proc.stdout, checkAborted);
 
       // 7. 等待进程退出
-      await this._waitForProcessExit(proc, checkAborted);
+      await waitForProcessExit(proc, checkAborted, [0, 1], 'ripgrep');
     } finally {
       // 8. 清理资源
       abortHandler.cleanup();
@@ -296,31 +303,29 @@ export const Ripgrep = {
     args.push(input.cwd);
 
     // 3. 启动进程（自动选择 Bun 或 Node.js）
-    const runtime = detectRuntime();
     logger.debug(`🚀 [Ripgrep:Search] Starting process`, {
       rgPath,
       args,
-      runtime,
     });
 
-    const proc = this._createProcess(rgPath, args, {
+    const proc = createProcess(rgPath, args, {
       cwd: input.cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
     // 4. 设置 Abort 处理
-    const abortHandler = this._setupAbortHandler(proc, input.signal);
+    const abortHandler = setupAbortHandler(proc, input.signal, 'Ripgrep');
     const checkAborted = () => abortHandler.aborted;
 
     try {
       // 5. 读取所有输出
       let result = '';
-      for await (const line of this._readLinesFromStream(proc.stdout as Readable, checkAborted)) {
+      for await (const line of readLinesFromStream(proc.stdout, checkAborted)) {
         result += line + '\n';
       }
 
       // 6. 等待进程退出
-      await this._waitForProcessExit(proc, checkAborted);
+      await waitForProcessExit(proc, checkAborted, [0, 1], 'ripgrep');
 
       return result.trimEnd();
     } finally {
@@ -350,192 +355,6 @@ export const Ripgrep = {
   _resetCache(): void {
     _ripgrepPath = null;
     _initPromise = null;
-  },
-
-  // ==================== 私有方法：进程管理和流处理 ====================
-
-  /**
-   * 创建进程（自动选择 Bun 或 Node.js）
-   * @private
-   */
-  _createProcess(
-    command: string,
-    args: string[],
-    options: {
-      cwd: string;
-      stdio: [string, string, string];
-      windowsHide?: boolean;
-    }
-  ): ChildProcess {
-    const runtime = detectRuntime();
-
-    if (runtime === RuntimeEnvironment.BUN) {
-      return this._createBunProcess(command, args, options);
-    } else {
-      return this._createNodeProcess(command, args, options);
-    }
-  },
-
-  /**
-   * 创建 Bun 进程（包装为 Node.js ChildProcess 兼容接口）
-   * @private
-   */
-  _createBunProcess(command: string, args: string[], options: any): any {
-    // @ts-ignore - Bun 全局变量
-    const proc = Bun.spawn([command, ...args], {
-      cwd: options.cwd,
-      stdout: 'pipe',
-      stderr: options.stdio[2] === 'pipe' ? 'pipe' : 'ignore',
-    });
-
-    // 包装成 Node.js ChildProcess 兼容接口
-    const wrapper: any = {
-      // 将 Bun 的 ReadableStream 转换为 Node.js Readable
-      stdout: proc.stdout as any,
-      stderr: proc.stderr as any,
-      pid: proc.pid,
-      get killed() {
-        return proc.killed;
-      },
-      get exitCode() {
-        return proc.exitCode;
-      },
-      kill(signal?: string) {
-        proc.kill(signal as any);
-        return true;
-      },
-      on(event: string, handler: any) {
-        if (event === 'close') {
-          proc.exited.then(() => handler(proc.exitCode));
-        } else if (event === 'error') {
-          // Bun 进程错误处理（暂时不实现，因为 Bun.spawn 很少出错）
-        }
-        return wrapper;
-      },
-    };
-
-    return wrapper;
-  },
-
-  /**
-   * 创建 Node.js 进程
-   * @private
-   */
-  _createNodeProcess(command: string, args: string[], options: any): ChildProcess {
-    return spawn(command, args, {
-      cwd: options.cwd,
-      stdio: options.stdio,
-      windowsHide: options.windowsHide ?? true,
-    });
-  },
-
-  /**
-   * 设置 Abort 处理器
-   * @private
-   */
-  _setupAbortHandler(
-    proc: ChildProcess,
-    signal?: AbortSignal
-  ): { aborted: boolean; cleanup: () => void } {
-    const state = { aborted: false };
-
-    const onAbort = () => {
-      state.aborted = true;
-
-      logger.debug(`🛑 [Ripgrep:Abort] Killing process`, { pid: proc.pid });
-
-      // 先销毁流，再杀进程
-      (proc.stdout as any)?.destroy?.();
-      proc.kill('SIGTERM');
-
-      // 500ms 后强制杀死
-      setTimeout(() => {
-        if (!proc.killed) {
-          logger.debug(`🛑 [Ripgrep:ForceKill] Forcing kill`, { pid: proc.pid });
-          proc.kill('SIGKILL');
-        }
-      }, 500);
-    };
-
-    signal?.addEventListener('abort', onAbort, { once: true });
-
-    return {
-      get aborted() {
-        return state.aborted;
-      },
-      cleanup: () => signal?.removeEventListener('abort', onAbort),
-    };
-  },
-
-  /**
-   * 从流中逐行读取数据
-   * @private
-   */
-  async *_readLinesFromStream(
-    stream: Readable,
-    checkAborted: () => boolean
-  ): AsyncGenerator<string, void, unknown> {
-    let buffer = '';
-
-    try {
-      for await (const chunk of stream as AsyncIterable<Buffer>) {
-        if (checkAborted()) break;
-
-        buffer += chunk.toString('utf-8');
-        const lines = buffer.split(/\r?\n/);
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line) yield line;
-        }
-      }
-    } catch (streamError: unknown) {
-      if (!checkAborted()) throw streamError;
-    }
-
-    if (buffer && !checkAborted()) {
-      yield buffer;
-    }
-  },
-
-  /**
-   * 等待进程退出
-   * @private
-   */
-  async _waitForProcessExit(
-    proc: ChildProcess,
-    checkAborted: () => boolean
-  ): Promise<void> {
-    if (checkAborted()) {
-      throw createAbortError();
-    }
-
-    if (proc.killed || proc.exitCode !== null) {
-      return;
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      proc.on('close', (code) => {
-        if (checkAborted()) {
-          reject(createAbortError());
-          return;
-        }
-
-        if (code === 0 || code === 1) {
-          resolve();
-        } else {
-          reject(new Error(`ripgrep exited with code ${code}`));
-        }
-      });
-
-      proc.on('error', (err) => {
-        if (checkAborted()) {
-          reject(createAbortError());
-          return;
-        }
-        reject(err);
-      });
-    });
   },
 };
 
@@ -616,10 +435,7 @@ async function downloadRipgrep(binDir: string): Promise<void> {
       throw new Error('Response body is null');
     }
 
-    await pipeline(
-      Readable.fromWeb(bodyStream.pipeThrough(progressStream) as any),
-      fileStream
-    );
+    await pipeline(Readable.fromWeb(bodyStream.pipeThrough(progressStream) as any), fileStream);
 
     // 清除超时
     clearTimeout(timeoutId);
@@ -676,7 +492,11 @@ async function downloadRipgrep(binDir: string): Promise<void> {
 /**
  * 解压 tar.gz 文件
  */
-async function extractTarGz(archivePath: string, targetDir: string, platformKey: string): Promise<void> {
+async function extractTarGz(
+  archivePath: string,
+  targetDir: string,
+  platformKey: string
+): Promise<void> {
   const args = ['tar', '-xzf', archivePath, '--strip-components=1', '-C', targetDir];
 
   // 不同平台需要不同的参数来只提取 rg 二进制
@@ -686,32 +506,26 @@ async function extractTarGz(archivePath: string, targetDir: string, platformKey:
     args.push('--wildcards', '*/rg');
   }
 
-  return new Promise((resolve, reject) => {
-    const proc = spawn(args[0], args.slice(1), {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
+  try {
+    // @ts-ignore - Bun 全局变量
+    const proc = Bun.spawn(args, {
+      stdin: 'ignore',
+      stdout: 'ignore',
+      stderr: 'pipe',
     });
 
-    let stderr = '';
-    proc.stderr.on('data', (chunk) => {
-      stderr += chunk.toString('utf-8');
-    });
+    const stderr = proc.stderr ? await new Response(proc.stderr).text() : '';
+    await proc.exited;
 
-    proc.on('close', (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        const error = `Failed to extract tar.gz: ${stderr}`;
-        ripgrepLogger.extractError(error, archivePath);
-        reject(new Error(error));
-      }
-    });
+    if (proc.exitCode === 0) return;
 
-    proc.on('error', (err) => {
-      ripgrepLogger.extractError(err.message, archivePath);
-      reject(err);
-    });
-  });
+    const error = `Failed to extract tar.gz: ${stderr}`;
+    ripgrepLogger.extractError(error, archivePath);
+    throw new Error(error);
+  } catch (err: any) {
+    ripgrepLogger.extractError(err?.message || String(err), archivePath);
+    throw err;
+  }
 }
 
 /**
@@ -732,32 +546,26 @@ async function extractZip(archivePath: string, targetDir: string): Promise<void>
     }
   `;
 
-  return new Promise((resolve, reject) => {
-    const proc = spawn('powershell', ['-NoProfile', '-Command', script], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
+  try {
+    // @ts-ignore - Bun 全局变量
+    const proc = Bun.spawn(['powershell', '-NoProfile', '-Command', script], {
+      stdin: 'ignore',
+      stdout: 'ignore',
+      stderr: 'pipe',
     });
 
-    let stderr = '';
-    proc.stderr.on('data', (chunk) => {
-      stderr += chunk.toString('utf-8');
-    });
+    const stderr = proc.stderr ? await new Response(proc.stderr).text() : '';
+    await proc.exited;
 
-    proc.on('close', (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        const error = `Failed to extract zip: ${stderr}`;
-        ripgrepLogger.extractError(error, archivePath);
-        reject(new Error(error));
-      }
-    });
+    if (proc.exitCode === 0) return;
 
-    proc.on('error', (err) => {
-      ripgrepLogger.extractError(err.message, archivePath);
-      reject(err);
-    });
-  });
+    const error = `Failed to extract zip: ${stderr}`;
+    ripgrepLogger.extractError(error, archivePath);
+    throw new Error(error);
+  } catch (err: any) {
+    ripgrepLogger.extractError(err?.message || String(err), archivePath);
+    throw err;
+  }
 }
 
 export default Ripgrep;

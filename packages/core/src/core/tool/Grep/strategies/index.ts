@@ -116,54 +116,39 @@ export async function executeGrepStrategy(
   cwd: string,
   options?: GrepStrategyOptions
 ): Promise<GrepStrategyResult> {
-  const runtime = getRuntimeName();
   const strategies = await getAvailableStrategies(cwd, options?.binDir);
-  const triedStrategies: string[] = [];
-  const fallbackReasons: string[] = [];
-
+  let lastError: Error | undefined;
+  
   for (let i = 0; i < strategies.length; i++) {
     const strategy = strategies[i];
-    triedStrategies.push(strategy);
-
-    // 记录策略选择
-    if (i === 0) {
-      searchLogger.strategySelected('Grep', strategy, runtime);
-    }
-
+    
     try {
-      const executor = STRATEGY_EXECUTORS[strategy];
-      const matches = await executor(pattern, cwd, options);
-
-      // 如果发生了降级，返回警告信息
-      if (i > 0) {
-        const warning = `从 ${triedStrategies[0]} 降级到 ${strategy}: ${fallbackReasons.join(' -> ')}`;
-        return { matches, strategy, warning };
+      // 首次尝试记录日志
+      if (i === 0) {
+        searchLogger.strategySelected('Grep', strategy, getRuntimeName());
       }
-
-      return { matches, strategy };
+      
+      const matches = await STRATEGY_EXECUTORS[strategy](pattern, cwd, options);
+      
+      return {
+        matches,
+        strategy,
+        warning: i > 0 ? `使用降级策略: ${strategy}` : undefined
+      };
+      
     } catch (error: unknown) {
-      // 如果是 AbortError，直接抛出
-      if (isAbortError(error)) {
-        throw error;
-      }
-
-      const errorMessage = error instanceof Error ? error.message : String(error);
-
-      // 如果还有下一个策略，降级
+      if (isAbortError(error)) throw error;
+      
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
+      // 记录降级（非最后一个策略）
       if (i < strategies.length - 1) {
-        const nextStrategy = strategies[i + 1];
-        searchLogger.strategyFallback(strategy, nextStrategy, errorMessage);
-        fallbackReasons.push(errorMessage);
-        continue;
+        searchLogger.strategyFallback(strategy, strategies[i + 1], lastError.message);
       }
-
-      // 所有策略都失败了
-      throw error;
     }
   }
-
-  // 不应该到达这里
-  throw new Error('No grep strategy available');
+  
+  throw lastError || new Error('No grep strategy available');
 }
 
 // 导出策略实现

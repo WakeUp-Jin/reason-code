@@ -13,10 +13,10 @@
  * - Windows 系统可能没有 grep
  */
 
-import { spawn } from 'child_process';
 import { GrepMatch, GrepStrategyOptions, GREP_DEFAULTS } from '../types.js';
 import { searchLogger } from '../../../../utils/logUtils.js';
-import { createAbortError } from '../../utils/error-utils.js';
+import { runCommand } from '../../utils/spawn.js';
+import { isAbortError } from '../../utils/error-utils.js';
 
 /**
  * 使用系统 grep 搜索文件内容
@@ -31,110 +31,83 @@ export async function grepWithSystemGrep(
   cwd: string,
   options?: GrepStrategyOptions
 ): Promise<GrepMatch[]> {
-  return new Promise((resolve, reject) => {
-    const args = [
-      '-r', // 递归搜索
-      '-n', // 显示行号
-      '-H', // 显示文件名
-      '-E', // 扩展正则表达式
-      '-i', // 忽略大小写
-    ];
+  const args = [
+    '-r', // 递归搜索
+    '-n', // 显示行号
+    '-H', // 显示文件名
+    '-E', // 扩展正则表达式
+    '-i', // 忽略大小写
+  ];
 
-    // 排除常见目录
-    for (const dir of GREP_DEFAULTS.EXCLUDE_DIRS) {
-      args.push(`--exclude-dir=${dir}`);
-    }
+  // 排除常见目录
+  for (const dir of GREP_DEFAULTS.EXCLUDE_DIRS) {
+    args.push(`--exclude-dir=${dir}`);
+  }
 
-    // 添加文件过滤
-    if (options?.include) {
-      args.push(`--include=${options.include}`);
-    }
+  // 添加文件过滤
+  if (options?.include) {
+    args.push(`--include=${options.include}`);
+  }
 
-    args.push(pattern);
-    args.push('.');
+  args.push(pattern);
+  args.push('.');
 
-    const proc = spawn('grep', args, {
+  try {
+    const result = await runCommand('grep', args, {
       cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
-
-    let aborted = false;
-    let stdout = '';
-    const stderrChunks: string[] = [];
-
-    proc.stdout.on('data', (chunk) => {
-      stdout += chunk.toString('utf-8');
-    });
-
-    proc.stderr.on('data', (chunk) => {
-      const stderrStr = chunk.toString('utf-8');
-
-      // ⚠️ 错误抑制：忽略权限错误和目录错误
-      if (stderrStr.includes('Permission denied')) {
-        // 记录被抑制的错误
-        const lines = stderrStr.split('\n');
-        for (const line of lines) {
-          if (line.includes('Permission denied')) {
-            const match = line.match(/grep: (.+?): Permission denied/);
-            if (match) {
-              searchLogger.suppressed('system-grep', match[1], 'EACCES', 'Permission denied');
+      signal: options?.signal,
+      // stderr 处理器：过滤权限错误和目录错误
+      stderrHandler: (chunk) => {
+        // 忽略权限错误
+        if (chunk.includes('Permission denied')) {
+          // 记录被抑制的错误
+          const lines = chunk.split('\n');
+          for (const line of lines) {
+            if (line.includes('Permission denied')) {
+              const match = line.match(/grep: (.+?): Permission denied/);
+              if (match) {
+                searchLogger.suppressed('system-grep', match[1], 'EACCES', 'Permission denied');
+              }
             }
           }
+          return null; // 过滤掉
         }
-        return;
-      }
 
-      if (/grep:.*: Is a directory/i.test(stderrStr)) {
-        return;
-      }
+        // 忽略目录错误
+        if (/grep:.*: Is a directory/i.test(chunk)) {
+          return null; // 过滤掉
+        }
 
-      stderrChunks.push(stderrStr);
+        return chunk; // 保留其他错误
+      },
     });
 
-    proc.on('close', (code) => {
-      if (aborted) {
-        return;
-      }
-
-      if (code === 0) {
-        const matches = parseSystemGrepOutput(stdout);
-        const limit = options?.limit ?? GREP_DEFAULTS.LIMIT;
-        resolve(matches.slice(0, limit));
-      } else if (code === 1) {
-        // 没有匹配
-        resolve([]);
+    // exitCode === 0: 有匹配
+    // exitCode === 1: 没有匹配
+    // exitCode > 1: 错误
+    if (result.exitCode === 0) {
+      const matches = parseSystemGrepOutput(result.stdout);
+      const limit = options?.limit ?? GREP_DEFAULTS.LIMIT;
+      return matches.slice(0, limit);
+    } else if (result.exitCode === 1) {
+      // 没有匹配
+      return [];
+    } else {
+      const stderr = result.stderr.trim();
+      if (stderr) {
+        throw new Error(stderr);
       } else {
-        const stderr = stderrChunks.join('').trim();
-        if (stderr) {
-          reject(new Error(stderr));
-        } else {
-          // 退出码 > 1 但没有 stderr，可能是被抑制的错误
-          resolve([]);
-        }
+        // 退出码 > 1 但没有 stderr，可能是被抑制的错误
+        return [];
       }
-    });
-
-    proc.on('error', (error) => {
-      if (aborted) {
-        return;
-      }
-      reject(error);
-    });
-
-    // 超时处理
-    if (options?.signal) {
-      options.signal.addEventListener(
-        'abort',
-        () => {
-          aborted = true;
-          proc.kill();
-          reject(createAbortError());
-        },
-        { once: true }
-      );
     }
-  });
+  } catch (error) {
+    // 重新抛出 AbortError
+    if (isAbortError(error)) {
+      throw error;
+    }
+    throw error;
+  }
 }
 
 /**

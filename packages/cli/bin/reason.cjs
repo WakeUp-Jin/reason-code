@@ -1,30 +1,24 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 'use strict';
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
 
 function exitWithCode(code) {
   if (typeof code === 'number') process.exit(code);
   process.exit(0);
 }
 
-function run(command, args) {
-  const child = spawn(command, args, { stdio: 'inherit' });
-
-  child.on('exit', exitWithCode);
-  child.on('error', (err) => {
-    if (err && err.code === 'ENOENT' && command === 'bun') {
-      console.error('[reason] bun not found in PATH.');
-      console.error('[reason] Either install Bun, or build the CLI so dist exists.');
-      console.error('[reason] Try: bun run --cwd packages/cli build');
-      process.exit(1);
-    }
-
-    console.error(err?.message || String(err));
-    process.exit(1);
+function runBun(args) {
+  // Bun-only：入口脚本本身就由 bun 执行，这里统一用 bun 启动 dist/src
+  // @ts-ignore - Bun 全局变量
+  const result = Bun.spawnSync(['bun', ...args], {
+    stdin: 'inherit',
+    stdout: 'inherit',
+    stderr: 'inherit',
   });
+
+  exitWithCode(result.exitCode);
 }
 
 const rawArgs = process.argv.slice(2);
@@ -41,11 +35,10 @@ const distEntry = path.join(packageRoot, 'dist', 'index.js');
 const srcEntry = path.join(packageRoot, 'src', 'index.ts');
 
 if (!forceDev && fs.existsSync(distEntry)) {
-  // 使用 --no-deprecation 禁用弃用警告（如 punycode DEP0040）
-  run(process.execPath, ['--no-deprecation', distEntry, ...args]);
+  runBun([distEntry, ...args]);
 } else {
   const bunArgs = [];
   if (hasWatchFlag) bunArgs.push('--watch');
-  bunArgs.push('run', srcEntry, ...args);
-  run('bun', bunArgs);
+  bunArgs.push(srcEntry, ...args);
+  runBun(bunArgs);
 }

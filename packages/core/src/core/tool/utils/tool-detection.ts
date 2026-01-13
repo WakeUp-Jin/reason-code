@@ -9,8 +9,8 @@
  */
 
 import { existsSync, statSync } from 'fs';
-import { spawn } from 'child_process';
 import { join } from 'path';
+import { isCommandAvailable } from './spawn.js';
 
 /**
  * 缓存检测结果
@@ -20,40 +20,6 @@ const _cache: {
   git?: boolean;
   grep?: boolean;
 } = {};
-
-/**
- * 检测命令是否可用
- *
- * @param command - 命令名称
- * @param args - 检测参数（通常是 --version）
- * @returns 命令是否可用
- */
-async function isCommandAvailable(command: string, args: string[] = ['--version']): Promise<boolean> {
-  return new Promise((resolve) => {
-    try {
-      const proc = spawn(command, args, {
-        stdio: ['ignore', 'ignore', 'ignore'],
-        windowsHide: true,
-      });
-
-      proc.on('error', () => {
-        resolve(false);
-      });
-
-      proc.on('close', (code) => {
-        resolve(code === 0);
-      });
-
-      // 超时处理
-      setTimeout(() => {
-        proc.kill();
-        resolve(false);
-      }, 3000);
-    } catch {
-      resolve(false);
-    }
-  });
-}
 
 /**
  * 检测 ripgrep 是否可用
@@ -102,6 +68,7 @@ export async function canUseRipgrep(localBinPath?: string): Promise<boolean> {
  *
  * @param path - 目录路径
  * @returns 是否是 Git 仓库
+ * @docs 这种方式不支持git worktree、submodule
  */
 export function isGitRepository(path: string): boolean {
   try {
@@ -201,4 +168,3 @@ export async function getToolAvailability(
     isGitRepo: isGitRepository(cwd),
   };
 }
-

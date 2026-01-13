@@ -17,9 +17,6 @@
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:ui": "vitest --ui",
     "clean": "rm -rf dist"
   },
   "dependencies": {
@@ -31,9 +28,7 @@
   "devDependencies": {
     "typescript": "catalog:",
     "@types/node": "catalog:",
-    "tsx": "^4.19.2",
-    "vitest": "^2.1.8",
-    "@vitest/ui": "^2.1.8"
+    "tsx": "^4.19.2"
   },
   "engines": {
     "node": ">=18.0.0"
