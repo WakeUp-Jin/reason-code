@@ -25,7 +25,7 @@ function Spinner({ color }: { color: string }) {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setFrameIndex(prev => (prev + 1) % SPINNER_FRAMES.length);
+      setFrameIndex((prev) => (prev + 1) % SPINNER_FRAMES.length);
     }, 80);
 
     return () => clearInterval(timer);
@@ -61,11 +61,7 @@ export function ToolCallDisplay({ toolCall }: ToolCallDisplayProps) {
     }
 
     const iconKey = toolCall.status.toUpperCase() as keyof typeof TOOL_ICONS;
-    return (
-      <Text color={statusColor}>
-        {TOOL_ICONS[iconKey] || TOOL_ICONS.PENDING}
-      </Text>
-    );
+    return <Text color={statusColor}>{TOOL_ICONS[iconKey] || TOOL_ICONS.PENDING}</Text>;
   };
 
   return (
@@ -76,11 +72,7 @@ export function ToolCallDisplay({ toolCall }: ToolCallDisplayProps) {
         <Text color={colors.primary} bold>
           {toolCall.toolName}
         </Text>
-        {displayParamsSummary && (
-          <Text color={colors.textMuted}>
-            ({displayParamsSummary})
-          </Text>
-        )}
+        {displayParamsSummary && <Text color={colors.textMuted}>({displayParamsSummary})</Text>}
       </Box>
 
       {/* 结果摘要行 */}
@@ -88,6 +80,7 @@ export function ToolCallDisplay({ toolCall }: ToolCallDisplayProps) {
         <Box paddingLeft={2}>
           <Text color={colors.textMuted}>└ </Text>
           <Text color={colors.text}>{displayResultSummary}</Text>
+          {toolCall.strategy && <Text color={colors.textMuted}> (via {toolCall.strategy})</Text>}
         </Box>
       )}
 
@@ -101,9 +94,7 @@ export function ToolCallDisplay({ toolCall }: ToolCallDisplayProps) {
       {/* 实时输出（执行中） */}
       {toolCall.status === ToolCallStatus.Executing && toolCall.liveOutput && (
         <Box paddingLeft={2} flexDirection="column">
-          <Text color={colors.textMuted}>
-            {toolCall.liveOutput.slice(-200)}
-          </Text>
+          <Text color={colors.textMuted}>{toolCall.liveOutput.slice(-200)}</Text>
         </Box>
       )}
     </Box>

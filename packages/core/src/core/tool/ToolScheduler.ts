@@ -266,7 +266,9 @@ export class ToolScheduler {
         toolLogger.error(toolName, callId, result.error || 'Unknown error', args);
       }
 
-      this.executionStream?.completeToolCall(callId, processedOutput, summary);
+      // 从工具结果中提取策略信息（如 ripgrep、git-grep、javascript 等）
+      const strategy = result?.data?.strategy;
+      this.executionStream?.completeToolCall(callId, processedOutput, summary, strategy);
 
       // 9. 返回结果
       // 对于统一结果接口格式，根据 success 字段决定返回成功还是失败
@@ -309,7 +311,7 @@ export class ToolScheduler {
   /**
    * 批量调度原始 LLM 工具调用
    * 直接接受 LLM 返回的 toolCalls 数组，内部处理参数解析和循环
-   * 
+   *
    * 自动判断是否可以并行执行：
    * - 如果所有工具都是只读的，则并行执行
    * - 否则串行执行
@@ -390,9 +392,7 @@ export class ToolScheduler {
    * 判断工具调用是否可以并行执行
    * 只有全部是只读工具时才并行
    */
-  private canExecuteInParallel(
-    toolCalls: Array<{ function: { name: string } }>
-  ): boolean {
+  private canExecuteInParallel(toolCalls: Array<{ function: { name: string } }>): boolean {
     return toolCalls.every((toolCall) => {
       const tool = this.toolManager.getTool(toolCall.function.name);
 

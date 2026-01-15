@@ -433,8 +433,14 @@ export class ExecutionStreamManager {
 
   /**
    * ✅ 支持并行工具调用：从 Map 中查找并移除
+   * @param strategy - 使用的策略（如 ripgrep、git-grep、javascript 等）
    */
-  completeToolCall(toolCallId: string, result: any, resultSummary: string): void {
+  completeToolCall(
+    toolCallId: string,
+    result: any,
+    resultSummary: string,
+    strategy?: string
+  ): void {
     const record = this.activeToolCalls.get(toolCallId);
     if (record) {
       record.status = ToolCallStatus.Success;
@@ -442,6 +448,7 @@ export class ExecutionStreamManager {
       record.duration = record.endTime - record.startTime;
       record.result = result;
       record.resultSummary = resultSummary;
+      record.strategy = strategy;
 
       this.snapshot.toolCallHistory.push(record);
       // ✅ 从 Map 中移除已完成的工具调用
