@@ -10,6 +10,7 @@
     "./llm": "./src/core/llm/index.ts",
     "./tools": "./src/core/tool/index.ts",
     "./context": "./src/core/context/index.ts",
+    "./session": "./src/core/session/index.ts",
     "./config": "./src/config/env.ts",
     "./utils": "./src/utils/logger.ts"
   },

@@ -3,7 +3,7 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
-import { Agent } from '@reason-code/core';
+import { agentManager } from '@reason-code/core';
 
 const program = new Command();
 
@@ -25,13 +25,13 @@ program
   .action(async (message?: string) => {
     console.log(chalk.green('🤖 Reason Agent started!\n'));
 
-    // 创建 Agent 实例
-    const agent = new Agent({
-      provider: 'deepseek',
-      model: 'deepseek-chat',
+    // 配置 AgentManager
+    agentManager.configure({
       apiKey: process.env.DEEPSEEK_API_KEY,
-      systemPrompt: 'You are a helpful AI assistant.',
     });
+
+    // 创建 Agent
+    const agent = agentManager.createAgent('build');
 
     // 初始化 Agent
     const initSpinner = ora('Initializing agent...').start();

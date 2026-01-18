@@ -9,14 +9,14 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
-import { Agent } from '@reason-cli/core';
+import { agentManager, Agent } from '@reason-code/core';
 import type {
   ConfirmDetails,
   ConfirmOutcome,
   ApprovalMode,
   CompressionCompleteEvent,
   SystemPromptContext,
-} from '@reason-cli/core';
+} from '@reason-code/core';
 import os from 'os';
 import { configManager } from '../config/manager.js';
 import { getModelTokenLimit, getModelPricing } from '../config/tokenLimits.js';
@@ -135,6 +135,17 @@ export function useAgent(): UseAgentReturn {
         );
       }
 
+      // 配置 AgentManager
+      agentManager.configure({
+        apiKey: providerConfig.apiKey,
+        baseURL: providerConfig.baseUrl,
+      });
+
+      // 创建 Agent（传递模型配置）
+      const agent = agentManager.createAgent('build', {
+        model: { provider, model },
+      });
+
       // 构建系统提示词上下文
       const promptContext: SystemPromptContext = {
         workingDirectory: process.cwd(),
@@ -147,14 +158,6 @@ export function useAgent(): UseAgentReturn {
           weekday: 'long',
         }),
       };
-
-      // 创建 Agent
-      const agent = new Agent({
-        provider,
-        model,
-        apiKey: providerConfig.apiKey,
-        baseURL: providerConfig.baseUrl,
-      });
 
       // 获取当前会话信息
       const { currentSessionId, messages } = useAppStore.getState();

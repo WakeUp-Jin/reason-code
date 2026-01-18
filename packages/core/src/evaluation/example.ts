@@ -6,7 +6,7 @@ import { eventBus } from './EventBus.js';
 import { evaluate, formatResult } from './evaluate.js';
 import { TEST_CASES, getTestById, getSimpleAgentTests } from './dataset.js';
 import { TestCase, EvaluateResult } from './types.js';
-import { Agent } from '../core/agent/index.js';
+import { agentManager, Agent, buildAgent } from '../core/agent/index.js';
 
 // 缓存 Agent 实例
 let agent: Agent | null = null;
@@ -16,11 +16,13 @@ let agent: Agent | null = null;
  */
 async function getAgent(): Promise<Agent> {
   if (!agent) {
-    agent = new Agent({
-      provider: 'deepseek',
-      model: 'deepseek-chat',
-      name: 'eval_agent',
+    // 配置 AgentManager（使用环境变量）
+    agentManager.configure({
+      apiKey: process.env.DEEPSEEK_API_KEY,
     });
+
+    // 创建 Agent
+    agent = agentManager.createAgent('build');
     await agent.init();
   }
   return agent;

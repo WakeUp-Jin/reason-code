@@ -10,6 +10,7 @@ import {
   type ExecutionSnapshot,
   type ToolCallRecord,
   type ExecutionStats,
+  type SubAgentProgress,
 } from './types.js';
 import type { ConfirmDetails } from '../tool/types.js';
 import { logger } from '../../utils/logger.js';
@@ -239,6 +240,17 @@ export class ExecutionStreamManager {
         return {
           ...baseLog,
           stats: event.stats,
+        };
+
+      // 子代理进度事件
+      case 'tool:progress':
+        return {
+          ...baseLog,
+          toolCallId: event.toolCallId,
+          progressType: event.progress.type,
+          subToolCallId: event.progress.subToolCallId,
+          toolName: event.progress.toolName,
+          status: event.progress.status,
         };
 
       default:
@@ -582,6 +594,21 @@ export class ExecutionStreamManager {
     } else {
       this.snapshot.currentToolCall = undefined;
     }
+  }
+
+  // ==================== 子代理进度 ====================
+
+  /**
+   * 发送工具进度事件（用于 task 工具的子代理进度）
+   * @param toolCallId - 父工具调用 ID（TaskTool 的 callId）
+   * @param progress - 子代理进度信息
+   */
+  emitToolProgress(toolCallId: string, progress: SubAgentProgress): void {
+    this.emit({
+      type: 'tool:progress',
+      toolCallId,
+      progress,
+    });
   }
 
   // ==================== 流式输出 ====================

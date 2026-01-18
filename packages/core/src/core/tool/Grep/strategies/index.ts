@@ -133,7 +133,8 @@ export async function executeGrepStrategy(
       return {
         matches,
         strategy,
-        warning: i > 0 ? `使用降级策略: ${strategy}` : undefined
+        // 不再显示降级警告，策略信息已经在 summary 中通过 (strategy: xxx) 显示
+        warning: undefined
       };
       
     } catch (error: unknown) {

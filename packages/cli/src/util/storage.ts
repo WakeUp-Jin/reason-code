@@ -10,7 +10,8 @@ import {
 } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import type { Session, Message } from '../context/store.js';
+import type { SessionType } from '@reason-code/core';
+import type { Message } from '../context/store.js';
 import { logger } from './logger.js';
 
 // ============================================================
@@ -43,7 +44,7 @@ const getCheckpointPath = (sessionId: string) => join(getSessionDir(sessionId), 
  * Session 数据结构（历史文件）
  */
 export interface SessionData {
-  session: Session;
+  session: SessionType;
   messages: Message[];
 }
 
@@ -98,7 +99,7 @@ function ensureSessionDir(sessionId: string): void {
 /**
  * 保存会话（同步）
  */
-export function saveSession(session: Session, messages: Message[]): void {
+export function saveSession(session: SessionType, messages: Message[]): void {
   ensureSessionDir(session.id);
 
   const data: SessionData = { session, messages };
@@ -150,11 +151,11 @@ export function deleteSession(sessionId: string): boolean {
 /**
  * 列出所有会话
  */
-export function listSessions(): Session[] {
+export function listSessions(): SessionType[] {
   ensureStorageDir();
 
   const items = readdirSync(SESSIONS_DIR);
-  const sessions: Session[] = [];
+  const sessions: SessionType[] = [];
 
   for (const item of items) {
     const itemPath = join(SESSIONS_DIR, item);
@@ -182,11 +183,11 @@ export function listSessions(): Session[] {
 /**
  * 加载所有会话和消息
  */
-export function loadAllSessions(): { sessions: Session[]; messages: Record<string, Message[]> } {
+export function loadAllSessions(): { sessions: SessionType[]; messages: Record<string, Message[]> } {
   ensureStorageDir();
 
   const items = readdirSync(SESSIONS_DIR);
-  const sessions: Session[] = [];
+  const sessions: SessionType[] = [];
   const messages: Record<string, Message[]> = {};
 
   for (const item of items) {

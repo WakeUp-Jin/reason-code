@@ -1,7 +1,8 @@
 import { loadAllSessions, ensureStorageDir } from '../util/storage.js';
 import { configManager } from '../config/manager.js';
 import { logger } from '../util/logger.js';
-import type { Session, Message } from '../context/store.js';
+import type { SessionType } from '@reason-code/core';
+import type { Message } from '../context/store.js';
 import type { ReasonCliConfig } from '../config/schema.js';
 
 /**
@@ -9,7 +10,7 @@ import type { ReasonCliConfig } from '../config/schema.js';
  */
 export interface LoadedData {
   config: ReasonCliConfig;
-  sessions: Session[];
+  sessions: SessionType[];
   messages: Record<string, Message[]>;
   currentSessionId: string | null;
 }

@@ -5,18 +5,20 @@
 ## 一、设计目标
 
 ### 1.1 核心原则
+
 - **简洁优先**: 借鉴 OpenCode 的简洁设计，避免过度工程化
 - **工具隔离**: 子代理只能访问基础工具，不能调用其他子代理
 - **会话独立**: 每个子代理调用创建独立会话，支持并行执行
 - **事件驱动**: 通过事件系统实时追踪子代理执行状态
 
 ### 1.2 与 OpenCode 的差异
-| 特性 | OpenCode | Reason-Code |
-|------|----------|-------------|
-| 工具管理 | 扁平化注册 | 分层管理（Function/Agent） |
-| 会话存储 | Storage 抽象层 | 本地文件系统 |
-| 事件系统 | Bus 全局总线 | EventEmitter 实例 |
-| 权限控制 | 细粒度配置 | 简化版（allow/deny） |
+
+| 特性     | OpenCode       | Reason-Code                |
+| -------- | -------------- | -------------------------- |
+| 工具管理 | 扁平化注册     | 分层管理（Function/Agent） |
+| 会话存储 | Storage 抽象层 | 本地文件系统               |
+| 事件系统 | Bus 全局总线   | EventEmitter 实例          |
+| 权限控制 | 细粒度配置     | 简化版（allow/deny）       |
 
 ---
 
@@ -57,17 +59,17 @@ packages/core/src/core/
 
 ```typescript
 // packages/core/src/core/agent/AgentManager.ts
-import { EventEmitter } from 'events'
-import type { AgentConfig, AgentMode } from './types'
+import { EventEmitter } from 'events';
+import type { AgentConfig, AgentMode } from './types';
 
 export class AgentManager extends EventEmitter {
-  private agents: Map<string, AgentConfig> = new Map()
-  
+  private agents: Map<string, AgentConfig> = new Map();
+
   constructor() {
-    super()
-    this.registerBuiltinAgents()
+    super();
+    this.registerBuiltinAgents();
   }
-  
+
   private registerBuiltinAgents() {
     // 注册内置子代理
     this.register({
@@ -77,9 +79,9 @@ export class AgentManager extends EventEmitter {
       tools: {
         todowrite: false,
         todoread: false,
-      }
-    })
-    
+      },
+    });
+
     this.register({
       name: 'explore',
       mode: 'subagent',
@@ -88,28 +90,28 @@ export class AgentManager extends EventEmitter {
         todowrite: false,
         todoread: false,
         write: false,
-      }
-    })
+      },
+    });
   }
-  
+
   register(config: AgentConfig) {
-    this.agents.set(config.name, config)
-    this.emit('agent:registered', config)
+    this.agents.set(config.name, config);
+    this.emit('agent:registered', config);
   }
-  
+
   get(name: string): AgentConfig | undefined {
-    return this.agents.get(name)
+    return this.agents.get(name);
   }
-  
+
   list(mode?: AgentMode): AgentConfig[] {
-    const all = Array.from(this.agents.values())
-    if (!mode) return all
-    return all.filter(a => a.mode === mode || a.mode === 'all')
+    const all = Array.from(this.agents.values());
+    if (!mode) return all;
+    return all.filter((a) => a.mode === mode || a.mode === 'all');
   }
-  
+
   // 获取可用的子代理（排除 primary）
   getSubagents(): AgentConfig[] {
-    return this.list().filter(a => a.mode !== 'primary')
+    return this.list().filter((a) => a.mode !== 'primary');
   }
 }
 ```
@@ -118,33 +120,30 @@ export class AgentManager extends EventEmitter {
 
 ```typescript
 // packages/core/src/core/agent/AgentExecutor.ts
-import type { FunctionToolManager } from '../tool/FunctionToolManager'
-import type { SessionManager } from '../session/SessionManager'
-import type { AgentConfig, AgentExecutionContext } from './types'
+import type { FunctionToolManager } from '../tool/FunctionToolManager';
+import type { SessionManager } from '../session/SessionManager';
+import type { AgentConfig, AgentExecutionContext } from './types';
 
 export class AgentExecutor {
   constructor(
     private functionTools: FunctionToolManager,
     private sessionManager: SessionManager
   ) {}
-  
-  async execute(
-    agent: AgentConfig,
-    context: AgentExecutionContext
-  ): Promise<AgentExecutionResult> {
+
+  async execute(agent: AgentConfig, context: AgentExecutionContext): Promise<AgentExecutionResult> {
     // 1. 创建子会话
     const session = await this.sessionManager.create({
       parentId: context.sessionId,
       title: `${context.description} (@${agent.name})`,
-      agentName: agent.name
-    })
-    
+      agentName: agent.name,
+    });
+
     // 2. 构建工具集（隔离）
-    const tools = this.buildToolSet(agent)
-    
+    const tools = this.buildToolSet(agent);
+
     // 3. 订阅事件
-    const cleanup = this.subscribeEvents(session.id, context)
-    
+    const cleanup = this.subscribeEvents(session.id, context);
+
     try {
       // 4. 执行 LLM 循环
       const result = await this.runLLMLoop({
@@ -152,61 +151,61 @@ export class AgentExecutor {
         model: agent.model ?? context.model,
         tools,
         prompt: context.prompt,
-        systemPrompt: agent.systemPrompt
-      })
-      
+        systemPrompt: agent.systemPrompt,
+      });
+
       return {
         sessionId: session.id,
         output: result.text,
         toolCalls: result.toolCalls,
         metadata: {
           agentName: agent.name,
-          duration: Date.now() - session.createdAt
-        }
-      }
+          duration: Date.now() - session.createdAt,
+        },
+      };
     } finally {
-      cleanup()
+      cleanup();
     }
   }
-  
+
   private buildToolSet(agent: AgentConfig) {
     // 获取所有函数工具
-    const allTools = this.functionTools.getAll()
-    
+    const allTools = this.functionTools.getAll();
+
     // 应用代理的工具配置
-    const tools = new Map()
+    const tools = new Map();
     for (const [name, tool] of allTools) {
       // 检查是否被禁用
-      if (agent.tools?.[name] === false) continue
-      tools.set(name, tool)
+      if (agent.tools?.[name] === false) continue;
+      tools.set(name, tool);
     }
-    
+
     // 确保不包含 task 工具（防止递归）
-    tools.delete('task')
-    
-    return tools
+    tools.delete('task');
+
+    return tools;
   }
-  
+
   private subscribeEvents(sessionId: string, context: AgentExecutionContext) {
     const handler = (event: any) => {
-      if (event.sessionId !== sessionId) return
-      
+      if (event.sessionId !== sessionId) return;
+
       // 转发事件给父会话
       context.onProgress?.({
         type: 'tool_call',
         sessionId,
         toolName: event.toolName,
-        status: event.status
-      })
-    }
-    
-    this.sessionManager.on('tool:executed', handler)
-    
+        status: event.status,
+      });
+    };
+
+    this.sessionManager.on('tool:executed', handler);
+
     return () => {
-      this.sessionManager.off('tool:executed', handler)
-    }
+      this.sessionManager.off('tool:executed', handler);
+    };
   }
-  
+
   private async runLLMLoop(options: LLMLoopOptions) {
     // 实现 LLM 循环逻辑
     // 类似 OpenCode 的 SessionPrompt.prompt
@@ -219,16 +218,16 @@ export class AgentExecutor {
 
 ```typescript
 // packages/core/src/core/agent/AgentWrapper.ts
-import type { ToolDefinition } from '../tool/types'
-import type { AgentManager } from './AgentManager'
-import type { AgentExecutor } from './AgentExecutor'
+import type { ToolDefinition } from '../tool/types';
+import type { AgentManager } from './AgentManager';
+import type { AgentExecutor } from './AgentExecutor';
 
 export class AgentWrapper {
   constructor(
     private agentManager: AgentManager,
     private agentExecutor: AgentExecutor
   ) {}
-  
+
   // 将子代理包装为 Task 工具
   createTaskTool(): ToolDefinition {
     return {
@@ -239,59 +238,57 @@ export class AgentWrapper {
         properties: {
           description: {
             type: 'string',
-            description: 'Short description of the task (3-5 words)'
+            description: 'Short description of the task (3-5 words)',
           },
           prompt: {
             type: 'string',
-            description: 'Detailed task for the agent to perform'
+            description: 'Detailed task for the agent to perform',
           },
           subagent_type: {
             type: 'string',
             description: 'Type of specialized agent to use',
-            enum: this.agentManager.getSubagents().map(a => a.name)
+            enum: this.agentManager.getSubagents().map((a) => a.name),
           },
           session_id: {
             type: 'string',
             description: 'Optional: existing session to continue',
-            optional: true
-          }
+            optional: true,
+          },
         },
-        required: ['description', 'prompt', 'subagent_type']
+        required: ['description', 'prompt', 'subagent_type'],
       },
       execute: async (params, context) => {
-        const agent = this.agentManager.get(params.subagent_type)
+        const agent = this.agentManager.get(params.subagent_type);
         if (!agent) {
-          throw new Error(`Unknown agent: ${params.subagent_type}`)
+          throw new Error(`Unknown agent: ${params.subagent_type}`);
         }
-        
+
         const result = await this.agentExecutor.execute(agent, {
           sessionId: context.sessionId,
           description: params.description,
           prompt: params.prompt,
           model: context.model,
           onProgress: (event) => {
-            context.emit('progress', event)
-          }
-        })
-        
+            context.emit('progress', event);
+          },
+        });
+
         return {
           content: result.output,
           metadata: {
             sessionId: result.sessionId,
             toolCalls: result.toolCalls,
-            ...result.metadata
-          }
-        }
-      }
-    }
+            ...result.metadata,
+          },
+        };
+      },
+    };
   }
-  
+
   private generateDescription(): string {
-    const subagents = this.agentManager.getSubagents()
-    const agentList = subagents
-      .map(a => `- ${a.name}: ${a.description}`)
-      .join('\n')
-    
+    const subagents = this.agentManager.getSubagents();
+    const agentList = subagents.map((a) => `- ${a.name}: ${a.description}`).join('\n');
+
     return `Launch a specialized agent to handle complex tasks.
 
 Available agents:
@@ -301,7 +298,7 @@ Usage notes:
 1. Launch multiple agents concurrently when possible
 2. Each agent invocation is stateless unless you provide session_id
 3. Provide detailed task descriptions for autonomous execution
-4. The agent's output is not visible to the user - summarize results`
+4. The agent's output is not visible to the user - summarize results`;
   }
 }
 ```
@@ -314,71 +311,65 @@ Usage notes:
 
 ```typescript
 // packages/core/src/core/tool/ToolManager.ts
-import { FunctionToolManager } from './FunctionToolManager'
-import { AgentManager } from '../agent/AgentManager'
-import { AgentExecutor } from '../agent/AgentExecutor'
-import { AgentWrapper } from '../agent/AgentWrapper'
-import { SessionManager } from '../session/SessionManager'
+import { FunctionToolManager } from './FunctionToolManager';
+import { AgentManager } from '../agent/AgentManager';
+import { AgentExecutor } from '../agent/AgentExecutor';
+import { AgentWrapper } from '../agent/AgentWrapper';
+import { SessionManager } from '../session/SessionManager';
 
 export class ToolManager {
-  private functionTools: FunctionToolManager
-  private agentManager: AgentManager
-  private agentExecutor: AgentExecutor
-  private agentWrapper: AgentWrapper
-  
+  private functionTools: FunctionToolManager;
+  private agentManager: AgentManager;
+  private agentExecutor: AgentExecutor;
+  private agentWrapper: AgentWrapper;
+
   constructor(private sessionManager: SessionManager) {
     // 1. 初始化函数工具管理器
-    this.functionTools = new FunctionToolManager()
-    
+    this.functionTools = new FunctionToolManager();
+
     // 2. 初始化子代理系统
-    this.agentManager = new AgentManager()
-    this.agentExecutor = new AgentExecutor(
-      this.functionTools,
-      this.sessionManager
-    )
-    this.agentWrapper = new AgentWrapper(
-      this.agentManager,
-      this.agentExecutor
-    )
-    
+    this.agentManager = new AgentManager();
+    this.agentExecutor = new AgentExecutor(this.functionTools, this.sessionManager);
+    this.agentWrapper = new AgentWrapper(this.agentManager, this.agentExecutor);
+
     // 3. 注册 Task 工具
-    this.registerTaskTool()
+    this.registerTaskTool();
   }
-  
+
   private registerTaskTool() {
-    const taskTool = this.agentWrapper.createTaskTool()
-    this.functionTools.register(taskTool)
+    const taskTool = this.agentWrapper.createTaskTool();
+    this.functionTools.register(taskTool);
   }
-  
+
   // 获取所有工具（函数工具 + Task 工具）
   getAllTools() {
-    return this.functionTools.getAll()
+    return this.functionTools.getAll();
   }
-  
+
   // 主代理使用的工具（包含 Task）
   getToolsForPrimary() {
-    return this.getAllTools()
+    return this.getAllTools();
   }
-  
+
   // 子代理使用的工具（不包含 Task）
   getToolsForSubagent(agentName: string) {
-    const agent = this.agentManager.get(agentName)
-    if (!agent) throw new Error(`Unknown agent: ${agentName}`)
-    
-    const allTools = this.functionTools.getAll()
-    const tools = new Map()
-    
+    const agent = this.agentManager.get(agentName);
+    if (!agent) throw new Error(`Unknown agent: ${agentName}`);
+
+    const allTools = this.functionTools.getAll();
+    const tools = new Map();
+
     for (const [name, tool] of allTools) {
       // 排除 task 工具
-      if (name === 'task') continue
-      
+      if (name === 'task') continue;
+
       // 应用代理的工具配置
-      if (agent.tools?.[name] === false) continue
-      
-      tools.set(name, tool)
+      if (agent.tools?.[name] === false) continue;
+
+      tools.set(name, tool);
     }
-    
-    return tools
+
+    return tools;
   }
 }
 ```
@@ -390,47 +381,47 @@ export class ToolManager {
 ```typescript
 // packages/core/src/core/agent/types.ts
 
-export type AgentMode = 'primary' | 'subagent' | 'all'
+export type AgentMode = 'primary' | 'subagent' | 'all';
 
 export interface AgentConfig {
-  name: string
-  mode: AgentMode
-  description: string
-  systemPrompt?: string
+  name: string;
+  mode: AgentMode;
+  description: string;
+  systemPrompt?: string;
   model?: {
-    provider: string
-    model: string
-  }
-  tools?: Record<string, boolean>  // 工具启用/禁用配置
-  hidden?: boolean
+    provider: string;
+    model: string;
+  };
+  tools?: Record<string, boolean>; // 工具启用/禁用配置
+  hidden?: boolean;
 }
 
 export interface AgentExecutionContext {
-  sessionId: string
-  description: string
-  prompt: string
+  sessionId: string;
+  description: string;
+  prompt: string;
   model: {
-    provider: string
-    model: string
-  }
-  onProgress?: (event: AgentProgressEvent) => void
+    provider: string;
+    model: string;
+  };
+  onProgress?: (event: AgentProgressEvent) => void;
 }
 
 export interface AgentExecutionResult {
-  sessionId: string
-  output: string
-  toolCalls: ToolCall[]
+  sessionId: string;
+  output: string;
+  toolCalls: ToolCall[];
   metadata: {
-    agentName: string
-    duration: number
-  }
+    agentName: string;
+    duration: number;
+  };
 }
 
 export interface AgentProgressEvent {
-  type: 'tool_call' | 'thinking' | 'completed'
-  sessionId: string
-  toolName?: string
-  status?: 'pending' | 'running' | 'completed' | 'failed'
+  type: 'tool_call' | 'thinking' | 'completed';
+  sessionId: string;
+  toolName?: string;
+  status?: 'pending' | 'running' | 'completed' | 'failed';
 }
 ```
 
@@ -442,12 +433,12 @@ export interface AgentProgressEvent {
 
 ```typescript
 // packages/core/src/core/session/SessionManager.ts
-import { EventEmitter } from 'events'
-import type { Session, SessionCreateOptions } from './types'
+import { EventEmitter } from 'events';
+import type { Session, SessionCreateOptions } from './types';
 
 export class SessionManager extends EventEmitter {
-  private sessions: Map<string, Session> = new Map()
-  
+  private sessions: Map<string, Session> = new Map();
+
   async create(options: SessionCreateOptions): Promise<Session> {
     const session: Session = {
       id: this.generateId(),
@@ -456,34 +447,33 @@ export class SessionManager extends EventEmitter {
       agentName: options.agentName,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      messages: []
-    }
-    
-    this.sessions.set(session.id, session)
-    this.emit('session:created', session)
-    
+      messages: [],
+    };
+
+    this.sessions.set(session.id, session);
+    this.emit('session:created', session);
+
     // 持久化到文件
-    await this.persist(session)
-    
-    return session
+    await this.persist(session);
+
+    return session;
   }
-  
+
   async get(id: string): Promise<Session | undefined> {
-    return this.sessions.get(id)
+    return this.sessions.get(id);
   }
-  
+
   async getChildren(parentId: string): Promise<Session[]> {
-    return Array.from(this.sessions.values())
-      .filter(s => s.parentId === parentId)
+    return Array.from(this.sessions.values()).filter((s) => s.parentId === parentId);
   }
-  
+
   private async persist(session: Session) {
     // 保存到 .reason-code/sessions/{sessionId}.json
     // ...
   }
-  
+
   private generateId(): string {
-    return `session_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    return `session_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   }
 }
 ```
@@ -512,7 +502,7 @@ Example usage:
     <subagent_type>explore</subagent_type>
   </parameters>
 </tool_use>
-`
+`;
 
 // LLM 返回工具调用
 const toolCall = {
@@ -520,12 +510,12 @@ const toolCall = {
   parameters: {
     description: 'Search for API endpoints',
     prompt: 'Find all API endpoint definitions...',
-    subagent_type: 'explore'
-  }
-}
+    subagent_type: 'explore',
+  },
+};
 
 // ToolManager 执行
-const result = await toolManager.executeTool(toolCall, context)
+const result = await toolManager.executeTool(toolCall, context);
 // result.metadata.sessionId 可用于继续对话
 ```
 
@@ -539,23 +529,21 @@ const toolCalls = [
     parameters: {
       description: 'Analyze frontend',
       prompt: 'Analyze the React components structure',
-      subagent_type: 'explore'
-    }
+      subagent_type: 'explore',
+    },
   },
   {
     name: 'task',
     parameters: {
       description: 'Analyze backend',
       prompt: 'Analyze the API routes and database schema',
-      subagent_type: 'explore'
-    }
-  }
-]
+      subagent_type: 'explore',
+    },
+  },
+];
 
 // 并行执行
-const results = await Promise.all(
-  toolCalls.map(call => toolManager.executeTool(call, context))
-)
+const results = await Promise.all(toolCalls.map((call) => toolManager.executeTool(call, context)));
 ```
 
 ---
@@ -563,28 +551,33 @@ const results = await Promise.all(
 ## 八、实现步骤
 
 ### Phase 1: 基础架构（1-2天）
+
 1. ✅ 创建 `agent/` 目录结构
 2. ✅ 实现 `AgentManager`
 3. ✅ 实现 `AgentConfig` 类型
 4. ✅ 注册内置子代理配置
 
 ### Phase 2: 执行器（2-3天）
+
 1. ⬜ 实现 `AgentExecutor`
 2. ⬜ 实现工具隔离逻辑
 3. ⬜ 实现事件订阅机制
 4. ⬜ 集成 LLM 循环
 
 ### Phase 3: 工具包装（1天）
+
 1. ⬜ 实现 `AgentWrapper`
 2. ⬜ 生成动态工具描述
 3. ⬜ 集成到 `ToolManager`
 
 ### Phase 4: 会话管理（1-2天）
+
 1. ⬜ 扩展 `SessionManager`
 2. ⬜ 实现父子会话关联
 3. ⬜ 实现会话持久化
 
 ### Phase 5: 测试和优化（2-3天）
+
 1. ⬜ 单元测试
 2. ⬜ 集成测试
 3. ⬜ 性能优化
@@ -595,11 +588,13 @@ const results = await Promise.all(
 ## 九、关键差异点
 
 ### 9.1 相比 OpenCode 的简化
+
 - **权限系统**: 简化为 allow/deny，不支持 ask 模式
 - **存储层**: 直接使用文件系统，不需要 Storage 抽象
 - **事件系统**: 使用 EventEmitter，不需要全局 Bus
 
 ### 9.2 相比原方案的改进
+
 - **去除 AgentToolManager**: 不需要单独的子代理工具管理器
 - **简化包装逻辑**: AgentWrapper 直接创建 Task 工具
 - **统一入口**: ToolManager 作为唯一的工具访问入口
@@ -609,12 +604,14 @@ const results = await Promise.all(
 ## 十、注意事项
 
 ### 10.1 防止递归调用
+
 ```typescript
 // 在 buildToolSet 中确保移除 task 工具
-tools.delete('task')
+tools.delete('task');
 ```
 
 ### 10.2 资源清理
+
 ```typescript
 // 使用 try-finally 确保事件监听器被清理
 try {
@@ -626,6 +623,7 @@ try {
 ```
 
 ### 10.3 错误处理
+
 ```typescript
 // 子代理执行失败时，返回友好的错误信息
 catch (error) {
@@ -640,6 +638,7 @@ catch (error) {
 ```
 
 ### 10.4 性能考虑
+
 - 子代理并行执行时注意 API 限流
 - 大量工具调用时考虑批处理
 - 会话数据定期清理，避免内存泄漏

@@ -57,7 +57,9 @@ export const defaultSummaryGenerators: SummaryGeneratorRegistry = {
       return `Failed: ${result.error}`;
     }
     const count = result.data?.count ?? 0;
-    return `Found ${count} files matching ${params.pattern}${getWarningSuffix(result)}`;
+    const strategy = result.data?.strategy;
+    const strategySuffix = strategy ? ` (strategy: ${strategy})` : '';
+    return `Found ${count} files matching ${params.pattern}${strategySuffix}${getWarningSuffix(result)}`;
   },
 
   // Grep 搜索
@@ -66,7 +68,9 @@ export const defaultSummaryGenerators: SummaryGeneratorRegistry = {
       return `Failed: ${result.error}`;
     }
     const count = result.data?.count ?? 0;
-    return `Found ${count} matches for "${params.pattern}"${getWarningSuffix(result)}`;
+    const strategy = result.data?.strategy;
+    const strategySuffix = strategy ? ` (strategy: ${strategy})` : '';
+    return `Found ${count} matches for "${params.pattern}"${strategySuffix}${getWarningSuffix(result)}`;
   },
 
   // Bash 命令

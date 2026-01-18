@@ -49,10 +49,10 @@ export function registerCommands() {
     description: 'Create a new chat session',
     category: 'Session',
     type: 'instant',
-    action: () => {
+    action: async () => {
       // 在 action 内部动态获取 store 状态
       const { createSession } = useAppStore.getState();
-      const session = createSession();
+      const session = await createSession();
 
       // 通过 window 访问路由（临时方案）
       // TODO: 改进命令系统使其能访问 React hooks

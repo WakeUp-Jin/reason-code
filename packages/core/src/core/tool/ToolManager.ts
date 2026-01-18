@@ -7,7 +7,9 @@ import { TodoWriteTool } from './TodoWrite/definitions.js';
 import { TodoReadTool } from './TodoRead/definitions.js';
 import { GlobTool } from './Glob/definitions.js';
 import { GrepTool } from './Grep/definitions.js';
+import { TaskTool } from './Task/definitions.js';
 import { logger } from '../../utils/logger.js';
+import type { AgentConfig } from '../agent/config/types.js';
 
 // 注册的工具列表
 const toolsList: InternalTool[] = [
@@ -19,6 +21,7 @@ const toolsList: InternalTool[] = [
   TodoReadTool,
   GlobTool,
   GrepTool,
+  TaskTool,
 ];
 
 /**
@@ -124,6 +127,44 @@ export class ToolManager {
    */
   clear(): void {
     this.tools.clear();
+  }
+
+  /**
+   * 注册单个工具（动态注册）
+   */
+  register(tool: InternalTool): void {
+    this.tools.set(tool.name, tool);
+  }
+
+  /**
+   * 获取指定代理可用的工具（过滤版）
+   * @param agentConfig - 代理配置
+   * @param excludeTask - 是否排除 task 工具（子代理必须排除）
+   */
+  getFilteredTools(agentConfig: AgentConfig, excludeTask = false): InternalTool[] {
+    return this.getTools().filter((tool) => {
+      // 1. 子代理始终排除 task（防止递归）
+      if (excludeTask && tool.name === 'task') return false;
+
+      // 2. 检查代理配置中是否禁用
+      if (agentConfig.tools?.[tool.name] === false) return false;
+
+      return true;
+    });
+  }
+
+  /**
+   * 获取过滤后的 OpenAI 格式工具
+   */
+  getFormattedToolsFor(agentConfig: AgentConfig, excludeTask = false): OpenAITool[] {
+    return this.getFilteredTools(agentConfig, excludeTask).map((tool) => ({
+      type: 'function' as const,
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      },
+    }));
   }
 
   /**

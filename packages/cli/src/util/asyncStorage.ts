@@ -7,7 +7,8 @@ import { writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
-import type { Session, Message } from '../context/store.js';
+import type { SessionType } from '@reason-code/core';
+import type { Message } from '../context/store.js';
 import type { SessionCheckpoint } from './storage.js';
 import { logger } from './logger.js';
 
@@ -85,7 +86,7 @@ async function queuedWrite(filePath: string, data: string): Promise<void> {
  * 异步保存会话历史
  * 不阻塞主线程，适合在消息完成后调用
  */
-export async function asyncSaveSession(session: Session, messages: Message[]): Promise<void> {
+export async function asyncSaveSession(session: SessionType, messages: Message[]): Promise<void> {
   const filePath = getHistoryPath(session.id);
   const data = JSON.stringify({ session, messages }, null, 2);
 
@@ -122,7 +123,7 @@ export async function asyncSaveCheckpoint(
  * 触发异步保存（不等待完成）
  * 返回 void，让调用方可以继续执行
  */
-export function triggerAsyncSave(session: Session, messages: Message[]): void {
+export function triggerAsyncSave(session: SessionType, messages: Message[]): void {
   // 不等待，直接触发
   asyncSaveSession(session, messages).catch((error) => {
     logger.error(`Background save failed for session ${session.id}`, { error });

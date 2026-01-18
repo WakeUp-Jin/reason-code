@@ -281,6 +281,59 @@ export function useExecutionMessages(options: UseExecutionMessagesOptions) {
           break;
         }
 
+        case 'tool:progress': {
+          // 子代理工具进度事件（TaskTool 专用）
+          const { toolCallId, progress } = event;
+          const messageId = toolMessageMapRef.current.get(toolCallId);
+
+          logger.debug('Tool progress event', {
+            toolCallId,
+            progressType: progress.type,
+            subToolCallId: progress.subToolCallId,
+            toolName: progress.toolName,
+            status: progress.status,
+          });
+
+          if (!messageId) break;
+
+          // 获取当前消息
+          const messages = useAppStore.getState().messages[sessionId] || [];
+          const currentMessage = messages.find((m) => m.id === messageId);
+          if (!currentMessage?.toolCall) break;
+
+          const currentSummary = currentMessage.toolCall.subAgentSummary || [];
+          let newSummary: typeof currentSummary;
+
+          if (progress.type === 'tool_start') {
+            // 添加新的子工具
+            newSummary = [
+              ...currentSummary,
+              {
+                id: progress.subToolCallId,
+                tool: progress.toolName,
+                status: 'running' as const,
+              },
+            ];
+          } else if (progress.type === 'tool_complete') {
+            // 更新子工具状态
+            newSummary = currentSummary.map((item) =>
+              item.id === progress.subToolCallId
+                ? { ...item, status: progress.status, title: progress.resultSummary }
+                : item
+            );
+          } else {
+            break;
+          }
+
+          // 更新消息
+          updateMessage(sessionId, messageId, {
+            toolCall: {
+              subAgentSummary: newSummary,
+            },
+          });
+          break;
+        }
+
         case 'thinking:start': {
           // thinking:start 不创建消息
           // 推理模型的内容会在 thinking:complete 时一次性创建

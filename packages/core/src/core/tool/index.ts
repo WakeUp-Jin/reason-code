@@ -55,3 +55,8 @@ export {
   isGitRepository,
   getToolAvailability,
 } from './utils/tool-detection.js';
+
+// Task 工具（子代理调用）
+export { TaskTool } from './Task/definitions.js';
+export type { TaskParams, TaskResult } from './Task/types.js';
+

@@ -13,6 +13,8 @@
  * - Windows 系统可能没有 grep
  */
 
+import { statSync } from 'fs';
+import { dirname, basename } from 'path';
 import { GrepMatch, GrepStrategyOptions, GREP_DEFAULTS } from '../types.js';
 import { searchLogger } from '../../../../utils/logUtils.js';
 import { runCommand } from '../../utils/spawn.js';
@@ -31,30 +33,50 @@ export async function grepWithSystemGrep(
   cwd: string,
   options?: GrepStrategyOptions
 ): Promise<GrepMatch[]> {
+  // 检查搜索路径是文件还是目录
+  // 如果是文件，使用其父目录作为 cwd，文件名作为搜索目标
+  let processCwd = cwd;
+  let searchTarget = '.';
+  let isFile = false;
+
+  try {
+    const stat = statSync(cwd);
+    if (stat.isFile()) {
+      processCwd = dirname(cwd);
+      searchTarget = basename(cwd);
+      isFile = true;
+    }
+  } catch {
+    // 如果 stat 失败，保持原样
+  }
+
   const args = [
-    '-r', // 递归搜索
     '-n', // 显示行号
     '-H', // 显示文件名
     '-E', // 扩展正则表达式
     '-i', // 忽略大小写
   ];
 
-  // 排除常见目录
-  for (const dir of GREP_DEFAULTS.EXCLUDE_DIRS) {
-    args.push(`--exclude-dir=${dir}`);
+  // 只有搜索目录时才需要递归和排除目录
+  if (!isFile) {
+    args.unshift('-r'); // 递归搜索
+    // 排除常见目录
+    for (const dir of GREP_DEFAULTS.EXCLUDE_DIRS) {
+      args.push(`--exclude-dir=${dir}`);
+    }
   }
 
-  // 添加文件过滤
-  if (options?.include) {
+  // 添加文件过滤（只在搜索目录时有效）
+  if (!isFile && options?.include) {
     args.push(`--include=${options.include}`);
   }
 
   args.push(pattern);
-  args.push('.');
+  args.push(searchTarget);
 
   try {
     const result = await runCommand('grep', args, {
-      cwd,
+      cwd: processCwd,
       signal: options?.signal,
       // stderr 处理器：过滤权限错误和目录错误
       stderrHandler: (chunk) => {

@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../../context/theme.js';
 import type { Message } from '../../context/store.js';
+import { TaskToolMessage } from './task-tool-message.js';
 
 export interface ToolMessageProps {
   message: Message;
@@ -18,6 +19,11 @@ export function ToolMessage({ message }: ToolMessageProps) {
 
   if (!toolCall) {
     return null;
+  }
+
+  // task 工具使用专用组件
+  if (toolCall.toolName === 'task') {
+    return <TaskToolMessage message={message} />;
   }
 
   // 状态配置

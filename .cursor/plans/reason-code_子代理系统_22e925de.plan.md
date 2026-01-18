@@ -4,20 +4,20 @@ overview: 基于配置驱动模式，在 reason-code 中实现完整的子代理
 todos:
   - id: task-1
     content: 子任务 1：AgentConfig 类型系统（types + presets）
-    status: pending
+    status: completed
   - id: task-2
     content: 子任务 2：AgentRegistry 注册表
-    status: pending
+    status: completed
     dependencies:
       - task-1
   - id: task-3
     content: 子任务 3：ToolManager 扩展 getFilteredTools
-    status: pending
+    status: completed
     dependencies:
       - task-2
   - id: task-4
     content: 子任务 4：ExecutionStream 扩展 tool:progress 事件
-    status: pending
+    status: completed
     dependencies:
       - task-2
   - id: task-5
@@ -27,29 +27,29 @@ todos:
       - task-2
   - id: task-6
     content: 子任务 6：AgentRunner 执行器
-    status: pending
+    status: completed
     dependencies:
       - task-3
       - task-4
       - task-5
   - id: task-7
     content: 子任务 7：TaskTool 实现
-    status: pending
+    status: completed
     dependencies:
       - task-6
   - id: task-8
     content: 子任务 8：CLI 层事件处理 tool:progress
-    status: pending
+    status: completed
     dependencies:
       - task-7
   - id: task-9
     content: 子任务 9：CLI 层 TaskToolMessage 显示组件
-    status: pending
+    status: completed
     dependencies:
       - task-8
   - id: task-10
     content: 子任务 10：集成与初始化
-    status: pending
+    status: completed
     dependencies:
       - task-9
 ---
@@ -1155,4 +1155,3 @@ gantt
 
 1. **完整流程**：用户输入 → 主代理调用 task → 子代理执行 → 结果返回
 2. **事件流**：验证 tool:progress 事件正确传递
-3. **显示验证**：CLI 正确显示子代理工具进度

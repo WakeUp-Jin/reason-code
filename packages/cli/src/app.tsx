@@ -12,7 +12,7 @@ import { Session } from './routes/session/index.js';
 import { useTerminalSize } from './util/useTerminalSize.js';
 import { registerCommands } from './component/command/index.js';
 import { logger } from './util/logger.js';
-import { logger as coreLogger } from '@reason-cli/core';
+import { logger as coreLogger, initializeSession } from '@reason-cli/core';
 import { loadAllData } from './persistence/loader.js';
 import { usePersistence } from './hooks/usePersistence.js';
 import { configManager } from './config/manager.js';
@@ -51,6 +51,9 @@ function App() {
   useEffect(() => {
     if (!appInitialized) {
       appInitialized = true;
+
+      // 初始化Session模块
+      initializeSession('filesystem', './.sessions');
 
       // 加载配置和会话数据
       const loadedData = loadAllData();

@@ -10,8 +10,8 @@
  * 4. 文件列表生成：files() 函数用于 Glob 工具
  */
 
-import { existsSync, mkdirSync, chmodSync, unlinkSync, createWriteStream } from 'fs';
-import { join } from 'path';
+import { existsSync, mkdirSync, chmodSync, unlinkSync, createWriteStream, statSync } from 'fs';
+import { join, dirname } from 'path';
 import { pipeline } from 'stream/promises';
 import { Readable } from 'stream';
 import { createAbortError } from './error-utils.js';
@@ -228,7 +228,7 @@ export const Ripgrep = {
       }
     }
 
-    // 3. 检查目录是否存在
+    // 3. 检查路径是否存在
     if (!existsSync(input.cwd)) {
       throw Object.assign(new Error(`No such file or directory: '${input.cwd}'`), {
         code: 'ENOENT',
@@ -237,15 +237,27 @@ export const Ripgrep = {
       });
     }
 
-    // 4. 启动进程（自动选择 Bun 或 Node.js）
+    // 4. 检查路径是文件还是目录
+    // 如果是文件，使用其父目录作为 cwd
+    let processCwd = input.cwd;
+    try {
+      const stat = statSync(input.cwd);
+      if (stat.isFile()) {
+        processCwd = dirname(input.cwd);
+      }
+    } catch {
+      // stat 失败，保持原样
+    }
+
+    // 5. 启动进程（自动选择 Bun 或 Node.js）
     logger.debug(`🚀 [Ripgrep:Spawn] Starting process`, {
       rgPath,
       args,
-      cwd: input.cwd,
+      cwd: processCwd,
     });
 
     const proc = createProcess(rgPath, args, {
-      cwd: input.cwd,
+      cwd: processCwd,
       stdio: ['ignore', 'pipe', 'ignore'],
       windowsHide: true,
     });
@@ -270,7 +282,7 @@ export const Ripgrep = {
    * 执行搜索
    *
    * @param input - 输入参数
-   * @param input.cwd - 工作目录
+   * @param input.cwd - 搜索路径（可以是目录或文件）
    * @param input.pattern - 搜索模式
    * @param input.glob - 文件过滤 glob 模式
    * @param input.binDir - 本地二进制缓存目录
@@ -288,7 +300,22 @@ export const Ripgrep = {
       throw createAbortError();
     }
 
-    // 2. 准备命令
+    // 2. 检查搜索路径是文件还是目录
+    // 如果是文件，使用其父目录作为 cwd，文件路径作为搜索目标
+    let searchTarget = input.cwd;
+    let processCwd = input.cwd;
+
+    try {
+      const stat = statSync(input.cwd);
+      if (stat.isFile()) {
+        // 如果是文件，使用父目录作为 cwd
+        processCwd = dirname(input.cwd);
+      }
+    } catch {
+      // 如果 stat 失败，保持原样（后续 ripgrep 会报错）
+    }
+
+    // 3. 准备命令
     const rgPath = await Ripgrep.filepath(input.binDir);
     const args = [
       '-nH', // -n: 行号, -H: 文件名
@@ -300,36 +327,36 @@ export const Ripgrep = {
     if (input.glob) {
       args.push('--glob', input.glob);
     }
-    args.push(input.cwd);
+    args.push(searchTarget);
 
-    // 3. 启动进程（自动选择 Bun 或 Node.js）
+    // 4. 启动进程（自动选择 Bun 或 Node.js）
     logger.debug(`🚀 [Ripgrep:Search] Starting process`, {
       rgPath,
       args,
     });
 
     const proc = createProcess(rgPath, args, {
-      cwd: input.cwd,
+      cwd: processCwd,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    // 4. 设置 Abort 处理
+    // 5. 设置 Abort 处理
     const abortHandler = setupAbortHandler(proc, input.signal, 'Ripgrep');
     const checkAborted = () => abortHandler.aborted;
 
     try {
-      // 5. 读取所有输出
+      // 6. 读取所有输出
       let result = '';
       for await (const line of readLinesFromStream(proc.stdout, checkAborted)) {
         result += line + '\n';
       }
 
-      // 6. 等待进程退出
+      // 7. 等待进程退出
       await waitForProcessExit(proc, checkAborted, [0, 1], 'ripgrep');
 
       return result.trimEnd();
     } finally {
-      // 7. 清理资源
+      // 8. 清理资源
       abortHandler.cleanup();
     }
   },

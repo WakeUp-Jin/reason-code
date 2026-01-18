@@ -120,7 +120,8 @@ export async function executeGlobStrategy(
       return {
         files,
         strategy: GlobStrategy.GLOB_NPM,
-        warning: `从 ${GlobStrategy.RIPGREP} 降级到 ${GlobStrategy.GLOB_NPM}: ${errorMessage}`,
+        // 不再显示降级警告，策略信息已经在 summary 中通过 (strategy: xxx) 显示
+        warning: undefined,
       };
     }
 

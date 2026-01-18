@@ -85,8 +85,9 @@ export function Home() {
 
     // Enter 创建新会话
     if (key.return) {
-      const session = createSession()
-      goToSession(session.id)
+      createSession().then(session => {
+        goToSession(session.id)
+      })
       return
     }
   })

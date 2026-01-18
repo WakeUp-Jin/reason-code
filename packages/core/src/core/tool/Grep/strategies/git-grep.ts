@@ -13,6 +13,8 @@
  * - 只能在 Git 仓库中使用
  */
 
+import { statSync } from 'fs';
+import { dirname, basename } from 'path';
 import { GrepMatch, GrepStrategyOptions, GREP_DEFAULTS } from '../types.js';
 import { runCommand } from '../../utils/spawn.js';
 import { isAbortError } from '../../utils/error-utils.js';
@@ -30,6 +32,21 @@ export async function grepWithGit(
   cwd: string,
   options?: GrepStrategyOptions
 ): Promise<GrepMatch[]> {
+  // 检查搜索路径是文件还是目录
+  // 如果是文件，使用其父目录作为 cwd，文件名作为搜索目标
+  let processCwd = cwd;
+  let searchTarget: string | null = null;
+
+  try {
+    const stat = statSync(cwd);
+    if (stat.isFile()) {
+      processCwd = dirname(cwd);
+      searchTarget = basename(cwd);
+    }
+  } catch {
+    // 如果 stat 失败，保持原样
+  }
+
   const args = [
     'grep',
     '--untracked', // 包括未追踪的文件
@@ -39,14 +56,17 @@ export async function grepWithGit(
     pattern,
   ];
 
-  // 添加文件过滤
-  if (options?.include) {
+  // 添加文件过滤或搜索目标
+  if (searchTarget) {
+    // 如果是单个文件，添加 -- 后跟文件名
+    args.push('--', searchTarget);
+  } else if (options?.include) {
     args.push('--', options.include);
   }
 
   try {
     const result = await runCommand('git', args, {
-      cwd,
+      cwd: processCwd,
       signal: options?.signal,
     });
 

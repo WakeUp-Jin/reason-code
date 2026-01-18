@@ -2,14 +2,7 @@ import React, { createContext, useContext, type ReactNode } from 'react';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { ToolCallStatus } from '@reason-cli/core';
-
-// Session 类型
-export interface Session {
-  id: string;
-  title: string;
-  createdAt: number;
-  updatedAt: number;
-}
+import { Session, type SessionType } from '@reason-code/core';
 
 // Token 使用情况
 export interface TokenUsage {
@@ -62,6 +55,14 @@ export interface ToolCallInfo {
   error?: string;
   // 工具调用前的思考内容（LLM 在调用工具前的 content）
   thinkingContent?: string;
+
+  // 子代理工具调用摘要（仅 task 工具）
+  subAgentSummary?: Array<{
+    id: string;
+    tool: string;
+    status: 'running' | 'completed' | 'error';
+    title?: string;
+  }>;
 }
 
 // Message 类型
@@ -150,7 +151,7 @@ export interface Config {
 // Store 状态类型
 interface AppState {
   // Session 相关
-  sessions: Session[];
+  sessions: SessionType[];
   currentSessionId: string | null;
 
   // Message 相关
@@ -170,10 +171,12 @@ interface AppState {
   sessionTotalCost: number;
 
   // Session Actions
-  createSession: (title?: string) => Session;
-  deleteSession: (id: string) => void;
-  renameSession: (id: string, title: string) => void;
+  createSession: (title?: string) => Promise<SessionType>;
+  deleteSession: (id: string) => Promise<void>;
+  renameSession: (id: string, title: string) => Promise<void>;
   switchSession: (id: string) => void;
+  /** 更新会话（用于子代理会话设置 parentId 等字段） */
+  updateSession: (id: string, updates: Partial<SessionType>) => Promise<void>;
 
   // Message Actions
   addMessage: (
@@ -202,7 +205,7 @@ interface AppState {
 
   // Initialization from disk
   initializeFromDisk: (data: {
-    sessions: Session[];
+    sessions: SessionType[];
     messages: Record<string, Message[]>;
     currentSessionId: string | null;
     currentModel: string;
@@ -296,35 +299,63 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // Session Actions
-  createSession: (title) => {
-    // 生成默认标题：使用日期时间而非简单编号
-    let defaultTitle = '';
-    if (!title) {
-      const now = new Date();
-      const month = now.getMonth() + 1;
-      const day = now.getDate();
-      const hour = now.getHours();
-      const minute = String(now.getMinutes()).padStart(2, '0');
-      defaultTitle = `${month}/${day} ${hour}:${minute}`;
+  createSession: async (title) => {
+    try {
+      // 使用Core的全局Session模块
+      const session = await Session.create({ title });
+      
+      // 更新UI状态
+      set((state) => ({
+        sessions: [...state.sessions, session],
+        currentSessionId: session.id,
+        messages: { ...state.messages, [session.id]: [] },
+      }));
+      
+      return session;
+    } catch (error) {
+      console.error('Failed to create session:', error);
+      // 回退到本地创建
+      return createLocalSession(title);
     }
+    
+    function createLocalSession(title?: string): SessionType {
+      // 生成默认标题：使用日期时间而非简单编号
+      let defaultTitle = '';
+      if (!title) {
+        const now = new Date();
+        const month = now.getMonth() + 1;
+        const day = now.getDate();
+        const hour = now.getHours();
+        const minute = String(now.getMinutes()).padStart(2, '0');
+        defaultTitle = `${month}/${day} ${hour}:${minute}`;
+      }
 
-    const session: Session = {
-      id: generateId(),
-      title: title || defaultTitle,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
+      const session: SessionType = {
+        id: generateId(),
+        title: title || defaultTitle,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
 
-    set((state) => ({
-      sessions: [...state.sessions, session],
-      currentSessionId: session.id,
-      messages: { ...state.messages, [session.id]: [] },
-    }));
+      set((state) => ({
+        sessions: [...state.sessions, session],
+        currentSessionId: session.id,
+        messages: { ...state.messages, [session.id]: [] },
+      }));
 
-    return session;
+      return session;
+    }
   },
 
-  deleteSession: (id) => {
+  deleteSession: async (id) => {
+    try {
+      // 使用Core的全局Session模块
+      await Session.remove(id);
+    } catch (error) {
+      console.error('Failed to delete session via Core:', error);
+    }
+    
+    // 更新UI状态
     set((state) => {
       const { [id]: _, ...remainingMessages } = state.messages;
       const newSessions = state.sessions.filter((s) => s.id !== id);
@@ -337,7 +368,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
-  renameSession: (id, title) => {
+  renameSession: async (id, title) => {
+    try {
+      // 使用Core的全局Session模块
+      await Session.update(id, { title });
+    } catch (error) {
+      console.error('Failed to rename session via Core:', error);
+    }
+    
+    // 更新UI状态
     set((state) => ({
       sessions: state.sessions.map((s) =>
         s.id === id ? { ...s, title, updatedAt: Date.now() } : s
@@ -347,6 +386,22 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   switchSession: (id) => {
     set({ currentSessionId: id });
+  },
+
+  updateSession: async (id, updates) => {
+    try {
+      // 使用Core的全局Session模块
+      await Session.update(id, updates);
+    } catch (error) {
+      console.error('Failed to update session via Core:', error);
+    }
+    
+    // 更新UI状态
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === id ? { ...s, ...updates, updatedAt: Date.now() } : s
+      ),
+    }));
   },
 
   // Message Actions
@@ -518,7 +573,7 @@ export function useStore<T>(selector: (state: AppState) => T): T {
 }
 
 // 便捷 Hooks
-export function useCurrentSession(): Session | null {
+export function useCurrentSession(): SessionType | null {
   return useAppStore((state) => {
     const id = state.currentSessionId;
     return id ? state.sessions.find((s) => s.id === id) || null : null;
@@ -532,7 +587,7 @@ export function useCurrentMessages(): Message[] {
   });
 }
 
-export function useSessions(): Session[] {
+export function useSessions(): SessionType[] {
   return useAppStore((state) => state.sessions);
 }
 

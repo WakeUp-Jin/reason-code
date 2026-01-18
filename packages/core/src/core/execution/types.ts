@@ -125,3 +125,39 @@ export type ToolResultSummaryGenerator = (
  * 摘要生成器注册表
  */
 export type SummaryGeneratorRegistry = Record<string, ToolResultSummaryGenerator>;
+
+// ==================== 子代理相关类型 ====================
+
+/**
+ * 子代理工具进度类型
+ */
+export type SubAgentProgressType = 'tool_start' | 'tool_complete' | 'thinking';
+
+/**
+ * 子代理工具进度信息
+ */
+export interface SubAgentProgress {
+  type: SubAgentProgressType;
+  /** 子工具调用 ID */
+  subToolCallId: string;
+  /** 工具名称 */
+  toolName: string;
+  /** 参数摘要 */
+  paramsSummary?: string;
+  /** 状态 */
+  status: 'running' | 'completed' | 'error';
+  /** 结果摘要（完成时） */
+  resultSummary?: string;
+  /** 错误信息 */
+  error?: string;
+}
+
+/**
+ * 子代理工具摘要（用于显示）
+ */
+export interface SubAgentToolSummary {
+  id: string;
+  tool: string;
+  status: 'running' | 'completed' | 'error';
+  title?: string;
+}

@@ -3,7 +3,7 @@
  * 用于 Core 层与 CLI 层之间的事件通信
  */
 
-import type { ExecutionState, ToolCallRecord, ExecutionStats } from './types.js';
+import type { ExecutionState, ToolCallRecord, ExecutionStats, SubAgentProgress } from './types.js';
 import type { ConfirmDetails } from '../tool/types.js';
 
 /**
@@ -62,7 +62,16 @@ export type ExecutionEvent =
   | { type: 'content:complete'; content: string }
 
   // Token 统计事件
-  | { type: 'stats:update'; stats: Partial<ExecutionStats>; totalCost?: number };
+  | { type: 'stats:update'; stats: Partial<ExecutionStats>; totalCost?: number }
+
+  // 子代理进度事件（TaskTool 专用）
+  | {
+      type: 'tool:progress';
+      /** 父工具调用 ID（TaskTool 的 callId） */
+      toolCallId: string;
+      /** 子代理进度信息 */
+      progress: SubAgentProgress;
+    };
 
 /**
  * 事件处理器类型

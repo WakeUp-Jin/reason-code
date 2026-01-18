@@ -1,6 +1,6 @@
 /**
  * Agent 类
- * 独立实现，提供 CLI 友好的 API
+ * 统一的 Agent 执行器，支持主代理和子代理
  */
 
 import { ContextManager, ContextType, Message } from '../context/index.js';
@@ -11,30 +11,11 @@ import { ToolLoopExecutor } from '../llm/utils/executeToolLoop.js';
 import { eventBus } from '../../evaluation/EventBus.js';
 import { buildSystemPrompt, type SystemPromptContext } from '../promptManager/index.js';
 import { ExecutionStreamManager } from '../execution/index.js';
-import { ApprovalMode, ConfirmDetails, ConfirmOutcome } from '../tool/types.js';
+import { ApprovalMode, ConfirmDetails, ConfirmOutcome, InternalTool } from '../tool/types.js';
 import { SessionStats, type CheckpointStats, type ModelPricing } from '../stats/index.js';
 import { logger } from '../../utils/logger.js';
-
-/**
- * Agent 配置
- */
-export interface AgentConfig {
-  // LLM 配置
-  provider: string;
-  model: string;
-  apiKey?: string;
-  baseURL?: string;
-
-  // Agent 配置
-  name?: string;
-  /**
-   * 自定义系统提示词（可选）
-   * 如果不提供，将使用 buildSystemPrompt() 自动构建
-   * @deprecated 推荐使用 init() 时传入 SystemPromptContext
-   */
-  systemPrompt?: string;
-  maxLoops?: number;
-}
+import type { AgentConfig } from './config/types.js';
+import type { SharedRuntime } from './AgentManager.js';
 
 /**
  * Agent 初始化选项
@@ -143,6 +124,7 @@ export interface AgentResult {
  */
 export class Agent {
   private config: AgentConfig;
+  private runtime: SharedRuntime;
   private llmService: ILLMService | null = null;
   private contextManager: ContextManager;
   private toolManager: ToolManager;
@@ -161,16 +143,34 @@ export class Agent {
   /** 当前执行器（用于中断时清理） */
   private currentExecutor: ToolLoopExecutor | null = null;
 
-  constructor(config: AgentConfig) {
-    this.config = {
-      name: config.name ?? 'agent',
-      maxLoops: config.maxLoops ?? 100,
-      ...config,
-    };
+  constructor(config: AgentConfig, runtime: SharedRuntime) {
+    this.config = config;
+    this.runtime = runtime;
     this.contextManager = new ContextManager();
-    this.toolManager = new ToolManager();
+    this.toolManager = runtime.toolManager;
     this.executionStream = new ExecutionStreamManager();
     this.sessionStats = new SessionStats();
+  }
+
+  /**
+   * 过滤工具
+   * 根据 Agent 模式和配置过滤可用工具
+   */
+  private filterTools(): InternalTool[] {
+    const allTools = this.toolManager.getTools();
+
+    // 子代理排除 task 工具（防止递归）
+    let filtered = allTools;
+    if (this.config.mode === 'subagent') {
+      filtered = filtered.filter((t) => t.name !== 'task');
+    }
+
+    // 应用配置中的工具过滤
+    if (this.config.tools) {
+      filtered = filtered.filter((t) => this.config.tools![t.name] !== false);
+    }
+
+    return filtered;
   }
 
   /**
@@ -182,12 +182,16 @@ export class Agent {
    *   - 如果不提供 promptContext，将使用 config.systemPrompt 或默认提示词
    */
   async init(options?: AgentInitOptions): Promise<void> {
+    // 使用 config.model 或默认值
+    const provider = this.config.model?.provider || 'deepseek';
+    const model = this.config.model?.model || 'deepseek-chat';
+
     // 创建 LLM 服务
     this.llmService = await createLLMService({
-      provider: this.config.provider,
-      model: this.config.model,
-      apiKey: this.config.apiKey,
-      baseURL: this.config.baseURL,
+      provider,
+      model,
+      apiKey: this.runtime.apiKey,
+      baseURL: this.runtime.baseURL,
     });
 
     // 构建系统提示词
@@ -205,10 +209,9 @@ export class Agent {
       systemPrompt = this.config.systemPrompt;
     } else {
       // 没有提供 promptContext 也没有自定义提示词，使用默认构建
-      // 使用占位符，CLI 层应该总是传入 promptContext
       systemPrompt = buildSystemPrompt({
         workingDirectory: process.cwd(),
-        modelName: this.config.model,
+        modelName: model,
       });
       logger.warn('No promptContext provided, using default system prompt');
     }
@@ -268,18 +271,25 @@ export class Agent {
    * 重新创建 LLM 服务，保留上下文
    */
   async setModel(provider: string, model: string, apiKey?: string): Promise<void> {
-    this.config.provider = provider;
-    this.config.model = model;
+    // 更新配置
+    if (!this.config.model) {
+      this.config.model = { provider, model };
+    } else {
+      this.config.model.provider = provider;
+      this.config.model.model = model;
+    }
+
+    // 更新运行时 apiKey（如果提供）
     if (apiKey) {
-      this.config.apiKey = apiKey;
+      this.runtime.apiKey = apiKey;
     }
 
     // 重新创建 LLM 服务（保留上下文）
     this.llmService = await createLLMService({
-      provider: this.config.provider,
-      model: this.config.model,
-      apiKey: this.config.apiKey,
-      baseURL: this.config.baseURL,
+      provider,
+      model,
+      apiKey: this.runtime.apiKey,
+      baseURL: this.runtime.baseURL,
     });
   }
 
@@ -304,7 +314,7 @@ export class Agent {
     const costBeforeRun = this.sessionStats.getTotalCostCNY();
 
     // 发射 Agent 调用事件
-    eventBus.emit('agent:call', { agentName: this.config.name! });
+    eventBus.emit('agent:call', { agentName: this.config.name });
 
     // 启动执行流
     this.executionStream.start();
@@ -313,16 +323,24 @@ export class Agent {
       // 设置用户输入
       this.contextManager.setUserInput(userInput);
 
+      // 获取过滤后的工具
+      const filteredTools = this.filterTools();
+
+      // 创建临时 ToolManager（只包含过滤后的工具）
+      const isolatedToolManager = new ToolManager();
+      isolatedToolManager.clear();
+      filteredTools.forEach((tool) => isolatedToolManager.register(tool));
+
       // 执行工具循环
       const executor = new ToolLoopExecutor(
         this.llmService,
         this.contextManager,
-        this.toolManager,
+        isolatedToolManager,
         {
-          maxLoops: this.config.maxLoops,
+          maxLoops: this.config.execution?.maxLoops || 100,
           agentName: this.config.name,
           executionStream: this.executionStream,
-          model: this.config.model,
+          model: this.config.model?.model || 'deepseek-chat',
           modelLimit: options?.modelLimit,
           sessionId: options?.sessionId,
           onConfirmRequired: options?.onConfirmRequired,
@@ -448,8 +466,8 @@ export class Agent {
    */
   getModelConfig(): { provider: string; model: string } {
     return {
-      provider: this.config.provider,
-      model: this.config.model,
+      provider: this.config.model?.provider || 'deepseek',
+      model: this.config.model?.model || 'deepseek-chat',
     };
   }
 
