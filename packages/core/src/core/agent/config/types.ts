@@ -20,8 +20,15 @@ export interface AgentConfig {
   /** 自定义系统提示词 */
   systemPrompt?: string;
 
-  /** 工具配置：false = 禁用 */
-  tools?: Record<string, boolean>;
+  /** 工具配置 */
+  tools?: {
+    /** 白名单：只允许这些工具（优先级最高） */
+    include?: string[];
+    /** 黑名单：排除这些工具 */
+    exclude?: string[];
+    /** 细粒度控制：false = 禁用（向后兼容） */
+    [toolName: string]: boolean | string[] | undefined;
+  };
 
   /** 模型配置（可选，覆盖默认） */
   model?: {

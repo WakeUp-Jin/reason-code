@@ -52,27 +52,35 @@ function App() {
     if (!appInitialized) {
       appInitialized = true;
 
-      // 初始化Session模块
-      initializeSession('filesystem', './.sessions');
+      // 初始化Session模块（使用用户目录存储）
+      initializeSession('filesystem', '~/.reason-code/sessions');
 
-      // 加载配置和会话数据
-      const loadedData = loadAllData();
+      // 异步加载配置和会话数据
+      (async () => {
+        try {
+          const loadedData = await loadAllData();
 
-      if (loadedData.sessions.length > 0) {
-        // 有历史数据，加载到内存（但不恢复旧会话）
-        initializeFromDisk({
-          sessions: loadedData.sessions,
-          messages: loadedData.messages,
-          currentSessionId: null, // 不恢复旧会话
-          currentModel: loadedData.config.model.current,
-          currency: loadedData.config.ui.currency,
-          exchangeRate: loadedData.config.ui.exchangeRate,
-          approvalMode: loadedData.config.ui.approvalMode,
-        });
-      }
+          if (loadedData.sessions.length > 0) {
+            // 有历史数据，加载到内存（但不恢复旧会话）
+            initializeFromDisk({
+              sessions: loadedData.sessions,
+              messages: loadedData.messages,
+              currentSessionId: null, // 不恢复旧会话
+              currentModel: loadedData.config.model.current,
+              currency: loadedData.config.ui.currency,
+              exchangeRate: loadedData.config.ui.exchangeRate,
+              approvalMode: loadedData.config.ui.approvalMode,
+            });
+          }
 
-      // 总是创建新会话
-      createSession();
+          // 总是创建新会话
+          createSession();
+        } catch (error) {
+          logger.error('Failed to load data on startup', { error });
+          // 即使加载失败也创建新会话
+          createSession();
+        }
+      })();
     }
   }, [createSession, initializeFromDisk]);
 

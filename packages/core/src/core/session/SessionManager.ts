@@ -4,16 +4,19 @@
  */
 
 import { logger } from '../../utils/logger.js';
-import type { 
-  Session, 
-  CreateSessionOptions, 
-  GetChildSessionsOptions, 
+import type {
+  SessionMetadata,
+  CreateSessionOptions,
+  GetChildSessionsOptions,
   GetOrCreateSubSessionOptions,
-  SessionStorage 
+  SessionStorage,
+  StoredMessage,
+  SessionCheckpoint,
+  SessionData,
 } from './types.js';
 
 export class SessionManager {
-  private sessions: Map<string, Session> = new Map();
+  private sessions: Map<string, SessionMetadata> = new Map();
   private storage: SessionStorage;
 
   constructor(storage: SessionStorage) {
@@ -23,8 +26,8 @@ export class SessionManager {
   /**
    * 创建新会话
    */
-  async createSession(options: CreateSessionOptions = {}): Promise<Session> {
-    const session: Session = {
+  async createSession(options: CreateSessionOptions = {}): Promise<SessionMetadata> {
+    const session: SessionMetadata = {
       id: this.generateId(),
       title: options.title || this.generateDefaultTitle(!!options.parentId),
       createdAt: Date.now(),
@@ -44,7 +47,7 @@ export class SessionManager {
   /**
    * 获取会话
    */
-  async getSession(sessionId: string): Promise<Session | null> {
+  async getSession(sessionId: string): Promise<SessionMetadata | null> {
     // 先从内存查找
     const cachedSession = this.sessions.get(sessionId);
     if (cachedSession) {
@@ -64,7 +67,7 @@ export class SessionManager {
   /**
    * 更新会话
    */
-  async updateSession(sessionId: string, updates: Partial<Session>): Promise<Session | null> {
+  async updateSession(sessionId: string, updates: Partial<SessionMetadata>): Promise<SessionMetadata | null> {
     const session = await this.getSession(sessionId);
     if (!session) {
       return null;
@@ -100,9 +103,9 @@ export class SessionManager {
   /**
    * 列出所有会话
    */
-  async listSessions(): Promise<Session[]> {
+  async listSessions(): Promise<SessionMetadata[]> {
     const storedSessions = await this.storage.loadAll();
-    
+
     // 更新内存缓存
     for (const session of storedSessions) {
       this.sessions.set(session.id, session);
@@ -114,7 +117,7 @@ export class SessionManager {
   /**
    * 获取子会话列表
    */
-  async getChildSessions(options: GetChildSessionsOptions): Promise<Session[]> {
+  async getChildSessions(options: GetChildSessionsOptions): Promise<SessionMetadata[]> {
     const allSessions = await this.listSessions();
     return allSessions.filter(s => s.parentId === options.parentId);
   }
@@ -122,7 +125,7 @@ export class SessionManager {
   /**
    * 获取父会话
    */
-  async getParentSession(sessionId: string): Promise<Session | null> {
+  async getParentSession(sessionId: string): Promise<SessionMetadata | null> {
     const session = await this.getSession(sessionId);
     if (!session?.parentId) {
       return null;
@@ -133,7 +136,7 @@ export class SessionManager {
   /**
    * 获取或创建子会话
    */
-  async getOrCreateSubSession(options: GetOrCreateSubSessionOptions): Promise<Session> {
+  async getOrCreateSubSession(options: GetOrCreateSubSessionOptions): Promise<SessionMetadata> {
     // 尝试复用现有会话
     if (options.sessionId) {
       const existing = await this.getSession(options.sessionId);
@@ -149,9 +152,9 @@ export class SessionManager {
       const existingSubSession = childSessions.find(
         session => session.agentName === options.agentName
       );
-      
+
       if (existingSubSession) {
-        logger.debug('Reusing existing sub-session by parentId and agentName', { 
+        logger.debug('Reusing existing sub-session by parentId and agentName', {
           sessionId: existingSubSession.id,
           parentId: options.parentId,
           agentName: options.agentName
@@ -186,5 +189,75 @@ export class SessionManager {
     const minute = String(now.getMinutes()).padStart(2, '0');
     const prefix = isChild ? 'Subtask ' : '';
     return `${prefix}${month}/${day} ${hour}:${minute}`;
+  }
+
+  // ============================================================
+  // Message 管理
+  // ============================================================
+
+  /**
+   * 保存所有消息（完整重写）
+   */
+  async saveMessages(sessionId: string, messages: StoredMessage[]): Promise<void> {
+    await this.storage.saveMessages(sessionId, messages);
+  }
+
+  /**
+   * 加载所有消息
+   */
+  async loadMessages(sessionId: string): Promise<StoredMessage[]> {
+    return await this.storage.loadMessages(sessionId);
+  }
+
+  // ============================================================
+  // Checkpoint 管理
+  // ============================================================
+
+  /**
+   * 保存检查点
+   */
+  async saveCheckpoint(sessionId: string, checkpoint: SessionCheckpoint): Promise<void> {
+    await this.storage.saveCheckpoint(sessionId, checkpoint);
+  }
+
+  /**
+   * 加载检查点
+   */
+  async loadCheckpoint(sessionId: string): Promise<SessionCheckpoint | null> {
+    return await this.storage.loadCheckpoint(sessionId);
+  }
+
+  /**
+   * 删除检查点
+   */
+  async deleteCheckpoint(sessionId: string): Promise<boolean> {
+    return await this.storage.deleteCheckpoint(sessionId);
+  }
+
+  // ============================================================
+  // 完整数据操作
+  // ============================================================
+
+  /**
+   * 保存完整会话数据
+   */
+  async saveSessionData(sessionId: string, messages: StoredMessage[], checkpoint?: SessionCheckpoint): Promise<void> {
+    const session = await this.getSession(sessionId);
+    if (!session) {
+      throw new Error(`Session ${sessionId} not found`);
+    }
+
+    await this.storage.saveSessionData({
+      session,
+      messages,
+      checkpoint,
+    });
+  }
+
+  /**
+   * 加载完整会话数据
+   */
+  async loadSessionData(sessionId: string): Promise<SessionData | null> {
+    return await this.storage.loadSessionData(sessionId);
   }
 }

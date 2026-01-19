@@ -2,7 +2,7 @@ import React, { createContext, useContext, type ReactNode } from 'react';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { ToolCallStatus } from '@reason-cli/core';
-import { Session, type SessionType } from '@reason-code/core';
+import { Session, type SessionMetadata } from '@reason-code/core';
 
 // Token 使用情况
 export interface TokenUsage {
@@ -65,23 +65,44 @@ export interface ToolCallInfo {
   }>;
 }
 
-// Message 类型
+/**
+ * CLI 运行时消息类型
+ *
+ * 📌 与 Core StoredMessage 的关系：
+ * - 结构兼容（鸭子类型），但不继承
+ * - 保存时：通过 filterForStorage() 转换为 StoredMessage
+ * - 加载时：通过 restoreFromStorage() 从 StoredMessage 恢复
+ *
+ * 📌 CLI 专用扩展：
+ * - isStreaming: 流式输出状态（运行时字段，不持久化）
+ * - metadata: 类型安全的元数据（MessageMetadata）
+ * - toolCall: 类型安全的工具调用信息（ToolCallInfo）
+ *
+ * 📌 为什么不继承 StoredMessage？
+ * - TypeScript 不允许子类型收窄父类型（metadata: any → MessageMetadata）
+ * - 保持 CLI 层的类型安全
+ * - 职责分离：Core 负责通用存储，CLI 负责特定平台
+ *
+ * @see Core StoredMessage: packages/core/src/core/session/types.ts
+ * @see 转换函数: packages/cli/src/util/messageUtils.ts
+ */
 export interface Message {
   id: string;
   sessionId: string;
   role: MessageRole;
   content: string;
   timestamp: number;
+
+  /** 流式输出状态（CLI 专用，不持久化） */
   isStreaming?: boolean;
 
-  // 元数据
+  /** 消息元数据（类型安全） */
   metadata?: MessageMetadata;
 
-  // 工具调用信息（仅 role='tool' 时有）
+  /** 工具调用信息（类型安全） */
   toolCall?: ToolCallInfo;
 
-  // 工具调用列表（仅 role='assistant' 时有，用于历史加载）
-  // 与 LLM API 的 tool_calls 字段对应，确保历史消息序列合法
+  /** 工具调用列表（仅 role='assistant' 时有，用于历史加载） */
   tool_calls?: Array<{
     id: string;
     type: 'function';
@@ -91,10 +112,9 @@ export interface Message {
     };
   }>;
 
-  // ✅ API 标准字段（仅 role='tool' 时有）
-  // 符合 OpenAI/DeepSeek API 规范
-  tool_call_id?: string; // 对应的 tool_call id
-  name?: string; // 工具名称
+  /** API 标准字段（仅 role='tool' 时有） */
+  tool_call_id?: string;
+  name?: string;
 }
 
 // 消息更新类型（支持 toolCall 部分更新）
@@ -151,7 +171,7 @@ export interface Config {
 // Store 状态类型
 interface AppState {
   // Session 相关
-  sessions: SessionType[];
+  sessions: SessionMetadata[];
   currentSessionId: string | null;
 
   // Message 相关
@@ -171,12 +191,12 @@ interface AppState {
   sessionTotalCost: number;
 
   // Session Actions
-  createSession: (title?: string) => Promise<SessionType>;
+  createSession: (title?: string) => Promise<SessionMetadata>;
   deleteSession: (id: string) => Promise<void>;
   renameSession: (id: string, title: string) => Promise<void>;
   switchSession: (id: string) => void;
   /** 更新会话（用于子代理会话设置 parentId 等字段） */
-  updateSession: (id: string, updates: Partial<SessionType>) => Promise<void>;
+  updateSession: (id: string, updates: Partial<SessionMetadata>) => Promise<void>;
 
   // Message Actions
   addMessage: (
@@ -205,7 +225,7 @@ interface AppState {
 
   // Initialization from disk
   initializeFromDisk: (data: {
-    sessions: SessionType[];
+    sessions: SessionMetadata[];
     messages: Record<string, Message[]>;
     currentSessionId: string | null;
     currentModel: string;
@@ -318,7 +338,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       return createLocalSession(title);
     }
     
-    function createLocalSession(title?: string): SessionType {
+    function createLocalSession(title?: string): SessionMetadata {
       // 生成默认标题：使用日期时间而非简单编号
       let defaultTitle = '';
       if (!title) {
@@ -330,7 +350,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         defaultTitle = `${month}/${day} ${hour}:${minute}`;
       }
 
-      const session: SessionType = {
+      const session: SessionMetadata = {
         id: generateId(),
         title: title || defaultTitle,
         createdAt: Date.now(),
@@ -573,7 +593,7 @@ export function useStore<T>(selector: (state: AppState) => T): T {
 }
 
 // 便捷 Hooks
-export function useCurrentSession(): SessionType | null {
+export function useCurrentSession(): SessionMetadata | null {
   return useAppStore((state) => {
     const id = state.currentSessionId;
     return id ? state.sessions.find((s) => s.id === id) || null : null;
@@ -587,7 +607,7 @@ export function useCurrentMessages(): Message[] {
   });
 }
 
-export function useSessions(): SessionType[] {
+export function useSessions(): SessionMetadata[] {
   return useAppStore((state) => state.sessions);
 }
 

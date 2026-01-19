@@ -18,8 +18,7 @@ You have READ-ONLY access. Do not attempt to modify files.
 Be efficient - use search tools to narrow down before reading files.
 When done, provide a clear summary of your findings.`,
   tools: {
-    write_file: false,
-    todo_write: false,
+    include: ['glob', 'grep', 'read_file', 'list_files', 'read_many_files'],
   },
   model: { 
     provider: 'deepseek',

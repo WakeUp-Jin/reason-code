@@ -1,7 +1,13 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { dirname } from 'path';
-import { CONFIG_FILE } from '../util/storage.js';
+import { dirname, join } from 'path';
+import { homedir } from 'os';
 import { logger } from '../util/logger.js';
+
+/** 存储根目录 */
+const STORAGE_DIR = join(homedir(), '.reason-code');
+
+/** 配置文件路径 */
+const CONFIG_FILE = join(STORAGE_DIR, 'config.json');
 import { configLogger } from '../util/logUtils.js';
 import type { ReasonCliConfig, PartialConfig } from './schema.js';
 import { safeValidateConfig } from './schema.js';

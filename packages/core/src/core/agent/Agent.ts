@@ -12,10 +12,11 @@ import { eventBus } from '../../evaluation/EventBus.js';
 import { buildSystemPrompt, type SystemPromptContext } from '../promptManager/index.js';
 import { ExecutionStreamManager } from '../execution/index.js';
 import { ApprovalMode, ConfirmDetails, ConfirmOutcome, InternalTool } from '../tool/types.js';
-import { SessionStats, type CheckpointStats, type ModelPricing } from '../stats/index.js';
+import { SessionStats, type ModelPricing } from '../stats/index.js';
 import { logger } from '../../utils/logger.js';
 import type { AgentConfig } from './config/types.js';
 import type { SharedRuntime } from './AgentManager.js';
+import type { SessionCheckpoint } from '../session/types.js';
 
 /**
  * Agent 初始化选项
@@ -40,19 +41,8 @@ export interface HistoryLoadOptions {
   maxMessages?: number;
 }
 
-/**
- * 检查点数据（用于恢复会话状态）
- */
-export interface SessionCheckpoint {
-  /** 压缩生成的摘要 */
-  summary: string;
-  /** 从这个消息 ID 之后开始加载 */
-  loadAfterMessageId: string;
-  /** 压缩时间戳 */
-  compressedAt: number;
-  /** 累计统计 */
-  stats: CheckpointStats;
-}
+// SessionCheckpoint 从 session/types.ts 导入
+export type { SessionCheckpoint };
 
 /**
  * 压缩完成回调参数
@@ -158,19 +148,32 @@ export class Agent {
    */
   private filterTools(): InternalTool[] {
     const allTools = this.toolManager.getTools();
+    const toolConfig = this.config.tools || {};
 
-    // 子代理排除 task 工具（防止递归）
-    let filtered = allTools;
-    if (this.config.mode === 'subagent') {
-      filtered = filtered.filter((t) => t.name !== 'task');
+    // 1. 自动排除（防止递归）
+    const autoExclude = this.config.mode === 'subagent' ? ['task'] : [];
+
+    // 2. 白名单模式（如果指定了 include）
+    if (toolConfig.include) {
+      const includeSet = new Set(toolConfig.include);
+      return allTools.filter((t) => includeSet.has(t.name));
     }
 
-    // 应用配置中的工具过滤
-    if (this.config.tools) {
-      filtered = filtered.filter((t) => this.config.tools![t.name] !== false);
-    }
+    // 3. 黑名单模式（默认）
+    const excludeSet = new Set([
+      ...autoExclude,
+      ...(toolConfig.exclude || []),
+    ]);
 
-    return filtered;
+    return allTools.filter((t) => {
+      // 排除列表中的工具
+      if (excludeSet.has(t.name)) return false;
+
+      // 细粒度控制（向后兼容）
+      if (toolConfig[t.name] === false) return false;
+
+      return true;
+    });
   }
 
   /**

@@ -1,9 +1,10 @@
 import { useCallback } from 'react';
 import { useAppStore } from '../context/store.js';
-import { saveSession, loadAllSessions } from '../util/storage.js';
+import { Session } from '@reason-code/core';
 import { configManager } from '../config/manager.js';
 import { logger } from '../util/logger.js';
 import { sessionLogger, configLogger } from '../util/logUtils.js';
+import { filterForStorage } from '../util/messageUtils.js';
 import type { PartialConfig } from '../config/schema.js';
 
 /**
@@ -15,7 +16,7 @@ export function usePersistence() {
    * 保存当前会话
    * 使用 getState() 直接读取最新状态，避免闭包问题
    */
-  const saveCurrentSession = useCallback(() => {
+  const saveCurrentSession = useCallback(async () => {
     // ✅ 直接从 store 读取最新状态，而不使用 Hook 的依赖
     const state = useAppStore.getState();
     const currentSessionId = state.currentSessionId;
@@ -38,9 +39,9 @@ export function usePersistence() {
     try {
       // 统计消息
       const messagesWithMetadata = sessionMessages.filter(
-        m => m.role === 'assistant' && m.metadata?.tokenUsage
+        (m) => m.role === 'assistant' && m.metadata?.tokenUsage
       ).length;
-      const totalAssistantMessages = sessionMessages.filter(m => m.role === 'assistant').length;
+      const totalAssistantMessages = sessionMessages.filter((m) => m.role === 'assistant').length;
 
       // 记录会话保存
       sessionLogger.save(
@@ -50,7 +51,9 @@ export function usePersistence() {
         messagesWithMetadata
       );
 
-      saveSession(session, sessionMessages);
+      // 使用 Core Session API 保存（过滤掉瞬态字段）
+      const storedMessages = sessionMessages.map(filterForStorage);
+      await Session.saveData(currentSessionId, storedMessages);
     } catch (error) {
       logger.error(`Failed to save session ${currentSessionId}`, { error });
     }
@@ -60,7 +63,7 @@ export function usePersistence() {
    * 保存所有会话
    * 使用 getState() 直接读取最新状态
    */
-  const saveAllSessions = useCallback(() => {
+  const saveAllSessions = useCallback(async () => {
     // ✅ 直接从 store 读取最新状态
     const state = useAppStore.getState();
     const sessions = state.sessions;
@@ -73,7 +76,9 @@ export function usePersistence() {
       const sessionMessages = messages[session.id] || [];
 
       try {
-        saveSession(session, sessionMessages);
+        // 使用 Core Session API 保存（过滤掉瞬态字段）
+        const storedMessages = sessionMessages.map(filterForStorage);
+        await Session.saveData(session.id, storedMessages);
         savedCount++;
       } catch (error) {
         logger.error(`Failed to save session ${session.id}`, { error });

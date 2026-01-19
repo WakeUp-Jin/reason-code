@@ -9,7 +9,7 @@
  */
 
 import { useEffect, useState, useCallback } from 'react';
-import { agentManager, Agent } from '@reason-code/core';
+import { agentManager, Agent, Session, type SessionCheckpoint } from '@reason-code/core';
 import type {
   ConfirmDetails,
   ConfirmOutcome,
@@ -25,13 +25,7 @@ import { agentLogger } from '../util/logUtils.js';
 import { useExecutionState } from '../context/execution.js';
 import { useAppStore } from '../context/store.js';
 import { convertToCoreMsgs } from '../util/messageConverter.js';
-import {
-  loadCheckpoint,
-  saveCheckpoint,
-  clearCheckpoint,
-  type SessionCheckpoint,
-} from '../util/storage.js';
-import { triggerAsyncSave, triggerAsyncSaveCheckpoint } from '../util/asyncStorage.js';
+import { filterForStorage } from '../util/messageUtils.js';
 
 // ==================== 模块级变量（跨 remount 持久化）====================
 let agentInstance: Agent | null = null;
@@ -99,8 +93,8 @@ function buildContextForLLM(
     return { needsInit: false, checkpoint: null };
   }
 
-  const checkpoint = loadCheckpoint(sessionId);
-  return { needsInit: true, checkpoint };
+  // 注意：这里返回 null，实际的 checkpoint 加载在 useAgent 中异步进行
+  return { needsInit: true, checkpoint: null };
 }
 
 export function useAgent(): UseAgentReturn {
@@ -164,8 +158,8 @@ export function useAgent(): UseAgentReturn {
       const historyMessages = currentSessionId ? messages[currentSessionId] || [] : [];
       const coreHistory = convertToCoreMsgs(historyMessages);
 
-      // 检查是否有检查点
-      const checkpoint = currentSessionId ? loadCheckpoint(currentSessionId) : null;
+      // 检查是否有检查点（使用 Core Session API）
+      const checkpoint = currentSessionId ? await Session.loadCheckpoint(currentSessionId) : null;
 
       if (checkpoint) {
         // 有检查点：从检查点恢复
@@ -183,7 +177,7 @@ export function useAgent(): UseAgentReturn {
           // 消息 ID 找不到，清除检查点，使用完整历史
           logger.warn('Checkpoint message ID not found, clearing checkpoint');
           if (currentSessionId) {
-            clearCheckpoint(currentSessionId);
+            await Session.deleteCheckpoint(currentSessionId);
           }
           await agent.init({ promptContext });
           agent.loadHistory(coreHistory, { clearExisting: true, skipSystemPrompt: true });
@@ -348,7 +342,7 @@ export function useAgent(): UseAgentReturn {
 
           const historyMessages = messages[currentSessionId] || [];
           const coreHistory = convertToCoreMsgs(historyMessages);
-          const checkpoint = loadCheckpoint(currentSessionId);
+          const checkpoint = await Session.loadCheckpoint(currentSessionId);
 
           if (checkpoint) {
             const splitIndex = historyMessages.findIndex(
@@ -359,7 +353,7 @@ export function useAgent(): UseAgentReturn {
               agentInstance.getContextManager().loadWithSummary(checkpoint.summary, partialHistory);
               agentInstance.getSessionStats().restore(checkpoint.stats);
             } else {
-              clearCheckpoint(currentSessionId);
+              await Session.deleteCheckpoint(currentSessionId);
               agentInstance.loadHistory(coreHistory, {
                 clearExisting: true,
                 skipSystemPrompt: true,
@@ -426,8 +420,10 @@ export function useAgent(): UseAgentReturn {
               stats: agentInstance!.getSessionStats().toCheckpoint(),
             };
 
-            // 异步保存检查点
-            triggerAsyncSaveCheckpoint(currentSessionId, checkpoint);
+            // 异步保存检查点（使用 Core Session API）
+            Session.saveCheckpoint(currentSessionId, checkpoint).catch((error) => {
+              logger.error('Failed to save checkpoint', { error, sessionId: currentSessionId });
+            });
 
             logger.info('Compression complete, checkpoint saved', {
               sessionId: currentSessionId,
@@ -446,10 +442,13 @@ export function useAgent(): UseAgentReturn {
           onCompressionComplete: handleCompressionComplete,
         });
 
-        // 异步保存历史（不阻塞）
+        // 异步保存历史（不阻塞，使用 Core Session API）
         if (currentSession && currentSessionId) {
           const latestMessages = useAppStore.getState().messages[currentSessionId] || [];
-          triggerAsyncSave(currentSession, latestMessages);
+          const storedMessages = latestMessages.map(filterForStorage);
+          Session.saveData(currentSessionId, storedMessages).catch((error) => {
+            logger.error('Failed to save session data', { error, sessionId: currentSessionId });
+          });
         }
 
         if (result.success) {

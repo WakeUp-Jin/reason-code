@@ -3,9 +3,12 @@ export { MemoryStorage } from './storage/MemoryStorage.js';
 export { FileSystemStorage } from './storage/FileSystemStorage.js';
 export { Session, initializeSession } from './globalSession.js';
 export type {
-  Session as SessionType,
+  SessionMetadata,
   CreateSessionOptions,
   GetChildSessionsOptions,
   GetOrCreateSubSessionOptions,
   SessionStorage,
+  StoredMessage,
+  SessionCheckpoint,
+  SessionData,
 } from './types.js';
