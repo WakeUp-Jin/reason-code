@@ -93,9 +93,9 @@ export function usePersistence() {
    * 保存配置
    * @param updates 要更新的配置项
    */
-  const saveConfig = useCallback((updates: Partial<PartialConfig>) => {
+  const saveConfig = useCallback(async (updates: Partial<PartialConfig>) => {
     try {
-      configManager.updateConfig(updates);
+      await configManager.updateConfig(updates);
       configLogger.save(updates);
     } catch (error) {
       logger.error('Failed to save config', { error });

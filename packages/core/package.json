@@ -29,6 +29,7 @@
   "devDependencies": {
     "typescript": "catalog:",
     "@types/node": "catalog:",
+    "@types/bun": "^1.2.9",
     "tsx": "^4.19.2"
   },
   "engines": {

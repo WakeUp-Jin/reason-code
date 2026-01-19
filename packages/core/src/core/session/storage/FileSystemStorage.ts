@@ -5,9 +5,11 @@
  * ├── session.json      # Session 元数据
  * ├── history.jsonl     # Messages（JSONL 格式，每行一条消息）
  * └── checkpoint.json   # Checkpoint 数据
+ *
+ * 使用 Bun 原生 API 进行文件读写操作
  */
 
-import { promises as fs } from 'fs';
+import { mkdir, readdir, rm, unlink } from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import type {
@@ -67,7 +69,7 @@ export class FileSystemStorage implements SessionStorage {
    */
   private async ensureDir(dirPath: string): Promise<void> {
     try {
-      await fs.mkdir(dirPath, { recursive: true });
+      await mkdir(dirPath, { recursive: true });
     } catch (error) {
       logger.error('Failed to create directory', { error, dir: dirPath });
       throw error;
@@ -88,8 +90,8 @@ export class FileSystemStorage implements SessionStorage {
       }
     }
 
-    // 执行写入操作
-    const writePromise = this.doAtomicWrite(filePath, data);
+    // 执行写入操作（Bun.write 自带原子写入特性）
+    const writePromise = this.doWrite(filePath, data);
     this.writeQueue.set(filePath, writePromise);
 
     try {
@@ -100,13 +102,12 @@ export class FileSystemStorage implements SessionStorage {
   }
 
   /**
-   * 原子写入（临时文件 + rename）
+   * 使用 Bun.write 进行写入
+   * Bun.write 内部已实现原子写入，无需手动 tmp+rename
    */
-  private async doAtomicWrite(filePath: string, data: string): Promise<void> {
-    const tmpPath = `${filePath}.tmp`;
+  private async doWrite(filePath: string, data: string): Promise<void> {
     await this.ensureDir(path.dirname(filePath));
-    await fs.writeFile(tmpPath, data, 'utf-8');
-    await fs.rename(tmpPath, filePath);
+    await Bun.write(filePath, data);
   }
 
   // ============================================================
@@ -132,16 +133,17 @@ export class FileSystemStorage implements SessionStorage {
    */
   async load(sessionId: string): Promise<SessionMetadata | null> {
     const filePath = this.getSessionPath(sessionId);
+    const file = Bun.file(filePath);
 
     try {
-      const data = await fs.readFile(filePath, 'utf-8');
-      const session = JSON.parse(data) as SessionMetadata;
+      const exists = await file.exists();
+      if (!exists) {
+        return null;
+      }
+      const session = (await file.json()) as SessionMetadata;
       logger.debug('Session loaded from file', { sessionId, filePath });
       return session;
     } catch (error: any) {
-      if (error.code === 'ENOENT') {
-        return null;
-      }
       logger.error('Failed to load session', { error, sessionId, filePath });
       throw error;
     }
@@ -153,21 +155,22 @@ export class FileSystemStorage implements SessionStorage {
   async loadAll(): Promise<SessionMetadata[]> {
     try {
       await this.ensureDir(this.storageDir);
-      const items = await fs.readdir(this.storageDir, { withFileTypes: true });
+      const items = await readdir(this.storageDir, { withFileTypes: true });
       const sessions: SessionMetadata[] = [];
 
       for (const item of items) {
         // 只处理目录
         if (item.isDirectory()) {
           const sessionPath = path.join(this.storageDir, item.name, 'session.json');
+          const file = Bun.file(sessionPath);
           try {
-            const data = await fs.readFile(sessionPath, 'utf-8');
-            const session = JSON.parse(data) as SessionMetadata;
-            sessions.push(session);
-          } catch (error: any) {
-            if (error.code !== 'ENOENT') {
-              logger.warn('Failed to load session file', { error, sessionId: item.name });
+            const exists = await file.exists();
+            if (exists) {
+              const session = (await file.json()) as SessionMetadata;
+              sessions.push(session);
             }
+          } catch (error: any) {
+            logger.warn('Failed to load session file', { error, sessionId: item.name });
             // 继续加载其他会话
           }
         }
@@ -191,7 +194,7 @@ export class FileSystemStorage implements SessionStorage {
     const sessionDir = this.getSessionDir(sessionId);
 
     try {
-      await fs.rm(sessionDir, { recursive: true, force: true });
+      await rm(sessionDir, { recursive: true, force: true });
       logger.debug('Session directory deleted', { sessionId, sessionDir });
       return true;
     } catch (error: any) {
@@ -208,13 +211,7 @@ export class FileSystemStorage implements SessionStorage {
    */
   async exists(sessionId: string): Promise<boolean> {
     const filePath = this.getSessionPath(sessionId);
-
-    try {
-      await fs.access(filePath);
-      return true;
-    } catch {
-      return false;
-    }
+    return await Bun.file(filePath).exists();
   }
 
   // ============================================================
@@ -249,9 +246,15 @@ export class FileSystemStorage implements SessionStorage {
    */
   async loadMessages(sessionId: string): Promise<StoredMessage[]> {
     const historyPath = this.getHistoryPath(sessionId);
+    const file = Bun.file(historyPath);
 
     try {
-      const content = await fs.readFile(historyPath, 'utf-8');
+      const exists = await file.exists();
+      if (!exists) {
+        return [];
+      }
+
+      const content = await file.text();
       const messages: StoredMessage[] = [];
       const lines = content.split('\n');
 
@@ -272,9 +275,6 @@ export class FileSystemStorage implements SessionStorage {
       logger.debug('Messages loaded', { sessionId, count: messages.length });
       return messages;
     } catch (error: any) {
-      if (error.code === 'ENOENT') {
-        return [];
-      }
       logger.error('Failed to load messages', { error, sessionId });
       throw error;
     }
@@ -304,16 +304,17 @@ export class FileSystemStorage implements SessionStorage {
    */
   async loadCheckpoint(sessionId: string): Promise<SessionCheckpoint | null> {
     const checkpointPath = this.getCheckpointPath(sessionId);
+    const file = Bun.file(checkpointPath);
 
     try {
-      const data = await fs.readFile(checkpointPath, 'utf-8');
-      const checkpoint = JSON.parse(data) as SessionCheckpoint;
+      const exists = await file.exists();
+      if (!exists) {
+        return null;
+      }
+      const checkpoint = (await file.json()) as SessionCheckpoint;
       logger.debug('Checkpoint loaded', { sessionId });
       return checkpoint;
     } catch (error: any) {
-      if (error.code === 'ENOENT') {
-        return null;
-      }
       logger.error('Failed to load checkpoint', { error, sessionId });
       throw error;
     }
@@ -326,7 +327,7 @@ export class FileSystemStorage implements SessionStorage {
     const checkpointPath = this.getCheckpointPath(sessionId);
 
     try {
-      await fs.unlink(checkpointPath);
+      await unlink(checkpointPath);
       logger.debug('Checkpoint deleted', { sessionId });
       return true;
     } catch (error: any) {
@@ -396,12 +397,12 @@ export class FileSystemStorage implements SessionStorage {
    */
   async clear(): Promise<void> {
     try {
-      const items = await fs.readdir(this.storageDir, { withFileTypes: true });
+      const items = await readdir(this.storageDir, { withFileTypes: true });
 
       for (const item of items) {
         if (item.isDirectory()) {
           const sessionDir = path.join(this.storageDir, item.name);
-          await fs.rm(sessionDir, { recursive: true, force: true });
+          await rm(sessionDir, { recursive: true, force: true });
         }
       }
 

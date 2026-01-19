@@ -24,7 +24,7 @@ export async function loadAllData(): Promise<LoadedData> {
   logger.info('Loading all data from disk...');
 
   // 1. 加载配置
-  const config = configManager.loadConfig();
+  const config = await configManager.loadConfig();
 
   // 2. 加载所有会话（使用 Core Session API）
   const sessions = await Session.list();
@@ -56,9 +56,9 @@ export async function loadAllData(): Promise<LoadedData> {
 }
 
 /**
- * 同步加载配置（用于快速启动）
+ * 加载配置（用于快速启动）
  * 会话数据将在后台异步加载
  */
-export function loadConfigOnly(): ReasonCliConfig {
+export async function loadConfigOnly(): Promise<ReasonCliConfig> {
   return configManager.loadConfig();
 }

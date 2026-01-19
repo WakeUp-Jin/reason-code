@@ -1,9 +1,10 @@
 /**
  * 批量读取文件工具 - 执行器
  * 支持直接路径列表或 glob 模式匹配
+ *
+ * 使用 Bun 原生 API 进行文件操作
  */
 
-import * as fs from 'fs';
 import * as path from 'path';
 import { glob } from 'glob';
 import type { ToolResult } from '../types.js';
@@ -97,19 +98,22 @@ async function expandGlobPatterns(
 }
 
 /**
- * 读取单个文件
+ * 读取单个文件（使用 Bun API）
  */
-function readSingleFile(
+async function readSingleFile(
   filePath: string,
   maxFileSize: number
-): { success: true; data: FileReadResult } | { success: false; error: string } {
+): Promise<{ success: true; data: FileReadResult } | { success: false; error: string }> {
   try {
+    const file = Bun.file(filePath);
+
     // 检查文件是否存在
-    if (!fs.existsSync(filePath)) {
+    const exists = await file.exists();
+    if (!exists) {
       return { success: false, error: 'File not found' };
     }
 
-    const stats = fs.statSync(filePath);
+    const stats = await file.stat();
 
     // 检查是否是文件
     if (!stats.isFile()) {
@@ -130,7 +134,7 @@ function readSingleFile(
     }
 
     // 读取文件内容
-    let content = fs.readFileSync(filePath, 'utf-8');
+    let content = await file.text();
     let isTruncated = false;
 
     // 检查内容是否超过限制
@@ -217,7 +221,7 @@ export async function readManyFilesExecutor(
         break;
       }
 
-      const result = readSingleFile(filePath, maxFileSize);
+      const result = await readSingleFile(filePath, maxFileSize);
 
       if (result.success) {
         // 检查添加这个文件后是否会超出限制
@@ -332,4 +336,3 @@ export function renderResultForAssistant(result: ReadManyFilesResult): string {
 
   return lines.join('\n');
 }
-

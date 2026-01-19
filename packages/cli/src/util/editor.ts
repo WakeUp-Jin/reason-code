@@ -1,9 +1,11 @@
 /**
  * 外部编辑器集成
  * 使用 $EDITOR 环境变量打开文件
+ *
+ * 使用 Bun 原生 API 进行文件操作
  */
 
-import { writeFileSync, readFileSync, unlinkSync, existsSync, mkdirSync } from 'fs'
+import { mkdir, unlink } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -23,7 +25,6 @@ export async function isEditorAvailable(editor?: string): Promise<boolean> {
 
   const cmd = editorCmd.split(' ')[0]
   try {
-    // @ts-ignore - Bun 全局变量
     const resolved = Bun.which(cmd)
     return typeof resolved === 'string' && resolved.length > 0
   } catch {
@@ -52,22 +53,19 @@ export async function editInExternalEditor(
 
   // 创建临时文件
   const tempDir = join(tmpdir(), 'reason-cli')
-  if (!existsSync(tempDir)) {
-    mkdirSync(tempDir, { recursive: true })
-  }
+  await mkdir(tempDir, { recursive: true })
 
   const tempFile = join(tempDir, `${prefix}${Date.now()}${extension}`)
 
   try {
     // 写入初始内容
-    writeFileSync(tempFile, initialContent, 'utf-8')
+    await Bun.write(tempFile, initialContent)
 
     // 打开编辑器
     const editorParts = editor.split(' ')
     const editorCmd = editorParts[0]
     const editorArgs = [...editorParts.slice(1), tempFile]
 
-    // @ts-ignore - Bun 全局变量
     const proc = Bun.spawn([editorCmd, ...editorArgs], {
       stdin: 'inherit',
       stdout: 'inherit',
@@ -79,10 +77,10 @@ export async function editInExternalEditor(
 
     if (code === 0) {
       try {
-        return readFileSync(tempFile, 'utf-8')
+        return await Bun.file(tempFile).text()
       } finally {
         try {
-          unlinkSync(tempFile)
+          await unlink(tempFile)
         } catch {
           // ignore
         }
@@ -91,7 +89,7 @@ export async function editInExternalEditor(
 
     // 编辑器非正常退出，视为取消
     try {
-      unlinkSync(tempFile)
+      await unlink(tempFile)
     } catch {
       // ignore
     }
@@ -99,7 +97,7 @@ export async function editInExternalEditor(
   } catch (error) {
     // 清理临时文件
     try {
-      unlinkSync(tempFile)
+      await unlink(tempFile)
     } catch {
       // 忽略删除错误
     }
@@ -144,7 +142,6 @@ export async function openFileInEditor(
   }
 
   try {
-    // @ts-ignore - Bun 全局变量
     const proc = Bun.spawn([editorCmd, ...editorArgs], {
       stdin: 'inherit',
       stdout: 'inherit',

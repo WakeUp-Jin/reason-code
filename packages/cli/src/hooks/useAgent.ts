@@ -118,7 +118,7 @@ export function useAgent(): UseAgentReturn {
       setError(null);
 
       // 加载配置
-      const config = configManager.loadConfig();
+      const config = await configManager.loadConfig();
       const { provider, model } = parseModelId(config.model.current);
 
       // 获取 provider 配置
@@ -481,7 +481,7 @@ export function useAgent(): UseAgentReturn {
       setError(null);
 
       // 获取新 provider 的配置
-      const config = configManager.loadConfig();
+      const config = await configManager.loadConfig();
       const providerConfig = config.providers?.[provider];
 
       await agentInstance.setModel(provider, model, providerConfig?.apiKey);
