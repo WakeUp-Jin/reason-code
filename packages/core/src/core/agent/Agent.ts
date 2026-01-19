@@ -80,6 +80,9 @@ export interface AgentRunOptions {
 
   /** 压缩完成回调（用于 CLI 保存检查点） */
   onCompressionComplete?: (event: CompressionCompleteEvent) => void;
+
+  /** 外部 ExecutionStream（用于子代理） */
+  executionStream?: ExecutionStreamManager;
 }
 
 /**
@@ -319,8 +322,11 @@ export class Agent {
     // 发射 Agent 调用事件
     eventBus.emit('agent:call', { agentName: this.config.name });
 
+    // 使用外部传入的 executionStream（如果有），否则使用内部的
+    const executionStream = options?.executionStream || this.executionStream;
+
     // 启动执行流
-    this.executionStream.start();
+    executionStream.start();
 
     try {
       // 设置用户输入
@@ -342,7 +348,7 @@ export class Agent {
         {
           maxLoops: this.config.execution?.maxLoops || 100,
           agentName: this.config.name,
-          executionStream: this.executionStream,
+          executionStream: executionStream,
           model: this.config.model?.model || 'deepseek-chat',
           modelLimit: options?.modelLimit,
           sessionId: options?.sessionId,
@@ -365,7 +371,7 @@ export class Agent {
       if (loopResult.cancelled) {
         // 中断时不归档到历史，保留 currentTurn 中已完成的消息
         // sanitize 已在 executor 中调用
-        this.executionStream.cancel('用户取消执行');
+        executionStream.cancel('用户取消执行');
 
         const collected = eventBus.getData();
         return {
@@ -384,7 +390,7 @@ export class Agent {
       const costCNY = this.sessionStats.getTotalCostCNY() - costBeforeRun;
 
       // 完成执行流，传递本次执行费用
-      this.executionStream.complete(costCNY);
+      executionStream.complete(costCNY);
 
       // 从事件系统获取收集的数据
       const collected = eventBus.getData();
@@ -403,7 +409,7 @@ export class Agent {
       this.currentExecutor = null;
 
       // 执行流错误
-      this.executionStream.error(errorMessage);
+      executionStream.error(errorMessage);
 
       // 从事件系统获取收集的数据
       const collected = eventBus.getData();

@@ -125,22 +125,13 @@ export async function executeTask(
     // 6. 初始化子代理
     await subAgent.init();
 
-    // 7. 启动子执行流
-    subExecStream.start();
-
-    // 8. 执行子代理
+    // 7. 执行子代理（传入 subExecStream，Agent 内部会自动管理生命周期）
     const result = await subAgent.run(prompt, {
       sessionId: sessionId || context?.sessionId || 'unknown',
       approvalMode: context?.approvalMode,
       onConfirmRequired: context?.onConfirmRequired,
+      executionStream: subExecStream,
     });
-
-    // 9. 完成子执行流
-    if (result.success) {
-      subExecStream.complete();
-    } else {
-      subExecStream.error(result.error || 'Unknown error');
-    }
 
     logger.info('TaskTool completed', {
       agentName: subagent_type,
@@ -148,7 +139,7 @@ export async function executeTask(
       toolCallCount: toolSummary.length,
     });
 
-    // 10. 返回结果
+    // 8. 返回结果
     return {
       success: result.success,
       output: result.finalResponse || result.error || '',
