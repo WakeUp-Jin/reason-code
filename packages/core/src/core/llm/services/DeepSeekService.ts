@@ -97,10 +97,25 @@ export class DeepSeekService implements ILLMService {
         // 合并外部传入的 extraBody（优先级最高）
         const extraBody = options?.extraBody;
 
+        // 构建请求选项（支持 AbortSignal）
+        const requestOptions: Record<string, any> = {};
+        if (extraBody) {
+          requestOptions.body = extraBody;
+        }
+        if (options?.abortSignal) {
+          requestOptions.signal = options.abortSignal;
+        }
+
         const response = await this.client.chat.completions.create(
           requestBody as any,
-          extraBody ? { body: extraBody } : undefined
+          Object.keys(requestOptions).length > 0 ? requestOptions : undefined
         );
+
+        // 检查响应是否有效
+        if (!response || !response.choices || response.choices.length === 0) {
+          logger.error('DeepSeek API 返回无效响应', { response: JSON.stringify(response) });
+          throw new Error('DeepSeek API 返回无效响应: 没有 choices 字段');
+        }
 
         const message = response.choices[0]?.message;
         if (!message) {
@@ -110,16 +125,24 @@ export class DeepSeekService implements ILLMService {
         // 提取 reasoning_content（推理模型专用字段）
         const reasoningContent = (message as any).reasoning_content;
 
+        // 提取 DeepSeek 特有的 usage 字段
+        const usage = response.usage as any;
+        
         const result: LLMResponse = {
           content: message.content || '',
           reasoningContent: reasoningContent || undefined,
           toolCalls: message.tool_calls as any,
           finishReason: response.choices[0]?.finish_reason,
-          usage: response.usage
+          usage: usage
             ? {
-                promptTokens: response.usage.prompt_tokens,
-                completionTokens: response.usage.completion_tokens,
-                totalTokens: response.usage.total_tokens,
+                promptTokens: usage.prompt_tokens,
+                completionTokens: usage.completion_tokens,
+                totalTokens: usage.total_tokens,
+                // DeepSeek 特有字段：缓存命中/未命中
+                cacheHitTokens: usage.prompt_cache_hit_tokens,
+                cacheMissTokens: usage.prompt_cache_miss_tokens,
+                // 推理 token（已包含在 completionTokens 中）
+                reasoningTokens: usage.completion_tokens_details?.reasoning_tokens,
               }
             : undefined,
         };

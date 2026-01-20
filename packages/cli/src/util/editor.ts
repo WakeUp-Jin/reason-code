@@ -1,10 +1,11 @@
 /**
  * 外部编辑器集成
  * 使用 $EDITOR 环境变量打开文件
+ *
+ * 使用 Bun 原生 API 进行文件操作
  */
 
-import { spawn } from 'child_process'
-import { writeFileSync, readFileSync, unlinkSync, existsSync, mkdirSync } from 'fs'
+import { mkdir, unlink } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -22,19 +23,13 @@ export function getEditor(): string {
 export async function isEditorAvailable(editor?: string): Promise<boolean> {
   const editorCmd = editor || getEditor()
 
-  return new Promise((resolve) => {
-    const proc = spawn('which', [editorCmd.split(' ')[0]], {
-      stdio: ['ignore', 'ignore', 'ignore'],
-    })
-
-    proc.on('close', (code) => {
-      resolve(code === 0)
-    })
-
-    proc.on('error', () => {
-      resolve(false)
-    })
-  })
+  const cmd = editorCmd.split(' ')[0]
+  try {
+    const resolved = Bun.which(cmd)
+    return typeof resolved === 'string' && resolved.length > 0
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -58,62 +53,51 @@ export async function editInExternalEditor(
 
   // 创建临时文件
   const tempDir = join(tmpdir(), 'reason-cli')
-  if (!existsSync(tempDir)) {
-    mkdirSync(tempDir, { recursive: true })
-  }
+  await mkdir(tempDir, { recursive: true })
 
   const tempFile = join(tempDir, `${prefix}${Date.now()}${extension}`)
 
   try {
     // 写入初始内容
-    writeFileSync(tempFile, initialContent, 'utf-8')
+    await Bun.write(tempFile, initialContent)
 
     // 打开编辑器
     const editorParts = editor.split(' ')
     const editorCmd = editorParts[0]
     const editorArgs = [...editorParts.slice(1), tempFile]
 
-    return new Promise((resolve, reject) => {
-      const proc = spawn(editorCmd, editorArgs, {
-        stdio: 'inherit',
-      })
-
-      proc.on('close', (code) => {
-        if (code === 0) {
-          try {
-            // 读取编辑后的内容
-            const content = readFileSync(tempFile, 'utf-8')
-            resolve(content)
-          } catch (error) {
-            reject(error)
-          }
-        } else {
-          // 编辑器非正常退出，视为取消
-          resolve(null)
-        }
-
-        // 清理临时文件
-        try {
-          unlinkSync(tempFile)
-        } catch {
-          // 忽略删除错误
-        }
-      })
-
-      proc.on('error', (error) => {
-        // 清理临时文件
-        try {
-          unlinkSync(tempFile)
-        } catch {
-          // 忽略删除错误
-        }
-        reject(error)
-      })
+    const proc = Bun.spawn([editorCmd, ...editorArgs], {
+      stdin: 'inherit',
+      stdout: 'inherit',
+      stderr: 'inherit',
     })
+
+    await proc.exited
+    const code = proc.exitCode ?? -1
+
+    if (code === 0) {
+      try {
+        return await Bun.file(tempFile).text()
+      } finally {
+        try {
+          await unlink(tempFile)
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    // 编辑器非正常退出，视为取消
+    try {
+      await unlink(tempFile)
+    } catch {
+      // ignore
+    }
+    return null
   } catch (error) {
     // 清理临时文件
     try {
-      unlinkSync(tempFile)
+      await unlink(tempFile)
     } catch {
       // 忽略删除错误
     }
@@ -157,18 +141,16 @@ export async function openFileInEditor(
     editorArgs.push(filePath)
   }
 
-  return new Promise((resolve) => {
-    const proc = spawn(editorCmd, editorArgs, {
-      stdio: 'inherit',
+  try {
+    const proc = Bun.spawn([editorCmd, ...editorArgs], {
+      stdin: 'inherit',
+      stdout: 'inherit',
+      stderr: 'inherit',
     })
 
-    proc.on('close', (code) => {
-      resolve(code === 0)
-    })
-
-    proc.on('error', () => {
-      resolve(false)
-    })
-  })
+    await proc.exited
+    return proc.exitCode === 0
+  } catch {
+    return false
+  }
 }
-

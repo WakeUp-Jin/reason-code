@@ -32,8 +32,28 @@ export function PanelSessionList({ onClose }: PanelSessionListProps) {
 
   // 处理选择
   const handleSelect = (option: SelectOption<string>) => {
-    switchSession(option.value);
-    goToSession(option.value);
+    const sessionId = option.value;
+    
+    // 切换会话
+    switchSession(sessionId);
+    
+    // 计算并更新该会话的历史费用
+    const sessionMessages = useAppStore.getState().messages[sessionId] || [];
+    const historyCostCNY = sessionMessages.reduce((sum, msg) => {
+      const cost = msg.metadata?.cost;
+      if (typeof cost === 'number') {
+        return sum + cost;
+      } else if (cost && typeof cost === 'object' && 'totalCost' in cost) {
+        // 兼容旧格式：{ inputCost, outputCost, totalCost }
+        const totalCost = (cost as any).totalCost;
+        return sum + (typeof totalCost === 'number' ? totalCost : 0);
+      }
+      return sum;
+    }, 0);
+    
+    useAppStore.getState().setSessionTotalCost(historyCostCNY);
+    
+    goToSession(sessionId);
     onClose();
   };
 

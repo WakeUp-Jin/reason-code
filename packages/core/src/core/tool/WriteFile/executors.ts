@@ -1,9 +1,11 @@
 /**
  * 写入文件工具 - 执行器
  * 将内容写入指定文件，用于验证工具权限系统
+ *
+ * 使用 Bun 原生 API 进行文件操作
  */
 
-import * as fs from 'fs';
+import { mkdir } from 'fs/promises';
 import * as path from 'path';
 import type { ToolResult } from '../types.js';
 
@@ -49,20 +51,26 @@ export async function writeFileExecutor(
   const append = args.append ?? false;
 
   try {
+    const file = Bun.file(targetPath);
+
     // 检查文件是否已存在
-    const isNewFile = !fs.existsSync(targetPath);
+    const isNewFile = !(await file.exists());
 
     // 确保目录存在
     const dir = path.dirname(targetPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    await mkdir(dir, { recursive: true });
 
     // 写入文件
     if (append) {
-      fs.appendFileSync(targetPath, args.content, encoding);
+      // 追加模式：先读取现有内容，再写入
+      let existingContent = '';
+      if (!isNewFile) {
+        existingContent = await file.text();
+      }
+      await Bun.write(targetPath, existingContent + args.content);
     } else {
-      fs.writeFileSync(targetPath, args.content, encoding);
+      // 覆盖模式：直接写入
+      await Bun.write(targetPath, args.content);
     }
 
     // 获取写入的字节数

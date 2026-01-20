@@ -18,10 +18,10 @@ import type { TodoItem, TodoStatus } from '@reason-cli/core';
  * Unicode 图标定义
  */
 const TODO_ICONS = {
-  PENDING: '☐',      // U+2610 Ballot Box - 待处理
-  IN_PROGRESS: '◉',  // U+25C9 Fisheye - 进行中
-  COMPLETED: '☑',    // U+2611 Ballot Box with Check - 已完成
-  CANCELLED: '⊠',    // U+22A0 Squared Times - 已取消
+  PENDING: '☐', // U+2610 Ballot Box - 待处理
+  IN_PROGRESS: '◉', // U+25C9 Fisheye - 进行中
+  COMPLETED: '☑', // U+2611 Ballot Box with Check - 已完成
+  CANCELLED: '⊠', // U+22A0 Squared Times - 已取消
 } as const;
 
 /**
@@ -75,11 +75,7 @@ function TodoItemDisplay({ todo }: TodoItemDisplayProps) {
       <Text color={color} bold={todo.status === 'in_progress'}>
         {icon}{' '}
       </Text>
-      <Text
-        color={color}
-        strikethrough={isStrikethrough}
-        dimColor={isDimmed}
-      >
+      <Text color={color} strikethrough={isStrikethrough} dimColor={isDimmed}>
         {todo.content}
       </Text>
     </Box>
@@ -99,11 +95,10 @@ export function TodoDisplay({ todos }: TodoDisplayProps) {
   }
 
   return (
-    <Box flexDirection="column" paddingLeft={2}>
+    <Box flexDirection="column" marginTop={1} paddingLeft={2}>
       {todos.map((todo) => (
         <TodoItemDisplay key={todo.id} todo={todo} />
       ))}
     </Box>
   );
 }
-

@@ -28,26 +28,26 @@ export {
 // 上下文模块
 export {
   BaseContext,
-  SystemPromptContext,
+  SystemPromptContext as SystemPromptModule,
   HistoryContext,
   CurrentTurnContext,
 } from './context/index.js';
 
-// 上下文压缩和检查
-export {
-  TokenEstimator,
-  ContextChecker,
-  DEFAULT_THRESHOLDS,
-  HistoryCompressor,
-  ToolOutputSummarizer,
-} from './context/index.js';
-export type { ContextThresholds } from './context/index.js';
+// 上下文工具
+export { TokenEstimator, ToolOutputSummarizer } from './context/index.js';
+export type { CompressionConfig, TokenUsage } from './context/index.js';
 
 // Prompt 管理
 export * from './promptManager/index.js';
 
 // 执行流
 export * from './execution/index.js';
+
+// 会话统计
+export * from './stats/index.js';
+
+// 会话管理
+export * from './session/index.js';
 
 // 日志系统
 export { logger } from '../utils/logger.js';

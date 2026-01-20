@@ -214,25 +214,31 @@ export class ToolScheduler {
       // 记录工具开始执行
       toolLogger.execute(toolName, callId, args);
 
-      // 6. 执行工具
+      // 6. 执行工具（注入 callId 和 executionStream 供子代理使用）
       const startTime = Date.now();
-      const result = await this.toolManager.execute(toolName, args, context);
+      const enrichedContext: InternalToolContext = {
+        ...context,
+        callId,
+        executionStream: this.executionStream,
+      };
+      const result = await this.toolManager.execute(toolName, args, enrichedContext);
       const resultString = JSON.stringify(result);
 
       // 记录原始输出（DEBUG 级别完整记录）
-      toolLogger.rawOutput(toolName, callId, resultString);
+      toolLogger.rawOutput(toolName, callId, resultString.slice(0,5000)+'...');
 
       // 7. 工具输出总结（可选）
       let processedOutput = resultString;
       if (this.enableToolSummarization && this.toolOutputSummarizer) {
+        logger.info(`Tool output summarization enabled for tool: ${toolName}`, { args });
         try {
-          const summaryResult = await this.toolOutputSummarizer.process(resultString, toolName);
+          const summaryResult = await this.toolOutputSummarizer.process(resultString, toolName,args);
           if (summaryResult.summarized || summaryResult.truncated) {
             // 记录压缩详情（WARN 级别，包含完整的压缩前后数据）
             toolLogger.compressed(
               toolName,
               callId,
-              resultString, // 完整原始输出
+              resultString.slice(0,1000)+'...', // 完整原始输出
               summaryResult.originalTokens,
               summaryResult.output, // 完整压缩输出
               summaryResult.processedTokens
@@ -266,7 +272,9 @@ export class ToolScheduler {
         toolLogger.error(toolName, callId, result.error || 'Unknown error', args);
       }
 
-      this.executionStream?.completeToolCall(callId, processedOutput, summary);
+      // 从工具结果中提取策略信息（如 ripgrep、git-grep、javascript 等）
+      const strategy = result?.data?.strategy;
+      this.executionStream?.completeToolCall(callId, processedOutput, summary, strategy);
 
       // 9. 返回结果
       // 对于统一结果接口格式，根据 success 字段决定返回成功还是失败
@@ -310,6 +318,10 @@ export class ToolScheduler {
    * 批量调度原始 LLM 工具调用
    * 直接接受 LLM 返回的 toolCalls 数组，内部处理参数解析和循环
    *
+   * 自动判断是否可以并行执行：
+   * - 如果所有工具都是只读的，则并行执行
+   * - 否则串行执行
+   *
    * @param toolCalls - LLM 返回的工具调用数组
    * @param context - 工具执行上下文
    * @param options - 可选配置（thinkingContent 只传递给第一个工具调用）
@@ -322,27 +334,89 @@ export class ToolScheduler {
     context?: InternalToolContext,
     options?: { thinkingContent?: string }
   ): Promise<ScheduleResult[]> {
-    const results: ScheduleResult[] = [];
-    let isFirstToolCall = true;
+    // 判断是否可以并行执行
+    const canParallel = this.canExecuteInParallel(toolCalls);
 
-    for (const toolCall of toolCalls) {
-      const result = await this.schedule(
-        {
-          callId: toolCall.id,
-          toolName: toolCall.function.name,
-          rawArgs: toolCall.function.arguments,
-          thinkingContent: isFirstToolCall ? options?.thinkingContent : undefined,
-        },
-        context
-      );
-      isFirstToolCall = false;
-      results.push(result);
+    if (canParallel && toolCalls.length > 1) {
+      // 并行执行（只读工具）
+      logger.info('Executing tools in parallel', {
+        count: toolCalls.length,
+        tools: toolCalls.map((tc) => tc.function.name),
+      });
 
-      // 等待避免请求过快
-      await sleep(500);
+      let isFirstToolCall = true;
+      const promises = toolCalls.map((toolCall) => {
+        const thinkingContent = isFirstToolCall ? options?.thinkingContent : undefined;
+        isFirstToolCall = false;
+
+        return this.schedule(
+          {
+            callId: toolCall.id,
+            toolName: toolCall.function.name,
+            rawArgs: toolCall.function.arguments,
+            thinkingContent,
+          },
+          context
+        );
+      });
+
+      return Promise.all(promises);
+    } else {
+      // 串行执行（写操作或有依赖）
+      if (toolCalls.length > 1) {
+        logger.info('Executing tools serially', {
+          count: toolCalls.length,
+          tools: toolCalls.map((tc) => tc.function.name),
+        });
+      }
+
+      const results: ScheduleResult[] = [];
+      let isFirstToolCall = true;
+
+      for (const toolCall of toolCalls) {
+        const result = await this.schedule(
+          {
+            callId: toolCall.id,
+            toolName: toolCall.function.name,
+            rawArgs: toolCall.function.arguments,
+            thinkingContent: isFirstToolCall ? options?.thinkingContent : undefined,
+          },
+          context
+        );
+        isFirstToolCall = false;
+        results.push(result);
+
+        // 等待避免请求过快
+        await sleep(500);
+      }
+
+      return results;
     }
+  }
 
-    return results;
+  /**
+   * 判断工具调用是否可以并行执行
+   * 只有全部是只读工具时才并行
+   */
+  private canExecuteInParallel(toolCalls: Array<{ function: { name: string } }>): boolean {
+    return toolCalls.every((toolCall) => {
+      const tool = this.toolManager.getTool(toolCall.function.name);
+
+      if (!tool) {
+        // 工具不存在，保守处理：串行
+        return false;
+      }
+
+      // 检查工具是否是只读的
+      const isReadOnly = tool.isReadOnly?.() ?? false;
+
+      logger.debug('Tool parallel check', {
+        toolName: toolCall.function.name,
+        isReadOnly,
+      });
+
+      return isReadOnly;
+    });
   }
 
   /**

@@ -12,7 +12,14 @@ import { searchLogger } from '../../../utils/logUtils.js';
 import { InternalToolContext } from '../types.js';
 import { ensureReasonBinDir } from '../utils/reasonPaths.js';
 import { RIPGREP_AUTO_DOWNLOAD_ENABLED } from '../utils/ripgrepPolicy.js';
-import { isAbortError, toErrorMessage } from '../utils/error-utils.js';
+import {
+  isAbortError,
+  isTimeoutError,
+  toErrorMessage,
+  withTimeout,
+  SEARCH_TIMEOUT_MS,
+} from '../utils/error-utils.js';
+import { GrepMatch } from './types.js';
 
 /**
  * Grep 执行器
@@ -45,21 +52,32 @@ export async function grepExecutor(
     };
   }
 
-  try {
-    // 执行搜索
-    const { matches, strategy, warning } = await executeGrepStrategy(args.pattern, searchPath, {
-      include: args.include,
-      limit: GREP_DEFAULTS.LIMIT,
-      binDir: binDirForRipgrep,
-      signal: context?.abortSignal,
-    });
+  // 记录搜索开始（便于排查性能问题）
+  searchLogger.start('Grep', searchPath, args.pattern, args.include);
 
-    // 计算是否截断
-    const truncated = matches.length >= GREP_DEFAULTS.LIMIT;
+  try {
+    // 执行搜索（带超时控制）
+    // 使用工厂函数模式，让超时时能够通过 signal 终止底层 ripgrep 进程
+    const { matches, strategy, warning } = await withTimeout(
+      (signal) =>
+        executeGrepStrategy(args.pattern, searchPath, {
+          include: args.include,
+          binDir: binDirForRipgrep,
+          signal, // 使用 withTimeout 提供的 signal，超时时会自动 abort
+          limit: GREP_DEFAULTS.LIMIT, // 全局结果上限（同时用于 stdout 行数上限）
+          maxCount: 100, // 🔑 限制每个文件最多 100 条匹配，防止输出过大
+        }),
+      SEARCH_TIMEOUT_MS,
+      'Grep',
+      context?.abortSignal
+    );
+
+    //填充文件修改时间并排序
+    const sortedMatches=await sortMatchesByMtime(matches);
 
     // 记录完成
     const duration = Date.now() - startTime;
-    searchLogger.complete('Grep', strategy, matches.length, duration);
+    searchLogger.complete('Grep', strategy, sortedMatches.length, duration);
 
     return {
       success: true,
@@ -67,15 +85,24 @@ export async function grepExecutor(
       data: {
         pattern: args.pattern,
         directory: searchPath,
-        matches,
+        matches:sortedMatches,
         count: matches.length,
-        truncated,
         strategy,
       },
     };
   } catch (error: unknown) {
-    if (!isAbortError(error)) {
+    // 超时或中止不记录为错误
+    if (!isAbortError(error) && !isTimeoutError(error)) {
       searchLogger.error('Grep', toErrorMessage(error), ['executor']);
+    }
+
+    // 超时返回特定错误信息
+    if (isTimeoutError(error)) {
+      return {
+        success: false,
+        error: toErrorMessage(error),
+        data: null,
+      };
     }
 
     return {
@@ -120,12 +147,6 @@ export function renderGrepResultForAssistant(result: GrepResult): string {
       }
       lines.push('');
     }
-
-    if (data.truncated) {
-      lines.push(
-        `(Results are truncated at ${GREP_DEFAULTS.LIMIT} matches. Consider using a more specific pattern or path.)`
-      );
-    }
   }
 
   // 警告信息
@@ -154,7 +175,47 @@ export function getGrepSummary(result: GrepResult): string {
     return 'No matches found';
   }
 
-  const truncatedNote = data.truncated ? ' (truncated)' : '';
   const warningNote = result.warning ? ' ⚠️' : '';
-  return `Found ${data.count} match(es)${truncatedNote}${warningNote}`;
+  return `Found ${data.count} match(es)${warningNote}`;
 }
+
+
+/**
+ * 按照文件修改时间排序匹配结果
+ * 
+ */
+async function sortMatchesByMtime(matches: GrepMatch[]): Promise<GrepMatch[]> {
+  if(matches.length === 0) {
+    return matches;
+  }
+
+  //1、收集所有唯一的文件路径
+  const uniqueFiles=new Set<string>();
+  for(const match of matches) {
+    uniqueFiles.add(match.filePath);
+  }
+
+  //2、对每个文件路径获取修改时间
+  const mtimeMap=new Map<string,number>();
+  for(const filePath of uniqueFiles) {
+    try {
+      const stats=await Bun.file(filePath).stat();
+      mtimeMap.set(filePath,stats.mtime.getTime());
+    } catch (error) {
+      //文件不存在或无法访问，设置为0
+      mtimeMap.set(filePath,0);
+    }
+  }
+
+  //3、填充每个匹配的mtime
+  const matchesWithMtime=matches.map(match =>({
+    ...match,
+    mtime:mtimeMap.get(match.filePath) || 0,
+  }))
+
+  //4、按mtime排序
+  matchesWithMtime.sort((a,b)=>(b.mtime || 0)-(a.mtime || 0));
+  return matchesWithMtime;
+
+}
+

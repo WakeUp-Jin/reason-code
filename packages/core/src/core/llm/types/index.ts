@@ -1,5 +1,6 @@
 import type { ExecutionStreamManager } from '../../execution/index.js';
 import type { ApprovalMode, ConfirmDetails, ConfirmOutcome } from '../../tool/types.js';
+import type { SessionStats } from '../../stats/index.js';
 
 /** 图片数据 */
 export interface ImageData {
@@ -85,6 +86,12 @@ export interface LLMResponse {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+    /** 缓存命中的 token 数（DeepSeek 专用） */
+    cacheHitTokens?: number;
+    /** 缓存未命中的 token 数（DeepSeek 专用） */
+    cacheMissTokens?: number;
+    /** 推理 token 数（已包含在 completionTokens 中，用于显示） */
+    reasoningTokens?: number;
   };
 }
 
@@ -110,6 +117,8 @@ export interface LLMChatOptions {
   responseFormat?: any;
   /** 额外参数 */
   extraBody?: Record<string, any>;
+  /** 中断信号（用于取消 API 请求） */
+  abortSignal?: AbortSignal;
 }
 
 /**
@@ -124,6 +133,8 @@ export interface ToolLoopResult {
   error?: string;
   /** 循环次数 */
   loopCount: number;
+  /** 是否被用户取消 */
+  cancelled?: boolean;
 }
 
 /**
@@ -144,6 +155,8 @@ export interface ToolLoopConfig {
   enableCompression?: boolean;
   /** 是否启用工具输出总结 */
   enableToolSummarization?: boolean;
+  /** 会话 ID（用于压缩时引用历史文件） */
+  sessionId?: string;
 
   // ============================================================
   // 工具权限验证配置
@@ -157,6 +170,27 @@ export interface ToolLoopConfig {
     toolName: string,
     details: ConfirmDetails
   ) => Promise<ConfirmOutcome>;
+
+  // ============================================================
+  // 中断控制
+  // ============================================================
+
+  /** 中断信号（用于取消执行） */
+  abortSignal?: AbortSignal;
+
+  // ============================================================
+  // 统计相关
+  // ============================================================
+
+  /** 会话统计（用于费用计算） */
+  sessionStats?: SessionStats;
+
+  // ============================================================
+  // 工作目录
+  // ============================================================
+
+  /** 工作目录（用于传递给工具） */
+  workingDirectory?: string;
 }
 
 /** LLM Service 核心接口 */

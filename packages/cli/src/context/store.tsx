@@ -2,20 +2,16 @@ import React, { createContext, useContext, type ReactNode } from 'react';
 import { create } from 'zustand';
 import { useShallow } from 'zustand/react/shallow';
 import { ToolCallStatus } from '@reason-cli/core';
-
-// Session 类型
-export interface Session {
-  id: string;
-  title: string;
-  createdAt: number;
-  updatedAt: number;
-}
+import { Session, type SessionMetadata } from '@reason-code/core';
 
 // Token 使用情况
 export interface TokenUsage {
-  inputTokens: number; // 输入 token 数
-  outputTokens: number; // 输出 token 数
+  inputTokens: number; // 输入 token 数（prompt_tokens）
+  outputTokens: number; // 输出 token 数（completion_tokens）
   totalTokens: number; // 总 token 数
+  cacheHitTokens?: number; // 缓存命中 token 数（DeepSeek）
+  cacheMissTokens?: number; // 缓存未命中 token 数（DeepSeek）
+  reasoningTokens?: number; // 推理 token 数（已包含在 outputTokens 中）
 }
 
 // 消息元数据
@@ -26,12 +22,8 @@ export interface MessageMetadata {
   // 模型信息
   model?: string;
 
-  // 成本信息（可选）
-  cost?: {
-    inputCost: number; // 输入成本（USD）
-    outputCost: number; // 输出成本（USD）
-    totalCost: number; // 总成本（USD）
-  };
+  // 成本信息（可选）- 单次费用（CNY）
+  cost?: number;
 
   // 生成信息（可选）
   generationInfo?: {
@@ -63,25 +55,54 @@ export interface ToolCallInfo {
   error?: string;
   // 工具调用前的思考内容（LLM 在调用工具前的 content）
   thinkingContent?: string;
+
+  // 子代理工具调用摘要（仅 task 工具）
+  subAgentSummary?: Array<{
+    id: string;
+    tool: string;
+    status: 'running' | 'completed' | 'error';
+    title?: string;
+  }>;
 }
 
-// Message 类型
+/**
+ * CLI 运行时消息类型
+ *
+ * 📌 与 Core StoredMessage 的关系：
+ * - 结构兼容（鸭子类型），但不继承
+ * - 保存时：通过 filterForStorage() 转换为 StoredMessage
+ * - 加载时：通过 restoreFromStorage() 从 StoredMessage 恢复
+ *
+ * 📌 CLI 专用扩展：
+ * - isStreaming: 流式输出状态（运行时字段，不持久化）
+ * - metadata: 类型安全的元数据（MessageMetadata）
+ * - toolCall: 类型安全的工具调用信息（ToolCallInfo）
+ *
+ * 📌 为什么不继承 StoredMessage？
+ * - TypeScript 不允许子类型收窄父类型（metadata: any → MessageMetadata）
+ * - 保持 CLI 层的类型安全
+ * - 职责分离：Core 负责通用存储，CLI 负责特定平台
+ *
+ * @see Core StoredMessage: packages/core/src/core/session/types.ts
+ * @see 转换函数: packages/cli/src/util/messageUtils.ts
+ */
 export interface Message {
   id: string;
   sessionId: string;
   role: MessageRole;
   content: string;
   timestamp: number;
+
+  /** 流式输出状态（CLI 专用，不持久化） */
   isStreaming?: boolean;
 
-  // 元数据
+  /** 消息元数据（类型安全） */
   metadata?: MessageMetadata;
 
-  // 工具调用信息（仅 role='tool' 时有）
+  /** 工具调用信息（类型安全） */
   toolCall?: ToolCallInfo;
 
-  // 工具调用列表（仅 role='assistant' 时有，用于历史加载）
-  // 与 LLM API 的 tool_calls 字段对应，确保历史消息序列合法
+  /** 工具调用列表（仅 role='assistant' 时有，用于历史加载） */
   tool_calls?: Array<{
     id: string;
     type: 'function';
@@ -91,10 +112,9 @@ export interface Message {
     };
   }>;
 
-  // ✅ API 标准字段（仅 role='tool' 时有）
-  // 符合 OpenAI/DeepSeek API 规范
-  tool_call_id?: string; // 对应的 tool_call id
-  name?: string; // 工具名称
+  /** API 标准字段（仅 role='tool' 时有） */
+  tool_call_id?: string;
+  name?: string;
 }
 
 // 消息更新类型（支持 toolCall 部分更新）
@@ -151,7 +171,7 @@ export interface Config {
 // Store 状态类型
 interface AppState {
   // Session 相关
-  sessions: Session[];
+  sessions: SessionMetadata[];
   currentSessionId: string | null;
 
   // Message 相关
@@ -167,11 +187,16 @@ interface AppState {
   // 配置
   config: Config;
 
+  /** 当前会话累计费用（CNY） */
+  sessionTotalCost: number;
+
   // Session Actions
-  createSession: (title?: string) => Session;
-  deleteSession: (id: string) => void;
-  renameSession: (id: string, title: string) => void;
+  createSession: (title?: string) => Promise<SessionMetadata>;
+  deleteSession: (id: string) => Promise<void>;
+  renameSession: (id: string, title: string) => Promise<void>;
   switchSession: (id: string) => void;
+  /** 更新会话（用于子代理会话设置 parentId 等字段） */
+  updateSession: (id: string, updates: Partial<SessionMetadata>) => Promise<void>;
 
   // Message Actions
   addMessage: (
@@ -195,9 +220,12 @@ interface AppState {
   updateConfig: (updates: Partial<Config>) => void;
   toggleApprovalMode: () => void; // 循环切换批准模式
 
+  /** 设置会话费用（用于初始化和更新） */
+  setSessionTotalCost: (cost: number) => void;
+
   // Initialization from disk
   initializeFromDisk: (data: {
-    sessions: Session[];
+    sessions: SessionMetadata[];
     messages: Record<string, Message[]>;
     currentSessionId: string | null;
     currentModel: string;
@@ -280,6 +308,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     },
   ],
   currentModel: 'deepseek/deepseek-chat',
+  sessionTotalCost: 0, // 当前会话累计费用（CNY）
   config: {
     theme: 'kanagawa',
     mode: 'dark',
@@ -290,35 +319,63 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   // Session Actions
-  createSession: (title) => {
-    // 生成默认标题：使用日期时间而非简单编号
-    let defaultTitle = '';
-    if (!title) {
-      const now = new Date();
-      const month = now.getMonth() + 1;
-      const day = now.getDate();
-      const hour = now.getHours();
-      const minute = String(now.getMinutes()).padStart(2, '0');
-      defaultTitle = `${month}/${day} ${hour}:${minute}`;
+  createSession: async (title) => {
+    try {
+      // 使用Core的全局Session模块
+      const session = await Session.create({ title });
+      
+      // 更新UI状态
+      set((state) => ({
+        sessions: [...state.sessions, session],
+        currentSessionId: session.id,
+        messages: { ...state.messages, [session.id]: [] },
+      }));
+      
+      return session;
+    } catch (error) {
+      console.error('Failed to create session:', error);
+      // 回退到本地创建
+      return createLocalSession(title);
     }
+    
+    function createLocalSession(title?: string): SessionMetadata {
+      // 生成默认标题：使用日期时间而非简单编号
+      let defaultTitle = '';
+      if (!title) {
+        const now = new Date();
+        const month = now.getMonth() + 1;
+        const day = now.getDate();
+        const hour = now.getHours();
+        const minute = String(now.getMinutes()).padStart(2, '0');
+        defaultTitle = `${month}/${day} ${hour}:${minute}`;
+      }
 
-    const session: Session = {
-      id: generateId(),
-      title: title || defaultTitle,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
+      const session: SessionMetadata = {
+        id: generateId(),
+        title: title || defaultTitle,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
 
-    set((state) => ({
-      sessions: [...state.sessions, session],
-      currentSessionId: session.id,
-      messages: { ...state.messages, [session.id]: [] },
-    }));
+      set((state) => ({
+        sessions: [...state.sessions, session],
+        currentSessionId: session.id,
+        messages: { ...state.messages, [session.id]: [] },
+      }));
 
-    return session;
+      return session;
+    }
   },
 
-  deleteSession: (id) => {
+  deleteSession: async (id) => {
+    try {
+      // 使用Core的全局Session模块
+      await Session.remove(id);
+    } catch (error) {
+      console.error('Failed to delete session via Core:', error);
+    }
+    
+    // 更新UI状态
     set((state) => {
       const { [id]: _, ...remainingMessages } = state.messages;
       const newSessions = state.sessions.filter((s) => s.id !== id);
@@ -331,7 +388,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
-  renameSession: (id, title) => {
+  renameSession: async (id, title) => {
+    try {
+      // 使用Core的全局Session模块
+      await Session.update(id, { title });
+    } catch (error) {
+      console.error('Failed to rename session via Core:', error);
+    }
+    
+    // 更新UI状态
     set((state) => ({
       sessions: state.sessions.map((s) =>
         s.id === id ? { ...s, title, updatedAt: Date.now() } : s
@@ -341,6 +406,22 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   switchSession: (id) => {
     set({ currentSessionId: id });
+  },
+
+  updateSession: async (id, updates) => {
+    try {
+      // 使用Core的全局Session模块
+      await Session.update(id, updates);
+    } catch (error) {
+      console.error('Failed to update session via Core:', error);
+    }
+    
+    // 更新UI状态
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === id ? { ...s, ...updates, updatedAt: Date.now() } : s
+      ),
+    }));
   },
 
   // Message Actions
@@ -472,6 +553,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
+  // 设置会话费用（用于初始化和更新）
+  setSessionTotalCost: (cost) => {
+    set({ sessionTotalCost: cost });
+  },
+
   // Initialization from disk
   initializeFromDisk: (data) => {
     set({
@@ -507,7 +593,7 @@ export function useStore<T>(selector: (state: AppState) => T): T {
 }
 
 // 便捷 Hooks
-export function useCurrentSession(): Session | null {
+export function useCurrentSession(): SessionMetadata | null {
   return useAppStore((state) => {
     const id = state.currentSessionId;
     return id ? state.sessions.find((s) => s.id === id) || null : null;
@@ -521,8 +607,29 @@ export function useCurrentMessages(): Message[] {
   });
 }
 
-export function useSessions(): Session[] {
+export function useSessions(): SessionMetadata[] {
   return useAppStore((state) => state.sessions);
+}
+
+// 获取已完成的消息（非流式）
+// 使用 useShallow 进行浅比较，避免不必要的重新渲染
+export function useCompletedMessages(): Message[] {
+  return useAppStore(
+    useShallow((state) => {
+      const id = state.currentSessionId;
+      const messages = id ? state.messages[id] || [] : [];
+      return messages.filter((m) => !m.isStreaming);
+    })
+  );
+}
+
+// 获取当前流式消息
+export function useStreamingMessage(): Message | null {
+  return useAppStore((state) => {
+    const id = state.currentSessionId;
+    const messages = id ? state.messages[id] || [] : [];
+    return messages.find((m) => m.isStreaming) || null;
+  });
 }
 
 // 找到第一个阻塞点（未完成的工具或流式消息）
@@ -570,25 +677,4 @@ export function useDynamicMessages(): Message[] {
       return messages.slice(blockingIndex).filter((m) => !m.isStreaming);
     })
   );
-}
-
-// 获取已完成的消息（非流式）- 保留用于向后兼容
-// 使用 useShallow 进行浅比较，避免不必要的重新渲染
-export function useCompletedMessages(): Message[] {
-  return useAppStore(
-    useShallow((state) => {
-      const id = state.currentSessionId;
-      const messages = id ? state.messages[id] || [] : [];
-      return messages.filter((m) => !m.isStreaming);
-    })
-  );
-}
-
-// 获取当前流式消息
-export function useStreamingMessage(): Message | null {
-  return useAppStore((state) => {
-    const id = state.currentSessionId;
-    const messages = id ? state.messages[id] || [] : [];
-    return messages.find((m) => m.isStreaming) || null;
-  });
 }

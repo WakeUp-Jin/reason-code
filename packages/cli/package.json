@@ -1,5 +1,5 @@
 {
-  "name": "@reason-cli/cli",
+  "name": "@reason-code/cli",
   "version": "0.0.1",
   "type": "module",
   "license": "Apache-2.0",
@@ -8,11 +8,11 @@
   },
   "scripts": {
     "dev": "bun --watch run src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target node && chmod +x dist/index.js",
+    "build": "bun build src/index.ts --outdir dist --target bun && chmod +x dist/index.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@reason-cli/core": "workspace:*",
+    "@reason-code/core": "workspace:*",
     "chalk": "^5.0.0",
     "commander": "^12.0.0",
     "diff": "^5.1.0",
@@ -28,6 +28,7 @@
     "zustand": "^4.4.7"
   },
   "devDependencies": {
+    "@types/bun": "^1.2.9",
     "@types/diff": "^5.0.9",
     "@types/node": "catalog:",
     "@types/react": "^19.2.7",

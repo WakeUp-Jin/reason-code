@@ -7,13 +7,14 @@ import type { ILLMService } from '../../llm/types/index.js';
 import type { ToolOutputProcessResult } from '../types.js';
 import { TokenEstimator } from './tokenEstimator.js';
 import { TOOL_OUTPUT_SUMMARY_PROMPT } from '../../promptManager/summarization/toolOutputSummary.js';
-import { DEFAULT_THRESHOLDS } from './ContextChecker.js';
 
 /**
  * 默认配置
  */
 const DEFAULT_MAX_FILE_SIZE = 100_000;
 const DEFAULT_TRUNCATE_LINES = 1000;
+/** 工具输出超过此 Token 数触发总结 */
+const DEFAULT_TOOL_OUTPUT_SUMMARY_THRESHOLD = 2000;
 
 /**
  * 工具输出总结器类
@@ -38,7 +39,7 @@ export class ToolOutputSummarizer {
    * @param threshold - Token 阈值（默认 2000）
    * @returns 是否需要总结
    */
-  needsSummary(output: string, threshold: number = DEFAULT_THRESHOLDS.toolOutputSummary): boolean {
+  needsSummary(output: string, threshold: number = DEFAULT_TOOL_OUTPUT_SUMMARY_THRESHOLD): boolean {
     return TokenEstimator.estimate(output) > threshold;
   }
 
@@ -62,9 +63,10 @@ export class ToolOutputSummarizer {
    *
    * @param output - 工具输出
    * @param toolName - 工具名称（用于上下文）
+   * @param params - 工具参数（用于上下文）
    * @returns 处理结果
    */
-  async process(output: string, toolName?: string): Promise<ToolOutputProcessResult> {
+  async process(output: string, toolName?: string,params?: any): Promise<ToolOutputProcessResult> {
     const originalTokens = TokenEstimator.estimate(output);
 
     // 1. 超大输出：先截断，再总结
@@ -111,8 +113,9 @@ export class ToolOutputSummarizer {
    * @param toolName - 工具名称
    * @returns 总结后的内容
    */
-  async summarize(output: string, toolName?: string): Promise<string> {
+  async summarize(output: string, toolName?: string,params?: any): Promise<string> {
     const contextInfo = toolName ? `工具名称: ${toolName}\n\n` : '';
+    const paramsInfo = params ? `工具参数: ${JSON.stringify(params)}\n\n` : '';
     const prompt = `${TOOL_OUTPUT_SUMMARY_PROMPT}${contextInfo}${output}`;
 
     try {

@@ -20,22 +20,26 @@ export const GrepTool: InternalTool<GrepArgs, GrepResult> = {
   name: 'Grep',
   category: 'search',
   internal: true,
-  description: '根据正则表达式模式搜索文件内容。支持递归搜索目录。返回匹配的文件路径、行号和行内容。',
+  description:
+    '根据正则表达式模式搜索文件内容。支持递归搜索目录。返回匹配的文件路径、行号和行内容。',
   version: '1.0.0',
   parameters: {
     type: 'object',
     properties: {
       pattern: {
         type: 'string',
-        description: '正则表达式搜索模式。示例：\n- "function\\s+\\w+" 匹配函数声明\n- "TODO|FIXME" 匹配待办事项\n- "import.*from" 匹配导入语句',
+        description:
+          '正则表达式搜索模式。示例：\n- "function\\s+\\w+" 匹配函数声明\n- "TODO|FIXME" 匹配待办事项\n- "import.*from" 匹配导入语句',
       },
       path: {
         type: 'string',
-        description: '搜索目录路径。如果不指定，则使用当前工作目录。',
+        description:
+          '搜索的目录路径（不是文件路径）。如果不指定，则在当前工作目录递归搜索。如需搜索特定文件，请使用 include 参数过滤。',
       },
       include: {
         type: 'string',
-        description: '文件过滤模式。示例：\n- "*.ts" 只搜索 TypeScript 文件\n- "*.{js,jsx}" 搜索 JS 和 JSX 文件',
+        description:
+          '文件过滤模式。示例：\n- "*.ts" 只搜索 TypeScript 文件\n- "*.{js,jsx}" 搜索 JS 和 JSX 文件',
       },
     },
     required: ['pattern'],
@@ -51,4 +55,3 @@ export const GrepTool: InternalTool<GrepArgs, GrepResult> = {
 };
 
 export default GrepTool;
-

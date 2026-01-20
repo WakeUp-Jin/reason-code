@@ -1,65 +1,31 @@
 /**
  * 评估模块使用示例
- * 展示如何使用 SimpleAgent 和 MultiAgent 进行测试
+ * 展示如何使用 Agent 进行测试
  */
 import { eventBus } from './EventBus.js';
 import { evaluate, formatResult } from './evaluate.js';
-import {
-  TEST_CASES,
-  getTestById,
-  getSimpleAgentTests,
-  getMultiAgentTests,
-} from './dataset.js';
+import { TEST_CASES, getTestById, getSimpleAgentTests } from './dataset.js';
 import { TestCase, EvaluateResult } from './types.js';
-import { SimpleAgent, MainAgent } from '../core/agent/index.js';
-import { createLLMService } from '../core/llm/index.js';
-import { ILLMService } from '../core/llm/types/index.js';
+import { agentManager, Agent, buildAgent } from '../core/agent/index.js';
 
-// 缓存 LLM 服务和 Agent 实例
-let llmService: ILLMService | null = null;
-let simpleAgent: SimpleAgent | null = null;
-let multiAgent: MainAgent | null = null;
+// 缓存 Agent 实例
+let agent: Agent | null = null;
 
 /**
- * 获取 LLM 服务（延迟初始化）
+ * 获取 Agent 实例（延迟初始化）
  */
-async function getLLMService(): Promise<ILLMService> {
-  if (!llmService) {
-    llmService = await createLLMService({
-      provider: 'deepseek',
-      model: "deepseek-chat",
+async function getAgent(): Promise<Agent> {
+  if (!agent) {
+    // 配置 AgentManager（使用环境变量）
+    agentManager.configure({
+      apiKey: process.env.DEEPSEEK_API_KEY,
     });
-  }
-  return llmService;
-}
 
-/**
- * 获取 SimpleAgent 实例
- */
-async function getSimpleAgent(): Promise<SimpleAgent> {
-  if (!simpleAgent) {
-    const service = await getLLMService();
-    simpleAgent = new SimpleAgent(service, { name: 'simple_agent' });
+    // 创建 Agent
+    agent = agentManager.createAgent('build');
+    await agent.init();
   }
-  return simpleAgent;
-}
-
-/**
- * 获取 MultiAgent (MainAgent) 实例
- */
-async function getMultiAgent(): Promise<MainAgent> {
-  if (!multiAgent) {
-    const service = await getLLMService();
-    multiAgent = new MainAgent(service, 'main_agent');
-  }
-  return multiAgent;
-}
-
-/**
- * 判断测试用例是否为多 Agent 测试
- */
-function isMultiAgentTest(testCase: TestCase): boolean {
-  return testCase.id.startsWith('M');
+  return agent;
 }
 
 /**
@@ -73,31 +39,12 @@ async function runTest(testCase: TestCase): Promise<EvaluateResult | null> {
   const startTime = Date.now();
 
   try {
-    let agents: string[];
-    let tools: Record<string, string[]>;
-    let finalResponse: string;
-    let success: boolean;
-    let error: string | undefined;
+    const agentInstance = await getAgent();
+    const result = await agentInstance.run(testCase.input, {
+      sessionId: `eval-${testCase.id}-${Date.now()}`,
+    });
 
-    if (isMultiAgentTest(testCase)) {
-      // 多 Agent 测试
-      const agent = await getMultiAgent();
-      const result = await agent.run(testCase.input);
-      agents = result.agents;
-      tools = result.tools;
-      finalResponse = result.finalResponse;
-      success = result.success;
-      error = result.error;
-    } else {
-      // 单 Agent 测试
-      const agent = await getSimpleAgent();
-      const result = await agent.run(testCase.input);
-      agents = result.agents;
-      tools = result.tools;
-      finalResponse = result.finalResponse;
-      success = result.success;
-      error = result.error;
-    }
+    const { agents, tools, finalResponse, success, error } = result;
 
     // 评估
     const evalResult = evaluate(testCase, {
@@ -170,22 +117,18 @@ async function runAllTests() {
 
   const startTime = Date.now();
 
-  // 运行单 Agent 测试
-  const simpleResults = await runTests(getSimpleAgentTests(), '单 Agent 测试');
-
-  // 运行多 Agent 测试
-  const multiResults = await runTests(getMultiAgentTests(), '多 Agent 测试');
+  // 运行测试
+  const results = await runTests(getSimpleAgentTests(), 'Agent 测试');
 
   // 总汇总
-  const allResults = [...simpleResults, ...multiResults];
-  const passed = allResults.filter((r) => r.result.passed).length;
-  const failed = allResults.length - passed;
+  const passed = results.filter((r) => r.result.passed).length;
+  const failed = results.length - passed;
   const totalTime = Date.now() - startTime;
 
   console.log(`\n${'#'.repeat(60)}`);
   console.log(`# 全部测试完成`);
   console.log(`${'#'.repeat(60)}`);
-  console.log(`总数: ${allResults.length}`);
+  console.log(`总数: ${results.length}`);
   console.log(`✅ 通过: ${passed}`);
   console.log(`❌ 失败: ${failed}`);
   console.log(`⏱️  总耗时: ${(totalTime / 1000).toFixed(2)}s`);
@@ -202,14 +145,11 @@ function printHelp() {
 
 选项:
   --help                显示帮助信息
-  --test <id>           运行指定测试用例 (如: S1, M1)
-  --simple              运行单 Agent 测试集 (2 个用例)
-  --multi               运行多 Agent 测试集 (3 个用例)
+  --test <id>           运行指定测试用例 (如: S1, S2)
   (无参数)              运行所有测试用例
 
 测试用例 ID:
-  S1, S2                单 Agent 测试 (SimpleAgent)
-  M1, M2, M3            多 Agent 测试 (MultiAgent)
+  S1, S2                Agent 测试
 `);
 }
 
@@ -221,12 +161,6 @@ async function main() {
 
   if (args.includes('--help')) {
     printHelp();
-  } else if (args.includes('--simple')) {
-    // 运行单 Agent 测试集
-    await runTests(getSimpleAgentTests(), '单 Agent 测试');
-  } else if (args.includes('--multi')) {
-    // 运行多 Agent 测试集
-    await runTests(getMultiAgentTests(), '多 Agent 测试');
   } else if (args.includes('--test') && args[args.indexOf('--test') + 1]) {
     // 运行指定测试用例
     const testId = args[args.indexOf('--test') + 1];
@@ -235,7 +169,7 @@ async function main() {
       await runTest(testCase);
     } else {
       console.error(`未找到测试用例: ${testId}`);
-      console.log('可用的测试用例 ID: S1, S2, M1, M2, M3');
+      console.log('可用的测试用例 ID: S1, S2');
     }
   } else {
     // 运行所有测试

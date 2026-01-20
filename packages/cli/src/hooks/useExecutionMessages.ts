@@ -281,6 +281,59 @@ export function useExecutionMessages(options: UseExecutionMessagesOptions) {
           break;
         }
 
+        case 'tool:progress': {
+          // 子代理工具进度事件（TaskTool 专用）
+          const { toolCallId, progress } = event;
+          const messageId = toolMessageMapRef.current.get(toolCallId);
+
+          logger.debug('Tool progress event', {
+            toolCallId,
+            progressType: progress.type,
+            subToolCallId: progress.subToolCallId,
+            toolName: progress.toolName,
+            status: progress.status,
+          });
+
+          if (!messageId) break;
+
+          // 获取当前消息
+          const messages = useAppStore.getState().messages[sessionId] || [];
+          const currentMessage = messages.find((m) => m.id === messageId);
+          if (!currentMessage?.toolCall) break;
+
+          const currentSummary = currentMessage.toolCall.subAgentSummary || [];
+          let newSummary: typeof currentSummary;
+
+          if (progress.type === 'tool_start') {
+            // 添加新的子工具
+            newSummary = [
+              ...currentSummary,
+              {
+                id: progress.subToolCallId,
+                tool: progress.toolName,
+                status: 'running' as const,
+              },
+            ];
+          } else if (progress.type === 'tool_complete') {
+            // 更新子工具状态
+            newSummary = currentSummary.map((item) =>
+              item.id === progress.subToolCallId
+                ? { ...item, status: progress.status, title: progress.resultSummary }
+                : item
+            );
+          } else {
+            break;
+          }
+
+          // 更新消息
+          updateMessage(sessionId, messageId, {
+            toolCall: {
+              subAgentSummary: newSummary,
+            },
+          });
+          break;
+        }
+
         case 'thinking:start': {
           // thinking:start 不创建消息
           // 推理模型的内容会在 thinking:complete 时一次性创建
@@ -320,7 +373,7 @@ export function useExecutionMessages(options: UseExecutionMessagesOptions) {
 
         case 'execution:complete': {
           // 保存 token 统计到最后一条 assistant 消息
-          const { stats } = event;
+          const { stats, cost: eventCost } = event as any;
           if (stats) {
             const sessionMessages = useAppStore.getState().messages[sessionId] || [];
             // 查找最后一条 assistant 消息
@@ -330,34 +383,22 @@ export function useExecutionMessages(options: UseExecutionMessagesOptions) {
               .find((m) => m.role === 'assistant');
 
             if (lastAssistantMsg) {
-              // 获取当前模型信息以计算费用
               const currentModel = useAppStore.getState().currentModel;
-              const models = useAppStore.getState().models;
-              const modelInfo = models.find((m) => m.id === currentModel);
-
-              // 计算费用
-              const inputCost = modelInfo?.pricing
-                ? (stats.inputTokens / 1_000_000) * modelInfo.pricing.input
-                : 0;
-              const outputCost = modelInfo?.pricing
-                ? (stats.outputTokens / 1_000_000) * modelInfo.pricing.output
-                : 0;
-              const totalCost = inputCost + outputCost;
 
               // 更新消息 metadata
+              // cost 直接使用事件中传递的费用（CNY），如果没有则为 0
               updateMessage(sessionId, lastAssistantMsg.id, {
                 metadata: {
                   tokenUsage: {
                     inputTokens: stats.inputTokens,
                     outputTokens: stats.outputTokens,
                     totalTokens: stats.totalTokens,
+                    cacheHitTokens: stats.cacheHitTokens,
+                    cacheMissTokens: stats.cacheMissTokens,
+                    reasoningTokens: stats.reasoningTokens,
                   },
                   model: currentModel,
-                  cost: {
-                    inputCost,
-                    outputCost,
-                    totalCost,
-                  },
+                  cost: eventCost ?? 0, // 单次费用（CNY）
                 },
               });
 
@@ -366,7 +407,9 @@ export function useExecutionMessages(options: UseExecutionMessagesOptions) {
                 tokens: stats.totalTokens,
                 inputTokens: stats.inputTokens,
                 outputTokens: stats.outputTokens,
-                cost: totalCost,
+                cacheHitTokens: stats.cacheHitTokens,
+                cacheMissTokens: stats.cacheMissTokens,
+                cost: eventCost,
                 model: currentModel,
               });
             } else {

@@ -307,8 +307,69 @@ export const loopLogger = {
  */
 export const searchLogger = {
   /**
+   * 搜索开始
+   * INFO: 记录搜索参数，便于排查性能问题
+   */
+  start(tool: string, searchPath: string, pattern: string, include?: string) {
+    logger.info(`🔍 [Search] ${tool} starting`, {
+      searchPath,
+      pattern,
+      include,
+      // 警告：如果搜索路径是用户主目录，可能会非常慢
+      warning: searchPath.match(/^\/Users\/[^/]+$/) ? 'Searching entire home directory - may be slow!' : undefined,
+    });
+  },
+
+  /**
+   * 策略执行开始
+   * DEBUG: 记录策略开始时间
+   */
+  strategyStart(tool: string, strategy: string, searchPath: string) {
+    logger.debug(`⏱️ [Search:StrategyStart] ${tool}`, {
+      strategy,
+      searchPath,
+      startTime: Date.now(),
+    });
+  },
+
+  /**
+   * 策略执行结束
+   * DEBUG: 记录策略耗时
+   */
+  strategyEnd(tool: string, strategy: string, duration: number, resultCount: number) {
+    // 超过 5 秒的搜索用 WARN 级别
+    // 注意：不能把 logger.warn/debug 赋值到变量后再调用，否则 this 丢失会触发
+    // "undefined is not an object (evaluating 'this.write')"。
+    const payload = {
+      strategy,
+      duration,
+      resultCount,
+      slow: duration > 5000,
+    };
+
+    if (duration > 5000) {
+      logger.warn(`⏱️ [Search:StrategyEnd] ${tool}`, payload);
+    } else {
+      logger.debug(`⏱️ [Search:StrategyEnd] ${tool}`, payload);
+    }
+  },
+
+  /**
+   * 文件扫描进度（用于 JavaScript 策略）
+   * DEBUG: 每 1000 个文件记录一次进度
+   */
+  scanProgress(tool: string, scannedFiles: number, matchCount: number, currentPath?: string) {
+    logger.debug(`📊 [Search:Progress] ${tool}`, {
+      scannedFiles,
+      matchCount,
+      currentPath: currentPath ? truncate(currentPath, 100) : undefined,
+    });
+  },
+
+  /**
    * 记录被抑制的错误
-   * ERROR: 错误详情（记录到日志但不中断执行）
+   * DEBUG: 错误详情（记录到日志但不中断执行）
+   * 降级为 DEBUG 级别，因为权限错误在大范围搜索时非常常见
    *
    * 错误抑制是一种容错设计：单个文件的错误不应中断整个搜索。
    * 常见的可抑制错误：
@@ -317,12 +378,26 @@ export const searchLogger = {
    * - EISDIR: 尝试读取目录
    */
   suppressed(strategy: string, filePath: string, errorCode: string, errorMessage: string) {
-    logger.error(`🔇 [Search:Suppressed] ${strategy}`, {
+    logger.debug(`🔇 [Search:Suppressed] ${strategy}`, {
       filePath,
       errorCode,
       errorMessage,
       reason: 'error_suppressed_to_continue_search',
     });
+  },
+
+  /**
+   * 批量抑制错误统计
+   * WARN: 当抑制的错误数量较多时，汇总记录
+   */
+  suppressedSummary(strategy: string, errorCount: number, samplePaths: string[]) {
+    if (errorCount > 0) {
+      logger.warn(`🔇 [Search:SuppressedSummary] ${strategy}`, {
+        totalSuppressedErrors: errorCount,
+        samplePaths: samplePaths.slice(0, 5),
+        hint: errorCount > 10 ? 'Consider using a more specific search path' : undefined,
+      });
+    }
   },
 
   /**
@@ -358,6 +433,15 @@ export const searchLogger = {
    * INFO: 搜索结果摘要
    */
   complete(tool: string, strategy: string, resultCount: number, duration: number) {
+    // 超过 10 秒的搜索额外记录警告
+    if (duration > 10000) {
+      logger.warn(`⚠️ [Search] ${tool} slow execution`, {
+        strategy,
+        resultCount,
+        duration,
+        suggestion: 'Consider using a more specific search path or pattern',
+      });
+    }
     logger.info(`✅ [Search] ${tool} completed`, {
       strategy,
       resultCount,
@@ -374,5 +458,138 @@ export const searchLogger = {
       error,
       triedStrategies,
     });
+  },
+
+  /**
+   * 搜索超时
+   * WARN: 搜索执行超时
+   */
+  timeout(tool: string, timeoutMs: number, pattern: string, path: string) {
+    logger.warn(`⏱️ [Search] ${tool} timeout`, {
+      timeoutMs,
+      pattern,
+      path,
+      suggestion: '请尝试使用更具体的搜索模式或路径',
+    });
+  },
+};
+
+/**
+ * Ripgrep 日志封装
+ * 用于追踪 ripgrep 二进制文件的检测、下载和使用
+ */
+export const ripgrepLogger = {
+  /**
+   * 记录 ripgrep 检测结果
+   * DEBUG: 检测系统 rg 和本地缓存的结果
+   */
+  detection(hasSystemRg: boolean, hasLocalCache: boolean, willDownload: boolean, binDir?: string) {
+    logger.debug(`🔍 [Ripgrep:Detection]`, {
+      hasSystemRg,
+      hasLocalCache,
+      willDownload,
+      binDir,
+    });
+  },
+
+  /**
+   * 记录使用系统 ripgrep
+   * INFO: 使用系统已安装的 rg
+   */
+  useSystem(path: string) {
+    logger.info(`✅ [Ripgrep] Using system rg`, { path });
+  },
+
+  /**
+   * 记录使用本地缓存
+   * INFO: 使用本地缓存的 rg
+   */
+  useLocalCache(path: string) {
+    logger.info(`✅ [Ripgrep] Using cached rg`, { path });
+  },
+
+  /**
+   * 记录下载开始
+   * INFO: 下载开始（包含 URL 和目标路径）
+   */
+  downloadStart(url: string, targetDir: string) {
+    logger.info(`⬇️ [Ripgrep:Download] Starting download`, {
+      url,
+      targetDir,
+    });
+  },
+
+  /**
+   * 记录下载进度
+   * DEBUG: 下载进度（避免日志过多，仅在关键节点记录）
+   */
+  downloadProgress(downloadedBytes: number, totalBytes: number | null) {
+    const percent = totalBytes ? ((downloadedBytes / totalBytes) * 100).toFixed(1) + '%' : 'unknown';
+    logger.debug(`⬇️ [Ripgrep:Download] Progress`, {
+      downloadedBytes,
+      totalBytes,
+      percent,
+    });
+  },
+
+  /**
+   * 记录下载完成
+   * INFO: 下载完成（包含耗时）
+   */
+  downloadComplete(duration: number, targetPath: string) {
+    logger.info(`✅ [Ripgrep:Download] Completed`, {
+      duration,
+      targetPath,
+    });
+  },
+
+  /**
+   * 记录下载失败
+   * ERROR: 下载失败（包含错误详情）
+   */
+  downloadError(error: string, url: string, duration: number) {
+    logger.error(`❌ [Ripgrep:Download] Failed`, {
+      error,
+      url,
+      duration,
+    });
+  },
+
+  /**
+   * 记录解压开始
+   * DEBUG: 解压开始
+   */
+  extractStart(archivePath: string, targetDir: string) {
+    logger.debug(`📦 [Ripgrep:Extract] Starting`, {
+      archivePath,
+      targetDir,
+    });
+  },
+
+  /**
+   * 记录解压完成
+   * DEBUG: 解压完成
+   */
+  extractComplete(duration: number) {
+    logger.debug(`📦 [Ripgrep:Extract] Completed`, { duration });
+  },
+
+  /**
+   * 记录解压失败
+   * ERROR: 解压失败
+   */
+  extractError(error: string, archivePath: string) {
+    logger.error(`❌ [Ripgrep:Extract] Failed`, {
+      error,
+      archivePath,
+    });
+  },
+
+  /**
+   * 记录 ripgrep 不可用
+   * WARN: ripgrep 不可用的原因
+   */
+  unavailable(reason: string) {
+    logger.warn(`⚠️ [Ripgrep] Unavailable`, { reason });
   },
 };

@@ -140,6 +140,17 @@ export interface SchedulerToolCallRecord {
 export interface InternalToolContext {
   abortSignal?: AbortSignal;
   cwd?: string;
+  sessionId?: string;
+  executionStream?: any;
+  approvalMode?: ApprovalMode;
+  onConfirmRequired?: (
+    callId: string,
+    toolName: string,
+    details: ConfirmDetails
+  ) => Promise<ConfirmOutcome>;
+  callId?: string;
+  /** 工作目录（用于子代理继承父代理的工作目录） */
+  workingDirectory?: string;
   [key: string]: any; // 扩展字段
 }
 

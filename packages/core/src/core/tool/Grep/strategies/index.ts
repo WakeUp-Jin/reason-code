@@ -29,6 +29,18 @@ import { grepWithJavaScript } from './javascript.js';
 import { isAbortError } from '../../utils/error-utils.js';
 
 /**
+ * 检查是否是 Bun 流内部错误
+ *
+ * Bun 的 ReadableStream 在某些情况下会抛出 "this.write" 相关错误，
+ * 特别是在 generator 被提前终止时。这类错误应该触发策略降级。
+ */
+function isBunStreamInternalError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message || '';
+  return msg.includes('this.write') || msg.includes('this.push');
+}
+
+/**
  * 策略执行器映射
  */
 const STRATEGY_EXECUTORS = {
@@ -116,54 +128,60 @@ export async function executeGrepStrategy(
   cwd: string,
   options?: GrepStrategyOptions
 ): Promise<GrepStrategyResult> {
-  const runtime = getRuntimeName();
   const strategies = await getAvailableStrategies(cwd, options?.binDir);
-  const triedStrategies: string[] = [];
-  const fallbackReasons: string[] = [];
-
+  let lastError: Error | undefined;
+  
   for (let i = 0; i < strategies.length; i++) {
     const strategy = strategies[i];
-    triedStrategies.push(strategy);
-
-    // 记录策略选择
-    if (i === 0) {
-      searchLogger.strategySelected('Grep', strategy, runtime);
-    }
-
+    const strategyStartTime = Date.now();
+    
     try {
-      const executor = STRATEGY_EXECUTORS[strategy];
-      const matches = await executor(pattern, cwd, options);
-
-      // 如果发生了降级，返回警告信息
-      if (i > 0) {
-        const warning = `从 ${triedStrategies[0]} 降级到 ${strategy}: ${fallbackReasons.join(' -> ')}`;
-        return { matches, strategy, warning };
+      // 首次尝试记录日志
+      if (i === 0) {
+        searchLogger.strategySelected('Grep', strategy, getRuntimeName());
       }
-
-      return { matches, strategy };
+      
+      // 记录策略开始
+      searchLogger.strategyStart('Grep', strategy, cwd);
+      
+      const matches = await STRATEGY_EXECUTORS[strategy](pattern, cwd, options);
+      
+      // 记录策略结束
+      const strategyDuration = Date.now() - strategyStartTime;
+      searchLogger.strategyEnd('Grep', strategy, strategyDuration, matches.length);
+      
+      return {
+        matches,
+        strategy,
+        // 不再显示降级警告，策略信息已经在 summary 中通过 (strategy: xxx) 显示
+        warning: undefined
+      };
+      
     } catch (error: unknown) {
-      // 如果是 AbortError，直接抛出
-      if (isAbortError(error)) {
-        throw error;
-      }
-
-      const errorMessage = error instanceof Error ? error.message : String(error);
-
-      // 如果还有下一个策略，降级
+      // 记录策略失败耗时
+      const strategyDuration = Date.now() - strategyStartTime;
+      searchLogger.strategyEnd('Grep', strategy, strategyDuration, 0);
+      
+      // AbortError 直接抛出，不降级
+      if (isAbortError(error)) throw error;
+      
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
+      // Bun 流内部错误：记录但继续降级（而不是直接失败）
+      // 这类错误通常发生在流提前终止时，应该尝试下一个策略
+      const isBunError = isBunStreamInternalError(error);
+      
+      // 记录降级（非最后一个策略）
       if (i < strategies.length - 1) {
-        const nextStrategy = strategies[i + 1];
-        searchLogger.strategyFallback(strategy, nextStrategy, errorMessage);
-        fallbackReasons.push(errorMessage);
-        continue;
+        const reason = isBunError 
+          ? `Bun stream internal error: ${lastError.message}`
+          : lastError.message;
+        searchLogger.strategyFallback(strategy, strategies[i + 1], reason);
       }
-
-      // 所有策略都失败了
-      throw error;
     }
   }
-
-  // 不应该到达这里
-  throw new Error('No grep strategy available');
+  
+  throw lastError || new Error('No grep strategy available');
 }
 
 // 导出策略实现

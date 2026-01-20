@@ -56,8 +56,6 @@ export interface GrepData {
   matches: GrepMatch[];
   /** 匹配总数 */
   count: number;
-  /** 是否被截断 */
-  truncated: boolean;
   /** 使用的策略 */
   strategy: string;
 }
@@ -88,14 +86,16 @@ export interface GrepStrategyOptions {
   binDir?: string;
   /** AbortSignal */
   signal?: AbortSignal;
+  /** 每个文件的最大匹配数（ripgrep --max-count，默认 100） */
+  maxCount?: number;
 }
 
 /**
  * 默认配置
  */
 export const GREP_DEFAULTS = {
-  /** 默认结果限制 */
-  LIMIT: 100,
+  /** 默认结果限制（流式读取下可以设置更大） */
+  LIMIT: 1000,
   /** 单行最大长度 */
   MAX_LINE_LENGTH: 2000,
   /** 默认排除的目录 */

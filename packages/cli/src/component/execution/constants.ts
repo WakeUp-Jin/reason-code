@@ -45,8 +45,8 @@ export const STATUS_PHRASES = [
  * Tip 提示池
  */
 export const TIPS = [
-  'Press ctrl+t to show thinking process',
-  'Press ctrl+d to hide/show todos',
+  'Press ctrl+y to show thinking process',
+  'Press ctrl+t to hide/show todos',
   'Press esc to interrupt',
   'Hit shift+tab to cycle modes',
 ] as const;

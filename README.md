@@ -33,6 +33,10 @@ reason-cli/
 
 ## 快速开始
 
+### 环境要求
+
+- Bun（本仓库默认只支持 Bun 运行时）
+
 ### 安装依赖
 
 ```bash
@@ -41,7 +45,7 @@ bun install
 
 这会自动：
 - 安装所有依赖
-- 创建符号链接（node_modules/@reason-cli/core -> packages/core）
+- 创建符号链接（node_modules/@reason-code/core -> packages/core）
 - 提升共同依赖到根目录
 
 ### 开发运行
@@ -72,7 +76,7 @@ bun run --cwd packages/cli dev info
 **1. 源码暴露**
 - CLI 通过 `workspace:*` 依赖 Core
 - Core 的 `exports` 指向 `.ts` 源码
-- 符号链接：`node_modules/@reason-cli/core -> packages/core`
+- 符号链接：`node_modules/@reason-code/core -> packages/core`
 - 修改 Core 代码立即在 CLI 中生效
 
 **2. 依赖管理**
@@ -100,13 +104,13 @@ bun run clean
 
 ### 包结构说明
 
-**Core 包**（`@reason-cli/core`）
+**Core 包**（`@reason-code/core`）
 - 纯业务逻辑，无 UI 依赖
 - 包含 Agent 引擎、LLM 接口、工具系统
 - 导出源码，支持热更新
 - 可被 CLI、Web、Desktop 等多平台复用
 
-**CLI 包**（`@reason-cli/cli`）
+**CLI 包**（`@reason-code/cli`）
 - 终端界面层
 - 依赖 Core 包（`workspace:*`）
 - 使用 Commander、Chalk、Ora 等 CLI 工具

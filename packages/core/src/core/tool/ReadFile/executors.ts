@@ -1,9 +1,10 @@
 /**
  * 读取文件内容工具 - 执行器
  * 读取指定文件的内容，支持分页读取和自动截断
+ *
+ * 使用 Bun 原生 API 进行文件操作
  */
 
-import * as fs from 'fs';
 import * as path from 'path';
 import type { ToolResult } from '../types.js';
 
@@ -54,11 +55,13 @@ export type ReadFileResult = ToolResult<ReadFileData>;
 export async function readFileExecutor(args: ReadFileArgs, context: any): Promise<ReadFileResult> {
   const cwd = context?.cwd || process.cwd();
   const targetPath = path.resolve(cwd, args.filePath);
-  const encoding = args.encoding || 'utf-8';
   const maxFileSize = context?.maxFileSize ?? DEFAULT_MAX_FILE_SIZE;
 
+  const file = Bun.file(targetPath);
+
   // 检查文件是否存在
-  if (!fs.existsSync(targetPath)) {
+  const exists = await file.exists();
+  if (!exists) {
     return {
       success: false,
       error: `文件不存在: ${targetPath}`,
@@ -67,8 +70,8 @@ export async function readFileExecutor(args: ReadFileArgs, context: any): Promis
   }
 
   try {
-    // 检查是否是文件
-    const stats = fs.statSync(targetPath);
+    // 获取文件信息
+    const stats = await file.stat();
     if (!stats.isFile()) {
       return {
         success: false,
@@ -78,7 +81,7 @@ export async function readFileExecutor(args: ReadFileArgs, context: any): Promis
     }
 
     // 读取文件内容
-    const fullContent = fs.readFileSync(targetPath, encoding);
+    const fullContent = await file.text();
     const allLines = fullContent.split('\n');
     const totalLines = allLines.length;
 
