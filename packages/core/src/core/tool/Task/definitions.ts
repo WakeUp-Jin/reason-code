@@ -64,7 +64,7 @@ function generateParameters(): ToolParameterSchema {
  * 使用 getter 实现动态描述和参数
  */
 export const TaskTool: InternalTool = {
-  name: 'task',
+  name: 'Task',
   category: 'agent',
   internal: false, // 显示给用户
   version: '1.0.0',
@@ -75,5 +75,10 @@ export const TaskTool: InternalTool = {
     return generateParameters();
   },
   handler: executeTask,
+    // 只读工具，不需要权限确认
+    isReadOnly: () => true,
+
+    // 只读工具不需要确认
+    shouldConfirmExecute: async () => false,
 };
 

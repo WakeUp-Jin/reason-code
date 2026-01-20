@@ -18,6 +18,8 @@ import type {
   SystemPromptContext,
 } from '@reason-code/core';
 import os from 'os';
+import { existsSync } from 'fs';
+import { join } from 'path';
 import { configManager } from '../config/manager.js';
 import { getModelTokenLimit, getModelPricing } from '../config/tokenLimits.js';
 import { logger } from '../util/logger.js';
@@ -78,6 +80,23 @@ function parseModelId(modelId: string): { provider: string; model: string } {
   }
   // 默认使用 deepseek
   return { provider: 'deepseek', model: modelId };
+}
+
+function resolveWorkingDirectory(): string {
+  const envWorkingDir = process.env.REASON_WORKDIR;
+  if (envWorkingDir && existsSync(envWorkingDir)) {
+    return envWorkingDir;
+  }
+
+  const devRoot = join(__dirname, '..', '..', '..');
+  const isMonorepoDev =
+    existsSync(join(devRoot, 'packages', 'core')) && existsSync(join(devRoot, 'packages', 'cli'));
+
+  if (isMonorepoDev) {
+    return devRoot;
+  }
+
+  return process.cwd();
 }
 
 /**
@@ -142,7 +161,7 @@ export function useAgent(): UseAgentReturn {
 
       // 构建系统提示词上下文
       const promptContext: SystemPromptContext = {
-        workingDirectory: process.cwd(),
+        workingDirectory: resolveWorkingDirectory(),
         modelName: model,
         osInfo: `${os.type()} ${os.release()} (${os.arch()})`,
         currentDate: new Date().toLocaleDateString('zh-CN', {

@@ -42,7 +42,7 @@ export function TaskToolMessage({ message }: TaskToolMessageProps) {
   if (!toolCall) return null;
 
   const summary = toolCall.subAgentSummary || [];
-  const MAX_DISPLAY = 5;
+  const MAX_DISPLAY = 2;
   const displayedItems = summary.slice(-MAX_DISPLAY); // 显示最新的
   const hiddenCount = Math.max(0, summary.length - MAX_DISPLAY);
 
@@ -104,13 +104,13 @@ export function TaskToolMessage({ message }: TaskToolMessageProps) {
                 <Text color={colors.textMuted}>{prefix} </Text>
 
                 {/* 状态图标 */}
-                {item.status === 'running' ? (
+                {/* {item.status === 'running' ? (
                   <Spinner color={colors.warning} />
                 ) : item.status === 'error' ? (
                   <Text color={colors.error}>●</Text>
                 ) : (
                   <Text color={colors.success}>●</Text>
-                )}
+                )} */}
 
                 <Text color={colors.text}> {item.tool}</Text>
 

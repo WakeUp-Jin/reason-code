@@ -22,3 +22,6 @@ export { buildAgent, exploreAgent } from './config/index.js';
 export { AgentManager, agentManager } from './AgentManager.js';
 export type { RuntimeOptions, SharedRuntime } from './AgentManager.js';
 
+// 执行引擎
+export { ExecutionEngine } from './execution/index.js';
+

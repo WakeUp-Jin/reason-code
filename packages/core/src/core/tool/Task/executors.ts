@@ -65,6 +65,13 @@ export async function executeTask(
 
   // 5. 订阅子代理事件，转发为 tool:progress
   const unsubscribe = subExecStream.on((event) => {
+    logger.debug('SubExecStream event received', {
+      eventType: event.type,
+      hasContext: !!context,
+      hasExecutionStream: !!context?.executionStream,
+      hasCallId: !!context?.callId,
+    });
+
     if (!context?.executionStream || !context?.callId) return;
 
     if (event.type === 'tool:validating') {
@@ -122,8 +129,14 @@ export async function executeTask(
   });
 
   try {
-    // 6. 初始化子代理
-    await subAgent.init();
+    // 6. 初始化子代理（传入父代理的工作目录）
+    const workingDirectory = context?.workingDirectory || process.cwd();
+    await subAgent.init({
+      promptContext: {
+        workingDirectory,
+        modelName: subAgent.getModelConfig().model,
+      },
+    });
 
     // 7. 执行子代理（传入 subExecStream，Agent 内部会自动管理生命周期）
     const result = await subAgent.run(prompt, {

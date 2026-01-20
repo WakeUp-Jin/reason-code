@@ -49,6 +49,10 @@ export async function grepWithJavaScript(
   }
 
   const matches: GrepMatch[] = [];
+  
+  // 错误统计
+  let suppressedErrorCount = 0;
+  const suppressedPaths: string[] = [];
 
   // 获取文件列表
   const files = await glob(globPattern, {
@@ -60,7 +64,11 @@ export async function grepWithJavaScript(
     signal: options?.signal,
   });
 
+  // 记录文件数量（便于诊断性能问题）
+  searchLogger.scanProgress('Grep', 0, 0, `Total files to scan: ${files.length}`);
+
   // 逐个文件处理
+  let scannedFiles = 0;
   for (const filePath of files) {
     // 检查是否被取消
     if (options?.signal?.aborted) {
@@ -70,6 +78,13 @@ export async function grepWithJavaScript(
     // 检查是否达到限制
     if (matches.length >= limit) {
       break;
+    }
+
+    scannedFiles++;
+    
+    // 每 1000 个文件记录一次进度
+    if (scannedFiles % 1000 === 0) {
+      searchLogger.scanProgress('Grep', scannedFiles, matches.length, filePath);
     }
 
     try {
@@ -100,11 +115,16 @@ export async function grepWithJavaScript(
       }
     } catch (error: unknown) {
       // ⚠️ 错误抑制：记录但继续处理其他文件
+      suppressedErrorCount++;
+      if (suppressedPaths.length < 10) {
+        suppressedPaths.push(filePath);
+      }
+      
       if (isNodeError(error)) {
         const errorCode = error.code || 'UNKNOWN';
         const errorMessage = error.message;
 
-        // 记录被抑制的错误
+        // 记录被抑制的错误（DEBUG 级别）
         searchLogger.suppressed('javascript', filePath, errorCode, errorMessage);
 
         // 权限错误或文件不存在，跳过继续
@@ -118,6 +138,10 @@ export async function grepWithJavaScript(
       searchLogger.suppressed('javascript', filePath, 'UNKNOWN', errorMessage);
     }
   }
+
+  // 最终进度和错误统计
+  searchLogger.scanProgress('Grep', scannedFiles, matches.length, 'Scan completed');
+  searchLogger.suppressedSummary('javascript', suppressedErrorCount, suppressedPaths);
 
   return matches;
 }

@@ -29,6 +29,18 @@ import { grepWithJavaScript } from './javascript.js';
 import { isAbortError } from '../../utils/error-utils.js';
 
 /**
+ * 检查是否是 Bun 流内部错误
+ *
+ * Bun 的 ReadableStream 在某些情况下会抛出 "this.write" 相关错误，
+ * 特别是在 generator 被提前终止时。这类错误应该触发策略降级。
+ */
+function isBunStreamInternalError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const msg = error.message || '';
+  return msg.includes('this.write') || msg.includes('this.push');
+}
+
+/**
  * 策略执行器映射
  */
 const STRATEGY_EXECUTORS = {
@@ -121,6 +133,7 @@ export async function executeGrepStrategy(
   
   for (let i = 0; i < strategies.length; i++) {
     const strategy = strategies[i];
+    const strategyStartTime = Date.now();
     
     try {
       // 首次尝试记录日志
@@ -128,7 +141,14 @@ export async function executeGrepStrategy(
         searchLogger.strategySelected('Grep', strategy, getRuntimeName());
       }
       
+      // 记录策略开始
+      searchLogger.strategyStart('Grep', strategy, cwd);
+      
       const matches = await STRATEGY_EXECUTORS[strategy](pattern, cwd, options);
+      
+      // 记录策略结束
+      const strategyDuration = Date.now() - strategyStartTime;
+      searchLogger.strategyEnd('Grep', strategy, strategyDuration, matches.length);
       
       return {
         matches,
@@ -138,13 +158,25 @@ export async function executeGrepStrategy(
       };
       
     } catch (error: unknown) {
+      // 记录策略失败耗时
+      const strategyDuration = Date.now() - strategyStartTime;
+      searchLogger.strategyEnd('Grep', strategy, strategyDuration, 0);
+      
+      // AbortError 直接抛出，不降级
       if (isAbortError(error)) throw error;
       
       lastError = error instanceof Error ? error : new Error(String(error));
       
+      // Bun 流内部错误：记录但继续降级（而不是直接失败）
+      // 这类错误通常发生在流提前终止时，应该尝试下一个策略
+      const isBunError = isBunStreamInternalError(error);
+      
       // 记录降级（非最后一个策略）
       if (i < strategies.length - 1) {
-        searchLogger.strategyFallback(strategy, strategies[i + 1], lastError.message);
+        const reason = isBunError 
+          ? `Bun stream internal error: ${lastError.message}`
+          : lastError.message;
+        searchLogger.strategyFallback(strategy, strategies[i + 1], reason);
       }
     }
   }

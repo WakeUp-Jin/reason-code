@@ -1,18 +1,24 @@
 /**
- * 工具循环执行器
+ * Agent 执行引擎
  *
  * 职责：
  * - 管理 LLM 调用循环
- * - 处理工具调用
- * - 上下文压缩管理
- * - 溢出检测
+ * - 协调工具调度
+ * - 处理上下文压缩
+ * - 溢出检测和中断控制
+ *
+ * 使用方式：
+ * ```typescript
+ * const engine = new ExecutionEngine(llmService, contextManager, toolManager, config);
+ * const result = await engine.execute();
+ * ```
  */
 
-import { ILLMService, ToolLoopResult, ToolLoopConfig, LLMResponse } from '../types/index.js';
-import { ContextManager } from '../../context/index.js';
+import { ILLMService, ToolLoopResult, ToolLoopConfig, LLMResponse } from '../../llm/types/index.js';
+import { ContextManager, ToolOutputSummarizer } from '../../context/index.js';
 import { ToolManager } from '../../tool/ToolManager.js';
 import { ToolScheduler, ScheduleResult } from '../../tool/ToolScheduler.js';
-import { ApprovalMode } from '../../tool/types.js';
+import { ApprovalMode, ConfirmDetails, ConfirmOutcome } from '../../tool/types.js';
 import { Message } from '../../context/types.js';
 import { logger } from '../../../utils/logger.js';
 import { loopLogger, contextLogger } from '../../../utils/logUtils.js';
@@ -95,15 +101,12 @@ interface IterationResult {
 }
 
 /**
- * 工具循环执行器类
+ * Agent 执行引擎
  *
- * 使用方式：
- * ```typescript
- * const executor = new ToolLoopExecutor(llmService, contextManager, toolManager, config);
- * const result = await executor.run();
- * ```
+ * 负责管理 LLM 调用循环、工具调度协调、上下文压缩和中断控制。
+ * 每次 Agent.run() 调用时创建新实例。
  */
-export class ToolLoopExecutor {
+export class ExecutionEngine {
   // 依赖
   private llmService: ILLMService;
   private contextManager: ContextManager;
@@ -119,6 +122,7 @@ export class ToolLoopExecutor {
   private modelLimit: number;
   private agentName: string;
   private executionStream?: ExecutionStreamManager;
+  private workingDirectory: string;
 
   // 统计
   private sessionStats?: SessionStats;
@@ -144,6 +148,7 @@ export class ToolLoopExecutor {
     this.executionStream = config?.executionStream;
     this.sessionStats = config?.sessionStats;
     this.abortSignal = config?.abortSignal;
+    this.workingDirectory = config?.workingDirectory ?? process.cwd();
 
     // 提取工具调度器配置
     const enableToolSummarization = config?.enableToolSummarization ?? true;
@@ -155,15 +160,8 @@ export class ToolLoopExecutor {
       approvalMode,
       executionStream: this.executionStream,
       enableToolSummarization,
-      onConfirmRequired: onConfirmRequired
-        ? async (callId, details) => {
-            // 从记录中获取工具名称
-            const records = this.toolScheduler.getRecords();
-            const record = records.find((r) => r.request.callId === callId);
-            const toolName = record?.request.toolName ?? 'unknown';
-            return onConfirmRequired(callId, toolName, details);
-          }
-        : undefined,
+      toolOutputSummarizer:enableToolSummarization ? new ToolOutputSummarizer(llmService) : undefined,
+      onConfirmRequired: onConfirmRequired ? this.createConfirmHandler(onConfirmRequired) : undefined,
     });
 
     // 配置压缩
@@ -184,10 +182,10 @@ export class ToolLoopExecutor {
   }
 
   /**
-   * 运行工具循环
+   * 执行工具循环
    * 主入口方法
    */
-  async run(): Promise<ToolLoopResult> {
+  async execute(): Promise<ToolLoopResult> {
     loopLogger.start(this.maxLoops, this.enableCompression);
 
     while (this.loopCount < this.maxLoops) {
@@ -351,10 +349,14 @@ export class ToolLoopExecutor {
       });
     }
 
-    // 4. 执行工具（传递 abortSignal 以支持中断）
+    // 4. 执行工具（传递 abortSignal 和 workingDirectory 以支持中断和子代理工作目录继承）
     const results = await this.toolScheduler.scheduleBatchFromToolCalls(
       toolCalls,
-      { abortSignal: this.abortSignal, cwd: process.cwd() },
+      {
+        abortSignal: this.abortSignal,
+        cwd: this.workingDirectory,
+        workingDirectory: this.workingDirectory,
+      },
       { thinkingContent: response.content?.trim() }
     );
 
@@ -438,4 +440,21 @@ export class ToolLoopExecutor {
       loopCount: this.loopCount,
     };
   }
+
+  /**
+   * 创建确认处理器
+   * 包装外部的 onConfirmRequired 回调，添加工具名称参数
+   * 
+   */
+
+  private createConfirmHandler(
+    onConfirmRequired:(callId:string,toolName:string,details:ConfirmDetails) => Promise<ConfirmOutcome>
+  ):(callId:string,details:ConfirmDetails) => Promise<ConfirmOutcome>  {
+    return async (callId,details) => {
+      const records = this.toolScheduler.getRecords();
+      const record = records.find((r) => r.request.callId === callId);
+      const toolName = record?.request.toolName ?? 'unknown';
+      return onConfirmRequired(callId,toolName,details);
+    }
+  };
 }

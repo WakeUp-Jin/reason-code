@@ -21,8 +21,8 @@ export function ToolMessage({ message }: ToolMessageProps) {
     return null;
   }
 
-  // task 工具使用专用组件
-  if (toolCall.toolName === 'task') {
+  // Task 工具使用专用组件
+  if (toolCall.toolName === 'Task') {
     return <TaskToolMessage message={message} />;
   }
 

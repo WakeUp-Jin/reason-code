@@ -17,7 +17,7 @@ import {
   isTimeoutError,
   toErrorMessage,
   withTimeout,
-  TOOL_EXECUTION_TIMEOUT_MS,
+  SEARCH_TIMEOUT_MS,
 } from '../utils/error-utils.js';
 
 /**
@@ -61,7 +61,7 @@ export async function globExecutor(
           binDir: binDirForRipgrep,
           signal, // 使用 withTimeout 提供的 signal，超时时会自动 abort
         }),
-      TOOL_EXECUTION_TIMEOUT_MS,
+      SEARCH_TIMEOUT_MS,
       'Glob',
       context?.abortSignal
     );

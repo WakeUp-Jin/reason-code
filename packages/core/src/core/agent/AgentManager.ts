@@ -36,11 +36,12 @@ export interface SharedRuntime extends RuntimeOptions {
 export class AgentManager {
   private configs = new Map<string, AgentConfig>();
   private sharedRuntime: SharedRuntime;
+  private _toolManagerInitialized = false;
 
   constructor() {
-    // 创建共享的 ToolManager
+    // 创建共享运行时（ToolManager 延迟初始化，避免循环依赖）
     this.sharedRuntime = {
-      toolManager: new ToolManager(),
+      toolManager: null as any, // 延迟初始化
     };
 
     // 注册内置预设
@@ -50,6 +51,17 @@ export class AgentManager {
     logger.debug('AgentManager initialized', {
       registeredAgents: Array.from(this.configs.keys()),
     });
+  }
+
+  /**
+   * 确保 ToolManager 已初始化
+   * 延迟初始化避免循环依赖：AgentManager -> ToolManager -> TaskTool -> agentManager
+   */
+  private ensureToolManager(): void {
+    if (!this._toolManagerInitialized) {
+      this.sharedRuntime.toolManager = new ToolManager();
+      this._toolManagerInitialized = true;
+    }
   }
 
   /**
@@ -102,6 +114,7 @@ export class AgentManager {
         'AgentManager not configured. Call configure() with apiKey before creating agents.'
       );
     }
+    this.ensureToolManager();
     return this.sharedRuntime;
   }
 
@@ -116,6 +129,9 @@ export class AgentManager {
       const available = Array.from(this.configs.keys()).join(', ');
       throw new Error(`Agent '${name}' not found. Available: ${available}`);
     }
+
+    // 确保 ToolManager 已初始化
+    this.ensureToolManager();
 
     // 合并配置：预设（副）+ 覆盖（主）
     const finalConfig: AgentConfig = {

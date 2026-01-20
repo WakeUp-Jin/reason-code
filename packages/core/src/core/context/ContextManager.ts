@@ -94,7 +94,7 @@ export class ContextManager {
   // ============ 压缩配置 ============
 
   /**
-   * 配置压缩参数（由 Agent 或 executeToolLoop 调用）
+   * 配置压缩参数（由 Agent 或 ExecutionEngine 调用）
    */
   configureCompression(config: CompressionConfig): void {
     this.modelLimit = config.modelLimit;

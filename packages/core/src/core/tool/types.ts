@@ -149,6 +149,8 @@ export interface InternalToolContext {
     details: ConfirmDetails
   ) => Promise<ConfirmOutcome>;
   callId?: string;
+  /** 工作目录（用于子代理继承父代理的工作目录） */
+  workingDirectory?: string;
   [key: string]: any; // 扩展字段
 }
 

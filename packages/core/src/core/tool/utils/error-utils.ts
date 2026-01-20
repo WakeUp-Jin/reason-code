@@ -53,6 +53,14 @@ export function toErrorMessage(error: unknown): string {
 export const TOOL_EXECUTION_TIMEOUT_MS = 60_000;
 
 /**
+ * 搜索工具超时时间（毫秒）
+ *
+ * ripgrep 非常快，但为了防止极端情况（如搜索非常大的代码库），
+ * 设置 60 秒超时。大多数搜索会在几秒内完成。
+ */
+export const SEARCH_TIMEOUT_MS = 60_000;
+
+/**
  * 创建一个带超时的 AbortSignal
  *
  * 当超时或外部信号触发时，返回的 signal 会被 abort。

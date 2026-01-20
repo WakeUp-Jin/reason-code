@@ -7,7 +7,7 @@ import { ContextManager, ContextType, Message } from '../context/index.js';
 import { ToolManager } from '../tool/ToolManager.js';
 import { ILLMService } from '../llm/types/index.js';
 import { createLLMService } from '../llm/factory.js';
-import { ToolLoopExecutor } from '../llm/utils/executeToolLoop.js';
+import { ExecutionEngine } from './execution/index.js';
 import { eventBus } from '../../evaluation/EventBus.js';
 import { buildSystemPrompt, type SystemPromptContext } from '../promptManager/index.js';
 import { ExecutionStreamManager } from '../execution/index.js';
@@ -133,8 +133,11 @@ export class Agent {
   /** 中断控制器（用于取消执行） */
   private abortController: AbortController | null = null;
 
-  /** 当前执行器（用于中断时清理） */
-  private currentExecutor: ToolLoopExecutor | null = null;
+  /** 当前执行引擎（用于中断时清理） */
+  private currentExecutor: ExecutionEngine | null = null;
+
+  /** 系统提示词上下文（保存以供子代理使用） */
+  private promptContext?: SystemPromptContext;
 
   constructor(config: AgentConfig, runtime: SharedRuntime) {
     this.config = config;
@@ -206,6 +209,8 @@ export class Agent {
     if (options?.promptContext) {
       // 使用新的构建器（推荐方式）
       systemPrompt = buildSystemPrompt(options.promptContext);
+      // 保存 promptContext 供后续使用（如子代理）
+      this.promptContext = options.promptContext;
       logger.info('System prompt built from context', {
         workingDirectory: options.promptContext.workingDirectory,
         modelName: options.promptContext.modelName,
@@ -215,10 +220,13 @@ export class Agent {
       systemPrompt = this.config.systemPrompt;
     } else {
       // 没有提供 promptContext 也没有自定义提示词，使用默认构建
-      systemPrompt = buildSystemPrompt({
+      const defaultContext = {
         workingDirectory: process.cwd(),
         modelName: model,
-      });
+      };
+      systemPrompt = buildSystemPrompt(defaultContext);
+      // 保存默认 promptContext
+      this.promptContext = defaultContext;
       logger.warn('No promptContext provided, using default system prompt');
     }
 
@@ -340,8 +348,8 @@ export class Agent {
       isolatedToolManager.clear();
       filteredTools.forEach((tool) => isolatedToolManager.register(tool));
 
-      // 执行工具循环
-      const executor = new ToolLoopExecutor(
+      // 创建执行引擎
+      const engine = new ExecutionEngine(
         this.llmService,
         this.contextManager,
         isolatedToolManager,
@@ -356,13 +364,14 @@ export class Agent {
           approvalMode: options?.approvalMode,
           abortSignal: this.abortController.signal,
           sessionStats: this.sessionStats,
+          workingDirectory: this.promptContext?.workingDirectory,
         }
       );
 
-      // 保存当前执行器引用
-      this.currentExecutor = executor;
+      // 保存当前执行引擎引用
+      this.currentExecutor = engine;
 
-      const loopResult = await executor.run();
+      const loopResult = await engine.execute();
 
       // 清理执行器引用
       this.currentExecutor = null;
@@ -486,6 +495,14 @@ export class Agent {
    */
   getExecutionStream(): ExecutionStreamManager {
     return this.executionStream;
+  }
+
+  /**
+   * 获取系统提示词上下文
+   * 用于子代理继承父代理的工作目录
+   */
+  getPromptContext(): SystemPromptContext | undefined {
+    return this.promptContext;
   }
 
   /**

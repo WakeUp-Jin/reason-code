@@ -240,17 +240,11 @@ export function setupAbortHandler(
 
     logger.debug(`🛑 [${logPrefix}:Abort] Killing process`, { pid: proc.pid });
 
-    try {
-      proc.stdout?.cancel?.();
-    } catch {
-      // ignore
-    }
-    try {
-      proc.stderr?.cancel?.();
-    } catch {
-      // ignore
-    }
+    proc.stdout?.cancel?.('Aborted');
+    proc.stderr?.cancel?.('Aborted');
 
+    // 先 kill 进程，让流自然结束
+    // 不需要调用 cancel()，避免触发 Bun 流内部错误
     proc.kill('SIGTERM');
 
     setTimeout(() => {
@@ -272,37 +266,192 @@ export function setupAbortHandler(
 }
 
 /**
- * 从 stdout/stderr 流中逐行读取
+ * 使用 Response API 读取流的所有文本
+ *
+ * 这个方法比手动流式读取更可靠：
+ * 1. 使用 Bun 内置的 Response API，经过充分测试
+ * 2. 不会在进程被 kill 时触发流内部错误
+ * 3. 自动处理流的完整生命周期
+ *
+ * 参考 opencode 的实践：使用 Response.text() 避免手动管理 reader
+ *
+ * @param stream - WHATWG ReadableStream
+ * @param signal - 可选的 AbortSignal，用于在超时时取消读取
+ * @returns 完整的文本内容
  */
-export async function* readLinesFromStream(
-  stream: unknown,
-  checkAborted: () => boolean
-): AsyncGenerator<string, void, unknown> {
+export async function readStreamAsText(stream: unknown, signal?: AbortSignal): Promise<string> {
   const webStream = stream as WebReadableStreamLike | null;
-  if (!webStream?.getReader) {
-    throw new Error('readLinesFromStream expects a WHATWG ReadableStream');
+  if (!webStream) {
+    logger.debug('📖 [readStreamAsText] Stream is null or undefined');
+    return '';
   }
 
+  try {
+    // 如果已经 aborted，直接返回
+    if (signal?.aborted) {
+      logger.debug('📖 [readStreamAsText] Signal already aborted');
+      return '';
+    }
+
+    // 监听 abort 事件，取消流
+    const abortHandler = () => {
+      logger.debug('📖 [readStreamAsText] Abort signal received, canceling stream');
+      try {
+        webStream.cancel?.('Aborted');
+      } catch (err) {
+        logger.debug('⚠️ [readStreamAsText] Failed to cancel stream', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    };
+
+    signal?.addEventListener('abort', abortHandler, { once: true });
+
+    try {
+      logger.debug('📖 [readStreamAsText] Creating Response from stream');
+      // 使用 Response API 读取流（opencode 的方式）
+      const response = new Response(webStream as any);
+
+      logger.debug('📖 [readStreamAsText] Calling response.text()');
+      const text = await response.text();
+
+      logger.debug('📖 [readStreamAsText] Successfully read text', { length: text.length });
+      return text;
+    } finally {
+      signal?.removeEventListener('abort', abortHandler);
+    }
+  } catch (err) {
+    // 如果读取失败（如进程被 kill），返回空字符串
+    logger.debug('⚠️ [readStreamAsText] Error reading stream', {
+      error: err instanceof Error ? err.message : String(err),
+      includesThisWrite: err instanceof Error && err.message.includes('this.write'),
+    });
+    return '';
+  }
+}
+
+/**
+ * 以“有上限”的方式读取 stdout/stderr，避免一次性构造超大字符串。
+ *
+ * 说明：
+ * - maxBytes / maxLines 任一触发即停止继续累积，并标记 truncated。
+ * - 本函数尽量不抛错：读取过程中出错会返回已收集到的文本（或空串）。
+ * - 行数统计以 '\n' 为准（即“完整行”的数量）。
+ */
+export async function readStreamAsTextLimited(
+  stream: unknown,
+  options?: {
+    signal?: AbortSignal;
+    maxBytes?: number;
+    maxLines?: number;
+  }
+): Promise<{ text: string; truncated: boolean; truncatedBy: 'bytes' | 'lines' | null }> {
+  const webStream = stream as WebReadableStreamLike | null;
+  if (!webStream) return { text: '', truncated: false, truncatedBy: null };
+
+  // 如果已经 aborted，直接返回
+  if (options?.signal?.aborted) return { text: '', truncated: false, truncatedBy: null };
+
+  const maxBytes = options?.maxBytes;
+  const maxLines = options?.maxLines;
+
   const decoder = new TextDecoder('utf-8');
+  const parts: string[] = [];
+  let storedBytes = 0;
+  let storedLines = 0;
+  let truncated = false;
+  let truncatedBy: 'bytes' | 'lines' | null = null;
+
   const reader = webStream.getReader();
-  let buffer = '';
+
+  const appendWithLineLimit = (s: string): void => {
+    if (!s) return;
+
+    if (!maxLines || maxLines <= 0) {
+      parts.push(s);
+      return;
+    }
+
+    const remainingLines = maxLines - storedLines;
+    if (remainingLines <= 0) {
+      truncated = true;
+      truncatedBy = truncatedBy ?? 'lines';
+      return;
+    }
+
+    // 快路径：没有换行
+    if (!s.includes('\n')) {
+      parts.push(s);
+      return;
+    }
+
+    // 找到第 remainingLines 个 '\n' 的位置（包含该换行）
+    let needed = remainingLines;
+    let cutIndex = -1;
+    for (let i = 0; i < s.length; i++) {
+      if (s.charCodeAt(i) === 10 /* \n */) {
+        needed--;
+        if (needed === 0) {
+          cutIndex = i + 1;
+          break;
+        }
+      }
+    }
+
+    if (cutIndex === -1) {
+      // 未达到行数上限
+      parts.push(s);
+      storedLines += remainingLines - needed; // 实际新增换行数
+      return;
+    }
+
+    // 达到行数上限：截断到最后一个需要的 '\n'
+    parts.push(s.slice(0, cutIndex));
+    storedLines = maxLines;
+    truncated = true;
+    truncatedBy = truncatedBy ?? 'lines';
+  };
 
   try {
     while (true) {
-      if (checkAborted()) break;
+      if (options?.signal?.aborted) break;
 
       const { value, done } = await reader.read();
       if (done) break;
 
-      buffer += chunkToString(value, decoder);
-      const lines = buffer.split(/\r?\n/);
-      buffer = lines.pop() || '';
-      for (const line of lines) {
-        if (line) yield line;
+      const chunk = value ?? new Uint8Array();
+      let slice = chunk;
+
+      if (typeof maxBytes === 'number') {
+        const remaining = maxBytes - storedBytes;
+        if (remaining <= 0) {
+          truncated = true;
+          truncatedBy = truncatedBy ?? 'bytes';
+          break;
+        }
+        if (slice.byteLength > remaining) {
+          slice = slice.subarray(0, remaining);
+          truncated = true;
+          truncatedBy = truncatedBy ?? 'bytes';
+        }
       }
+
+      if (slice.byteLength > 0) {
+        const decoded = decoder.decode(slice, { stream: true });
+        storedBytes += slice.byteLength;
+        appendWithLineLimit(decoded);
+      }
+
+      if (truncated) break;
     }
-  } catch (err) {
-    if (!checkAborted()) throw err;
+
+    // flush tail
+    const tail = decoder.decode();
+    if (tail && !truncated) {
+      appendWithLineLimit(tail);
+    }
+  } catch {
+    // 返回已收集内容（避免影响上层策略降级/超时处理）
   } finally {
     try {
       reader.releaseLock?.();
@@ -311,8 +460,7 @@ export async function* readLinesFromStream(
     }
   }
 
-  buffer += decoder.decode();
-  if (buffer && !checkAborted()) yield buffer;
+  return { text: parts.join(''), truncated, truncatedBy };
 }
 
 /**

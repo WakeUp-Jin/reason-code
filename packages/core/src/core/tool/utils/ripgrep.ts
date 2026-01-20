@@ -20,7 +20,8 @@ import { logger } from '../../../utils/logger.js';
 import {
   createProcess,
   setupAbortHandler,
-  readLinesFromStream,
+  readStreamAsText,
+  readStreamAsTextLimited,
   waitForProcessExit,
 } from './spawn.js';
 
@@ -267,26 +268,142 @@ export const Ripgrep = {
     const checkAborted = () => abortHandler.aborted;
 
     try {
-      // 6. 流式读取并返回结果
-      yield* readLinesFromStream(proc.stdout, checkAborted);
+      // 6. 使用 Response.text() 读取所有输出
+      const output = await readStreamAsText(proc.stdout, input.signal);
 
       // 7. 等待进程退出
       await waitForProcessExit(proc, checkAborted, [0, 1], 'ripgrep');
+
+      // 8. 逐行 yield
+      if (output) {
+        const lines = output.trim().split(/\r?\n/);
+        for (const line of lines) {
+          if (line) yield line;
+        }
+      }
     } finally {
-      // 8. 清理资源
+      // 9. 清理资源
       abortHandler.cleanup();
     }
   },
 
   /**
-   * 执行搜索
+   * 流式搜索生成器
+   *
+   * 使用 Response.text() 读取所有输出，然后逐行 yield。
+   * 这种方式比手动流式读取更可靠，不会在超时时触发 Bun 流错误。
    *
    * @param input - 输入参数
    * @param input.cwd - 搜索路径（可以是目录或文件）
    * @param input.pattern - 搜索模式
    * @param input.glob - 文件过滤 glob 模式
    * @param input.binDir - 本地二进制缓存目录
+   * @param input.signal - 中止信号
+   * @param input.maxCount - 每个文件的最大匹配数（默认 100）
+   * @yields 每一行搜索结果（格式：文件路径|行号|行内容）
+   */
+  async *searchStream(input: {
+    cwd: string;
+    pattern: string;
+    glob?: string;
+    binDir?: string;
+    signal?: AbortSignal;
+    maxCount?: number;
+  }): AsyncGenerator<string, void, unknown> {
+    // 1. 初始检查
+    if (input.signal?.aborted) {
+      throw createAbortError();
+    }
+
+    // 2. 检查搜索路径是文件还是目录
+    let searchTarget = input.cwd;
+    let processCwd = input.cwd;
+
+    try {
+      const stat = statSync(input.cwd);
+      if (stat.isFile()) {
+        processCwd = dirname(input.cwd);
+      }
+    } catch {
+      // stat 失败，保持原样
+    }
+
+    // 3. 准备命令
+    const rgPath = await Ripgrep.filepath(input.binDir);
+    const args = [
+      '-nH', // -n: 行号, -H: 文件名
+      '--field-match-separator=|', // 使用 | 分隔字段
+      '--no-messages', // 抑制权限/读取失败等噪音错误，避免 stderr 堵塞
+      '--regexp',
+      input.pattern,
+    ];
+
+    // 🔑 添加 --max-count 限制（防止输出过大）
+    const maxCount = input.maxCount ?? 100; // 默认每个文件最多 100 条
+    args.push('--max-count', String(maxCount));
+
+    if (input.glob) {
+      args.push('--glob', input.glob);
+    }
+    args.push(searchTarget);
+
+    // 4. 启动进程
+    logger.debug(`🚀 [Ripgrep:SearchStream] Starting process`, {
+      rgPath,
+      args,
+      cwd: processCwd,
+    });
+
+    const proc = createProcess(rgPath, args, {
+      cwd: processCwd,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    // 5. 设置 Abort 处理
+    const abortHandler = setupAbortHandler(proc, input.signal, 'Ripgrep');
+    const checkAborted = () => abortHandler.aborted;
+
+    try {
+      // 6. 使用 Response.text() 读取所有输出
+      // 这种方式不会在超时时触发 Bun 流错误
+      logger.debug('📖 [searchStream] Starting to read stdout');
+      const output = await readStreamAsText(proc.stdout, input.signal);
+      logger.debug('📖 [searchStream] Finished reading stdout', { length: output.length });
+
+      // 7. 等待进程退出
+      logger.debug('⏳ [searchStream] Waiting for process exit');
+      await waitForProcessExit(proc, checkAborted, [0, 1], 'ripgrep');
+      logger.debug('✅ [searchStream] Process exited', { exitCode: proc.exitCode });
+
+      // 8. 逐行 yield
+      if (output) {
+        const lines = output.trim().split(/\r?\n/);
+        logger.debug('📝 [searchStream] Yielding lines', { count: lines.length });
+        for (const line of lines) {
+          if (line) yield line;
+        }
+      }
+    } finally {
+      // 9. 清理资源
+      logger.debug('🧹 [searchStream] Cleaning up');
+      abortHandler.cleanup();
+    }
+  },
+
+  /**
+   * 执行搜索（累积所有输出）
+   *
+   * 注意：对于大范围搜索，建议使用 searchStream() 流式方法。
+   *
+   * @param input - 输入参数
+   * @param input.cwd - 搜索路径（可以是目录或文件）
+   * @param input.pattern - 搜索模式
+   * @param input.glob - 文件过滤 glob 模式
+   * @param input.binDir - 本地二进制缓存目录
+   * @param input.signal - 中止信号
+   * @param input.maxCount - 每个文件的最大匹配数（默认 100）
    * @returns 搜索输出
+   * @deprecated 建议使用 searchStream() 流式方法，避免内存问题
    */
   async search(input: {
     cwd: string;
@@ -294,7 +411,16 @@ export const Ripgrep = {
     glob?: string;
     binDir?: string;
     signal?: AbortSignal;
+    maxCount?: number;
+    maxOutputBytes?: number;
+    maxOutputLines?: number;
   }): Promise<string> {
+    logger.debug(`[Ripgrep:search] Starting`, {
+      cwd: input.cwd,
+      maxOutputBytes: input.maxOutputBytes,
+      maxOutputLines: input.maxOutputLines,
+    });
+
     // 1. 初始检查
     if (input.signal?.aborted) {
       throw createAbortError();
@@ -324,6 +450,10 @@ export const Ripgrep = {
       input.pattern,
     ];
 
+    // 🔑 添加 --max-count 限制（防止输出过大）
+    const maxCount = input.maxCount ?? 100; // 默认每个文件最多 100 条
+    args.push('--max-count', String(maxCount));
+
     if (input.glob) {
       args.push('--glob', input.glob);
     }
@@ -345,15 +475,39 @@ export const Ripgrep = {
     const checkAborted = () => abortHandler.aborted;
 
     try {
-      // 6. 读取所有输出
-      let result = '';
-      for await (const line of readLinesFromStream(proc.stdout, checkAborted)) {
-        result += line + '\n';
+      // 6. 以“有上限”的方式读取 stdout：
+      //    - 读的过程中就限制输出规模，避免构造超大字符串触发 Bun 内部错误
+      const MAX_OUTPUT_BYTES = input.maxOutputBytes ?? 50 * 1024 * 1024; // 50MB
+      const { text: result, truncated, truncatedBy } = await readStreamAsTextLimited(proc.stdout, {
+        signal: input.signal,
+        maxBytes: MAX_OUTPUT_BYTES,
+        maxLines: input.maxOutputLines,
+      });
+
+      // 7. 若触发上限：尽快停止 rg，避免继续输出/占用资源
+      if (truncated) {
+        logger.warn(`⚠️ [Ripgrep:search] Output capped (${truncatedBy ?? 'unknown'})`, {
+          maxOutputBytes: MAX_OUTPUT_BYTES,
+          maxOutputLines: input.maxOutputLines,
+        });
+        try {
+          proc.kill('SIGTERM');
+        } catch {
+          // ignore
+        }
+
+        // 主动终止时不校验 exitCode（rg 可能被信号结束）
+        try {
+          await proc.exited;
+        } catch {
+          // ignore
+        }
+
+        return result.trimEnd();
       }
 
-      // 7. 等待进程退出
+      // 8. 正常结束：等待进程退出并校验 exit code
       await waitForProcessExit(proc, checkAborted, [0, 1], 'ripgrep');
-
       return result.trimEnd();
     } finally {
       // 8. 清理资源

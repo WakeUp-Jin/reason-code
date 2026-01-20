@@ -213,6 +213,9 @@ export function generateParamsSummary(toolName: string, params: Record<string, a
       return `${paths.length} files`;
     }
 
+    case 'Task':
+      return "Explore task implementation"
+
     default:
       // 尝试找到第一个字符串参数
       const firstString = Object.values(params).find((v) => typeof v === 'string');
