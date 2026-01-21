@@ -1,7 +1,6 @@
 import React from 'react';
 import { useAppStore } from '../../context/store.js';
 import { PanelSelect, type SelectOption } from '../../ui/panel-select.js';
-import { usePersistence } from '../../hooks/usePersistence.js';
 import { useAgent } from '../../hooks/useAgent.js';
 
 export interface PanelModelProps {
@@ -28,7 +27,6 @@ export function PanelModel({ onClose }: PanelModelProps) {
   const models = useAppStore((state) => state.models);
   const currentModel = useAppStore((state) => state.currentModel);
   const setCurrentModel = useAppStore((state) => state.setCurrentModel);
-  const { saveConfig } = usePersistence();
   const { switchModel } = useAgent();
 
   // 转换为选项
@@ -49,10 +47,7 @@ export function PanelModel({ onClose }: PanelModelProps) {
     // 更新 UI 状态
     setCurrentModel(option.value);
 
-    // 保存配置到本地
-    saveConfig({ model: { current: option.value } });
-
-    // 更新 Agent 实例的模型（异步，不阻塞 UI）
+    // 更新 Agent 实例的模型（内部会自动保存配置到文件）
     switchModel(provider, model);
 
     onClose();

@@ -3,9 +3,10 @@
  * 
  * 职责：
  * 1. 注册内置和自定义 Agent 配置
- * 2. 管理运行时参数（apiKey、baseURL）
- * 3. 创建 Agent 实例（工厂方法）
- * 4. 提供子代理查询（供 Task 工具使用）
+ * 2. 创建 Agent 实例（工厂方法）
+ * 3. 提供子代理查询（供 Task 工具使用）
+ * 
+ * 注意：模型配置由 ConfigService 管理，LLM 服务由 LLMServiceRegistry 提供
  */
 
 import type { AgentConfig } from './config/types.js';
@@ -16,17 +17,9 @@ import { logger } from '../../utils/logger.js';
 import { Agent } from './Agent.js';
 
 /**
- * 运行时配置
- */
-export interface RuntimeOptions {
-  apiKey?: string;
-  baseURL?: string;
-}
-
-/**
  * 共享运行时依赖
  */
-export interface SharedRuntime extends RuntimeOptions {
+export interface SharedRuntime {
   toolManager: ToolManager;
 }
 
@@ -65,21 +58,6 @@ export class AgentManager {
   }
 
   /**
-   * 配置运行时参数
-   */
-  configure(options: RuntimeOptions): this {
-    this.sharedRuntime.apiKey = options.apiKey;
-    this.sharedRuntime.baseURL = options.baseURL;
-
-    logger.info('AgentManager configured', {
-      hasApiKey: !!options.apiKey,
-      hasBaseURL: !!options.baseURL,
-    });
-
-    return this;
-  }
-
-  /**
    * 注册 Agent 配置
    */
   register(config: AgentConfig): this {
@@ -109,11 +87,6 @@ export class AgentManager {
    * 获取共享运行时依赖
    */
   getSharedRuntime(): SharedRuntime {
-    if (!this.sharedRuntime.apiKey) {
-      throw new Error(
-        'AgentManager not configured. Call configure() with apiKey before creating agents.'
-      );
-    }
     this.ensureToolManager();
     return this.sharedRuntime;
   }

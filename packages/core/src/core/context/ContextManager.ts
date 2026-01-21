@@ -5,7 +5,6 @@ import { CurrentTurnContext } from './modules/CurrentTurnContext.js';
 import { TokenEstimator } from './utils/tokenEstimator.js';
 import { sanitizeMessages } from './utils/messageSanitizer.js';
 import { logger } from '../../utils/logger.js';
-import type { ILLMService } from '../llm/types/index.js';
 
 /** 默认 Token 限制 */
 const DEFAULT_MODEL_LIMIT = 64000;
@@ -22,8 +21,6 @@ const DEFAULT_OVERFLOW_THRESHOLD = 0.95;
 export interface CompressionConfig {
   /** 模型 Token 限制 */
   modelLimit: number;
-  /** LLM 服务（用于生成摘要） */
-  llmService: ILLMService;
   /** 会话 ID（用于生成文件引用） */
   sessionId?: string;
   /** 压缩触发阈值（0-1），默认 0.7 */
@@ -75,9 +72,6 @@ export class ContextManager {
   /** 溢出警告阈值 */
   private overflowThreshold: number = DEFAULT_OVERFLOW_THRESHOLD;
 
-  /** LLM 服务（用于生成摘要） */
-  private llmService: ILLMService | null = null;
-
   /** 会话 ID（用于生成文件引用） */
   private sessionId?: string;
 
@@ -98,7 +92,6 @@ export class ContextManager {
    */
   configureCompression(config: CompressionConfig): void {
     this.modelLimit = config.modelLimit;
-    this.llmService = config.llmService;
     this.sessionId = config.sessionId;
     this.compressionThreshold = config.compressionThreshold ?? DEFAULT_COMPRESSION_THRESHOLD;
     this.overflowThreshold = config.overflowThreshold ?? DEFAULT_OVERFLOW_THRESHOLD;
@@ -276,10 +269,10 @@ export class ContextManager {
    * @returns 消息列表
    */
   async getContext(autoCompress: boolean = false): Promise<Message[]> {
-    // 自动压缩检查
-    if (autoCompress && this.llmService && this.needsCompression()) {
+    // 自动压缩检查（LLM 服务由 HistoryContext 从 LLMServiceRegistry 获取）
+    if (autoCompress && this.needsCompression()) {
       logger.info('触发自动压缩', { usage: this.getTokenUsage().formatted });
-      const result = await this.history.compress(this.llmService, this.sessionId);
+      const result = await this.history.compress(this.sessionId);
       if (result.compressed) {
         logger.info('压缩完成', {
           originalCount: result.originalCount,

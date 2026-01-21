@@ -1,11 +1,14 @@
 /**
  * 工具输出总结器
  * 负责总结过长的工具输出，减少 Token 使用
+ * 
+ * 使用 SECONDARY 层级模型进行总结，以平衡成本和效果
  */
 
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ILLMService } from '../../llm/types/index.js';
+import { llmServiceRegistry, ModelTier } from '../../llm/index.js';
 import type { ToolOutputProcessResult } from '../types.js';
 import { TokenEstimator } from './tokenEstimator.js';
 import { TOOL_OUTPUT_SUMMARY_PROMPT } from '../../promptManager/summarization/toolOutputSummary.js';
@@ -16,22 +19,40 @@ import { TOOL_OUTPUT_SUMMARY_PROMPT } from '../../promptManager/summarization/to
 const DEFAULT_MAX_FILE_SIZE = 100_000;
 const DEFAULT_TRUNCATE_LINES = 1000;
 /** 工具输出超过此 Token 数触发总结 */
-const DEFAULT_TOOL_OUTPUT_SUMMARY_THRESHOLD = 2000;
+const DEFAULT_TOOL_OUTPUT_SUMMARY_THRESHOLD = 4000;
 
 /**
  * 工具输出总结器类
+ * 
+ * 支持两种使用方式：
+ * 1. 传入 llmService（向后兼容）
+ * 2. 不传入，自动使用 SECONDARY 层级模型（推荐）
  */
 export class ToolOutputSummarizer {
-  /** LLM 服务实例 */
-  private llmService: ILLMService;
+  /** LLM 服务实例（可选，不传则使用 SECONDARY 层级） */
+  private llmService?: ILLMService;
 
   /**
    * 创建工具输出总结器
    *
-   * @param llmService - LLM 服务实例
+   * @param llmService - LLM 服务实例（可选）
+   *   - 如果传入：使用传入的服务
+   *   - 如果不传：自动使用 SECONDARY 层级模型
    */
-  constructor(llmService: ILLMService) {
+  constructor(llmService?: ILLMService) {
     this.llmService = llmService;
+  }
+
+  /**
+   * 获取 LLM 服务
+   * 如果构造时未传入，则从 Registry 获取 SECONDARY 层级服务
+   */
+  private async getLLMService(): Promise<ILLMService> {
+    if (this.llmService) {
+      return this.llmService;
+    }
+    // 使用 SECONDARY 层级模型进行工具输出总结
+    return llmServiceRegistry.getService(ModelTier.SECONDARY);
   }
 
   /**
@@ -122,7 +143,9 @@ export class ToolOutputSummarizer {
     const prompt = `${TOOL_OUTPUT_SUMMARY_PROMPT}${contextInfo}${output}`;
 
     try {
-      const summary = await this.llmService.simpleChat(prompt);
+      // 获取 LLM 服务（优先使用 SECONDARY 层级）
+      const service = await this.getLLMService();
+      const summary = await service.simpleChat(prompt);
       const executionTime = Date.now() - startTime;
       
       // 记录完整输入和执行时间
@@ -130,6 +153,7 @@ export class ToolOutputSummarizer {
 时间: ${new Date().toISOString()}
 工具: ${toolName || 'unknown'}
 执行时间: ${executionTime}ms
+模型: ${service.getConfig().model}
 
 === 完整输入 ===
 ${prompt}

@@ -20,7 +20,7 @@ import type {
 import os from 'os';
 import { existsSync } from 'fs';
 import { join } from 'path';
-import { configManager } from '../config/manager.js';
+import { configService, ModelTier } from '../config/index.js';
 import { getModelTokenLimit, getModelPricing } from '@reason-code/core';
 import { logger } from '../util/logger.js';
 import { agentLogger } from '../util/logUtils.js';
@@ -136,25 +136,18 @@ export function useAgent(): UseAgentReturn {
       setIsLoading(true);
       setError(null);
 
-      // 加载配置
-      const config = await configManager.loadConfig();
-      const { provider, model } = parseModelId(config.model.current);
+      // 加载配置（使用新的 ConfigService）
+      const modelConfig = await configService.getModelConfig(ModelTier.PRIMARY);
+      const { provider, model } = { provider: modelConfig.provider, model: modelConfig.model };
 
-      // 获取 provider 配置
-      const providerConfig = config.providers?.[provider];
-      if (!providerConfig?.apiKey) {
+      // 检查 API Key
+      if (!modelConfig.apiKey) {
         throw new Error(
           `API key not found for provider: ${provider}. Please set ${provider.toUpperCase()}_API_KEY in your environment or config file.`
         );
       }
 
-      // 配置 AgentManager
-      agentManager.configure({
-        apiKey: providerConfig.apiKey,
-        baseURL: providerConfig.baseUrl,
-      });
-
-      // 创建 Agent（传递模型配置）
+      // 创建 Agent（模型配置由 ConfigService 管理，LLM 服务由 LLMServiceRegistry 提供）
       const agent = agentManager.createAgent('build', {
         model: { provider, model },
       });
@@ -499,11 +492,8 @@ export function useAgent(): UseAgentReturn {
       setIsLoading(true);
       setError(null);
 
-      // 获取新 provider 的配置
-      const config = await configManager.loadConfig();
-      const providerConfig = config.providers?.[provider];
-
-      await agentInstance.setModel(provider, model, providerConfig?.apiKey);
+      // Agent.setModel 会更新 ConfigService 和 LLMServiceRegistry
+      await agentInstance.setModel(provider, model);
 
       // 更新定价
       const pricing = getModelPricing(model);

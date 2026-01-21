@@ -4,6 +4,9 @@
  * 核心模块统一导出
  */
 
+// 配置服务
+export * from '../config/index.js';
+
 // Agent 系统
 export * from './agent/index.js';
 

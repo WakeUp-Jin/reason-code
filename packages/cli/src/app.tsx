@@ -15,7 +15,7 @@ import { logger } from './util/logger.js';
 import { logger as coreLogger, initializeSession } from '@reason-cli/core';
 import { loadAllData } from './persistence/loader.js';
 import { usePersistence } from './hooks/usePersistence.js';
-import { configManager } from './config/manager.js';
+import { configService } from './config/index.js';
 
 // 获取项目根目录的绝对路径
 const __filename = fileURLToPath(import.meta.url);
@@ -62,11 +62,15 @@ function App() {
 
           if (loadedData.sessions.length > 0) {
             // 有历史数据，加载到内存（但不恢复旧会话）
+            // 新配置格式：model.primary.provider/model.primary.model
+            const primaryModel = loadedData.config.model.primary;
+            const currentModel = `${primaryModel.provider}/${primaryModel.model}`;
+            
             initializeFromDisk({
               sessions: loadedData.sessions,
               messages: loadedData.messages,
               currentSessionId: null, // 不恢复旧会话
-              currentModel: loadedData.config.model.current,
+              currentModel,
               currency: loadedData.config.ui.currency,
               exchangeRate: loadedData.config.ui.exchangeRate,
               approvalMode: loadedData.config.ui.approvalMode,
@@ -112,11 +116,10 @@ function App() {
 
 // 根组件，包含所有 Provider
 function Root() {
-  // 加载配置以获取主题设置
-  const config = configManager.getConfig();
-
+  // 使用默认主题，配置会在 App 中异步加载
+  // 主题切换可以通过 ThemeProvider 的 context 进行
   return (
-    <ThemeProvider defaultTheme={config.ui.theme as any}>
+    <ThemeProvider defaultTheme="kanagawa">
       <StoreProvider>
         <ToastProvider>
           <RouteProvider>

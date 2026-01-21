@@ -121,7 +121,8 @@ export const defaultSummaryGenerators: SummaryGeneratorRegistry = {
     }
     const count = result.data?.totalCount ?? result.data?.files?.length ?? 0;
     const dirPath = result.data?.directory || params.path || params.directory || '.';
-    return `Listed ${count} items in ${dirPath}${getWarningSuffix(result)}`;
+    const displayDirPath = relative(process.cwd(), dirPath);
+    return `Listed ${count} items in ${displayDirPath}${getWarningSuffix(result)}`;
   },
 
   // TodoRead
@@ -212,7 +213,9 @@ export function generateParamsSummary(toolName: string, params: Record<string, a
     case 'Write':
     case 'WriteFile':
     case 'Edit':
-      return params.file_path || params.path || params.filePath || '';
+      let filePath = params.file_path || params.path || params.filePath || '';
+      const displaFilePath = relative(process.cwd(), filePath);
+      return displaFilePath || '';
 
     case 'Glob':
       return params.pattern || '';
@@ -225,12 +228,17 @@ export function generateParamsSummary(toolName: string, params: Record<string, a
       return cmd.length > 30 ? cmd.slice(0, 30) + '...' : cmd;
 
     case 'ListFiles':
-      return params.path || params.directory || '.';
+      let dirPath = params.path || params.directory || '.';
+      const displayListPath = relative(process.cwd(), dirPath);
+      return displayListPath || '';
 
     case 'ReadManyFiles': {
       const paths = params.paths;
       if (!paths || paths.length === 0) return '';
-      if (paths.length === 1) return paths[0];
+      if (paths.length === 1) {
+        const displayFilePath = relative(process.cwd(), paths[0]);
+        return displayFilePath || '';
+      }
       return `${paths.length} files`;
     }
 

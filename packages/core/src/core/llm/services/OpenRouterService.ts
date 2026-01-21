@@ -140,7 +140,6 @@ export class OpenRouterService implements ILLMService {
           tools: tools && tools.length > 0 ? tools : undefined,
           ...options,
         } as any);
-        console.dir(response, { depth: null });
 
         const message = response.choices[0]?.message;
         if (!message) {

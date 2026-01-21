@@ -6,7 +6,7 @@
 import { ContextManager, ContextType, Message } from '../context/index.js';
 import { ToolManager } from '../tool/ToolManager.js';
 import { ILLMService } from '../llm/types/index.js';
-import { createLLMService } from '../llm/factory.js';
+import { llmServiceRegistry, ModelTier } from '../llm/index.js';
 import { ExecutionEngine } from './execution/index.js';
 import { eventBus } from '../../evaluation/EventBus.js';
 import { buildSystemPrompt, type SystemPromptContext } from '../promptManager/index.js';
@@ -14,6 +14,7 @@ import { ExecutionStreamManager } from '../execution/index.js';
 import { ApprovalMode, ConfirmDetails, ConfirmOutcome, InternalTool } from '../tool/types.js';
 import { StatsManager, type ModelPricing, type AgentStats } from '../stats/index.js';
 import { logger } from '../../utils/logger.js';
+import { configService } from '../../config/index.js';
 import type { AgentConfig } from './config/types.js';
 import type { SharedRuntime } from './AgentManager.js';
 import type { SessionCheckpoint } from '../session/types.js';
@@ -191,17 +192,12 @@ export class Agent {
    *   - 如果不提供 promptContext，将使用 config.systemPrompt 或默认提示词
    */
   async init(options?: AgentInitOptions): Promise<void> {
-    // 使用 config.model 或默认值
-    const provider = this.config.model?.provider || 'deepseek';
-    const model = this.config.model?.model || 'deepseek-chat';
+    // 使用 LLMServiceRegistry 获取主模型服务
+    this.llmService = await llmServiceRegistry.getService(ModelTier.PRIMARY);
 
-    // 创建 LLM 服务
-    this.llmService = await createLLMService({
-      provider,
-      model,
-      apiKey: this.runtime.apiKey,
-      baseURL: this.runtime.baseURL,
-    });
+    // 获取当前模型配置（用于日志和提示词）
+    const modelConfig = await configService.getModelConfig(ModelTier.PRIMARY);
+    const model = modelConfig.model;
 
     // 构建系统提示词
     let systemPrompt: string;
@@ -282,29 +278,25 @@ export class Agent {
 
   /**
    * 切换模型
-   * 重新创建 LLM 服务，保留上下文
+   * 更新配置并重新获取 LLM 服务，保留上下文
    */
-  async setModel(provider: string, model: string, apiKey?: string): Promise<void> {
-    // 更新配置
+  async setModel(provider: string, model: string): Promise<void> {
+    // 更新配置文件
+    await configService.updateModel(ModelTier.PRIMARY, { provider, model });
+
+    // 使缓存失效，下次 getService 会使用新配置
+    llmServiceRegistry.invalidate(ModelTier.PRIMARY);
+
+    // 重新获取 LLM 服务
+    this.llmService = await llmServiceRegistry.getService(ModelTier.PRIMARY);
+
+    // 更新本地配置（用于 getModelConfig）
     if (!this.config.model) {
       this.config.model = { provider, model };
     } else {
       this.config.model.provider = provider;
       this.config.model.model = model;
     }
-
-    // 更新运行时 apiKey（如果提供）
-    if (apiKey) {
-      this.runtime.apiKey = apiKey;
-    }
-
-    // 重新创建 LLM 服务（保留上下文）
-    this.llmService = await createLLMService({
-      provider,
-      model,
-      apiKey: this.runtime.apiKey,
-      baseURL: this.runtime.baseURL,
-    });
   }
 
   /**

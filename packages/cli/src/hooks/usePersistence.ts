@@ -1,11 +1,11 @@
 import { useCallback } from 'react';
 import { useAppStore } from '../context/store.js';
 import { Session } from '@reason-code/core';
-import { configManager } from '../config/manager.js';
+import { configService } from '../config/index.js';
+import type { DeepPartial, AppConfig } from '../config/index.js';
 import { logger } from '../util/logger.js';
 import { sessionLogger, configLogger } from '../util/logUtils.js';
 import { filterForStorage } from '../util/messageUtils.js';
-import type { PartialConfig } from '../config/schema.js';
 
 /**
  * 持久化 Hook
@@ -93,9 +93,9 @@ export function usePersistence() {
    * 保存配置
    * @param updates 要更新的配置项
    */
-  const saveConfig = useCallback(async (updates: Partial<PartialConfig>) => {
+  const saveConfig = useCallback(async (updates: DeepPartial<AppConfig>) => {
     try {
-      await configManager.updateConfig(updates);
+      await configService.updateConfig(updates);
       configLogger.save(updates);
     } catch (error) {
       logger.error('Failed to save config', { error });

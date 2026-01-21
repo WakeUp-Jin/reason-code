@@ -1,14 +1,14 @@
 import { LLMConfig, ToolCall } from '../types/index.js';
-import { config as envConfig, getLLMKeyByProvider } from '../../../config/env.js';
 import { logger } from '../../../utils/logger.js';
 
 /**
  * 提取 API Key
  *
  * 优先级（从高到低）：
- * 1. 用户传递的 config.apiKey（显式配置）
- * 2. 环境变量中的配置（通过 provider 自动查找）
- * 3. 如果都没有且该 provider 需要 API Key，则抛出错误
+ * 1. 用户传递的 config.apiKey（必须，由 ConfigService 提供）
+ * 2. 无需 API Key 的提供商返回占位符
+ *
+ * 注意：新架构中，API Key 应该由 ConfigService 在调用 createLLMService 前解析好
  *
  * @param config - LLM 配置
  * @returns API Key 字符串
@@ -21,14 +21,16 @@ export function extractApiKey(config: LLMConfig): string {
     return 'not-required';
   }
 
-  // 1. 优先使用用户传递的 API Key
+  // 使用传入的 API Key（应该由 ConfigService 提供）
   if (config.apiKey) {
     return config.apiKey;
   }
 
-  // 2. 尝试从环境变量配置中获取
-  const providerConfigKey = getLLMKeyByProvider(provider);
-  return providerConfigKey;
+  // 没有 API Key，抛出错误
+  throw new Error(
+    `API key not found for provider "${provider}". ` +
+      `Please configure your API key in ~/.reason-code/config.json`
+  );
 }
 
 /**

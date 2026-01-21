@@ -11,7 +11,7 @@
     "./tools": "./src/core/tool/index.ts",
     "./context": "./src/core/context/index.ts",
     "./session": "./src/core/session/index.ts",
-    "./config": "./src/config/env.ts",
+    "./config": "./src/config/index.ts",
     "./utils": "./src/utils/logger.ts"
   },
   "scripts": {

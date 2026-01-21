@@ -25,12 +25,7 @@ program
   .action(async (message?: string) => {
     console.log(chalk.green('🤖 Reason Agent started!\n'));
 
-    // 配置 AgentManager
-    agentManager.configure({
-      apiKey: process.env.DEEPSEEK_API_KEY,
-    });
-
-    // 创建 Agent
+    // 创建 Agent（模型配置由 ConfigService 管理，LLM 服务由 LLMServiceRegistry 提供）
     const agent = agentManager.createAgent('build');
 
     // 初始化 Agent

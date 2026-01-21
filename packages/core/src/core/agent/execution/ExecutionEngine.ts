@@ -155,20 +155,19 @@ export class ExecutionEngine {
     const approvalMode = config?.approvalMode ?? ApprovalMode.DEFAULT;
     const onConfirmRequired = config?.onConfirmRequired;
 
-    // 创建工具调度器
+    // 创建工具调度器（ToolOutputSummarizer 自动从 LLMServiceRegistry 获取 SECONDARY 模型）
     this.toolScheduler = new ToolScheduler(toolManager, {
       approvalMode,
       executionStream: this.executionStream,
       enableToolSummarization,
-      toolOutputSummarizer:enableToolSummarization ? new ToolOutputSummarizer(llmService) : undefined,
+      toolOutputSummarizer: enableToolSummarization ? new ToolOutputSummarizer() : undefined,
       onConfirmRequired: onConfirmRequired ? this.createConfirmHandler(onConfirmRequired) : undefined,
     });
 
-    // 配置压缩
+    // 配置压缩（LLM 服务由 HistoryContext 从 LLMServiceRegistry 获取）
     if (this.enableCompression) {
       contextManager.configureCompression({
         modelLimit: this.modelLimit,
-        llmService,
         sessionId: config?.sessionId,
       });
     }

@@ -1,15 +1,15 @@
 import { Session, type SessionMetadata } from '@reason-code/core';
-import { configManager } from '../config/manager.js';
+import { configService } from '../config/index.js';
+import type { AppConfig } from '../config/index.js';
 import { logger } from '../util/logger.js';
 import { restoreFromStorage } from '../util/messageUtils.js';
 import type { Message } from '../context/store.js';
-import type { ReasonCliConfig } from '../config/schema.js';
 
 /**
  * 加载的数据结构
  */
 export interface LoadedData {
-  config: ReasonCliConfig;
+  config: AppConfig;
   sessions: SessionMetadata[];
   messages: Record<string, Message[]>;
   currentSessionId: string | null;
@@ -24,7 +24,7 @@ export async function loadAllData(): Promise<LoadedData> {
   logger.info('Loading all data from disk...');
 
   // 1. 加载配置
-  const config = await configManager.loadConfig();
+  const config = await configService.getConfig();
 
   // 2. 加载所有会话（使用 Core Session API）
   const sessions = await Session.list();
@@ -59,6 +59,6 @@ export async function loadAllData(): Promise<LoadedData> {
  * 加载配置（用于快速启动）
  * 会话数据将在后台异步加载
  */
-export async function loadConfigOnly(): Promise<ReasonCliConfig> {
-  return configManager.loadConfig();
+export async function loadConfigOnly(): Promise<AppConfig> {
+  return configService.getConfig();
 }
