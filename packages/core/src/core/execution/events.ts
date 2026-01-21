@@ -5,6 +5,7 @@
 
 import type { ExecutionState, ToolCallRecord, ExecutionStats, SubAgentProgress } from './types.js';
 import type { ConfirmDetails } from '../tool/types.js';
+import type { AgentStats } from '../stats/index.js';
 
 /**
  * 执行流事件类型
@@ -62,7 +63,13 @@ export type ExecutionEvent =
   | { type: 'content:complete'; content: string }
 
   // Token 统计事件
-  | { type: 'stats:update'; stats: Partial<ExecutionStats>; totalCost?: number }
+  | {
+      type: 'stats:update';
+      stats: Partial<ExecutionStats>;
+      totalCost?: number;
+      /** 完整的 Agent 统计数据（新增） */
+      agentStats?: AgentStats;
+    }
 
   // 子代理进度事件（TaskTool 专用）
   | {

@@ -19,6 +19,20 @@ export interface TaskParams {
 }
 
 /**
+ * 子代理 Token 和费用统计
+ */
+export interface SubAgentStats {
+  /** 输入 token 总数（API 精确值） */
+  inputTokens: number;
+  /** 输出 token 总数 */
+  outputTokens: number;
+  /** 总费用（CNY） */
+  totalCost: number;
+  /** 格式化费用字符串 */
+  formattedCost: string;
+}
+
+/**
  * TaskTool 结果
  */
 export interface TaskResult {
@@ -28,6 +42,8 @@ export interface TaskResult {
     agentName: string;
     sessionId: string;
     summary: SubAgentToolSummary[];
+    /** 子代理执行的统计数据（Token、费用） */
+    stats?: SubAgentStats;
   };
 }
 

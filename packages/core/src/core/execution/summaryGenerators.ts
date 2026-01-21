@@ -3,6 +3,7 @@
  * 为不同类型的工具生成人类可读的结果摘要
  */
 
+import { relative } from 'node:path';
 import type { SummaryGeneratorRegistry } from './types.js';
 import type { ToolResult } from '../tool/types.js';
 
@@ -38,7 +39,8 @@ export const defaultSummaryGenerators: SummaryGeneratorRegistry = {
     const data = result.data;
     const lines = data?.lineCount ?? 0;
     const filePath = data?.filePath || params.file_path || params.path || params.filePath || 'file';
-    return `Read ${lines} lines from ${filePath}${getWarningSuffix(result)}`;
+    const displayPath = relative(process.cwd(), filePath);
+    return `Read ${lines} lines from ${displayPath}${getWarningSuffix(result)}`;
   },
 
   Read: (_, params, result) => {
@@ -157,6 +159,25 @@ export const defaultSummaryGenerators: SummaryGeneratorRegistry = {
     return `Read ${fileCount} files (${sizeStr})${getWarningSuffix(result)}`;
   },
 
+  // Task 工具
+  Task: (_, _params, result) => {
+    if (!result.success) {
+      return `Failed: ${result.error}`;
+    }
+    
+    const metadata = result.metadata;
+    const agentName = metadata?.agentName;
+    const stats = metadata?.stats;
+    const toolCount = metadata?.summary?.length ?? 0;
+    
+    if (stats && stats.tokens) {
+      const totalTokens = stats.tokens.total || ((stats.tokens.totalInput || 0) + (stats.tokens.totalOutput || 0));
+      return `Success | SubAgent: ${agentName} | Tools: ${toolCount} | Tokens: ${totalTokens}${getWarningSuffix(result)}`;
+    }
+    
+    return `Success | SubAgent: ${agentName} | Tools: ${toolCount}${getWarningSuffix(result)}`;
+  },
+
   // 默认
   default: (toolName, _, result) => {
     if (!result.success) {
@@ -214,7 +235,7 @@ export function generateParamsSummary(toolName: string, params: Record<string, a
     }
 
     case 'Task':
-      return "Explore task implementation"
+      return params.description || "Explore task implementation"
 
     default:
       // 尝试找到第一个字符串参数

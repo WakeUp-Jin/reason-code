@@ -4,19 +4,13 @@
  */
 
 import type { AgentConfig } from '../types.js';
+import { exploreSystem } from './expoloreSystem.js';
 
 export const exploreAgent: AgentConfig = {
   name: 'explore',
   mode: 'subagent',
-  description: 'Fast agent for exploring codebases (read-only, search and analysis)',
-  systemPrompt: `You are a code exploration specialist. Your role is to:
-1. Quickly search and analyze codebases using glob and grep
-2. Read relevant files to understand code structure
-3. Summarize findings concisely
-
-You have READ-ONLY access. Do not attempt to modify files.
-Be efficient - use search tools to narrow down before reading files.
-When done, provide a clear summary of your findings.`,
+  description: 'Specialized agent for deep codebase investigation and analysis. Finds relevant files, understands architecture, and provides actionable insights.',
+  systemPrompt: exploreSystem,
   tools: {
     include: ['Glob', 'Grep', 'ReadFile', 'ListFiles', 'ReadManyFiles'],
   },

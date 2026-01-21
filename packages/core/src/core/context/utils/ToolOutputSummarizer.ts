@@ -3,6 +3,8 @@
  * 负责总结过长的工具输出，减少 Token 使用
  */
 
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { ILLMService } from '../../llm/types/index.js';
 import type { ToolOutputProcessResult } from '../types.js';
 import { TokenEstimator } from './tokenEstimator.js';
@@ -114,12 +116,33 @@ export class ToolOutputSummarizer {
    * @returns 总结后的内容
    */
   async summarize(output: string, toolName?: string,params?: any): Promise<string> {
+    const startTime = Date.now();
     const contextInfo = toolName ? `工具名称: ${toolName}\n\n` : '';
     const paramsInfo = params ? `工具参数: ${JSON.stringify(params)}\n\n` : '';
     const prompt = `${TOOL_OUTPUT_SUMMARY_PROMPT}${contextInfo}${output}`;
 
     try {
       const summary = await this.llmService.simpleChat(prompt);
+      const executionTime = Date.now() - startTime;
+      
+      // 记录完整输入和执行时间
+      const logContent = `=== 工具压缩日志 ===
+时间: ${new Date().toISOString()}
+工具: ${toolName || 'unknown'}
+执行时间: ${executionTime}ms
+
+=== 完整输入 ===
+${prompt}
+
+=== 输出结果 ===
+${summary}
+
+`;
+
+      // 写入日志文件（覆盖模式）
+      const logPath = join(process.cwd(), 'logs', 'tool-compression.txt');
+      writeFileSync(logPath, logContent, 'utf8');
+
       return `[工具输出摘要${toolName ? ` - ${toolName}` : ''}]\n${summary}`;
     } catch (error) {
       // 如果总结失败，返回截断的原始内容

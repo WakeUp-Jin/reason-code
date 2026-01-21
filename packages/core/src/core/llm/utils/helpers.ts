@@ -1,4 +1,4 @@
-import { LLMConfig } from '../types/index.js';
+import { LLMConfig, ToolCall } from '../types/index.js';
 import { config as envConfig, getLLMKeyByProvider } from '../../../config/env.js';
 import { logger } from '../../../utils/logger.js';
 
@@ -150,4 +150,29 @@ export function deepParseArgs(args: any): any {
   }
 
   return args;
+}
+
+
+/**
+ * 规范化 tool_calls - 统一不同 LLM 提供商的输出格式
+ *
+ * 解决的问题：
+ * - Claude: 无参数时不返回 arguments 字段
+ * - Gemini: 始终返回 arguments
+ * - 其他模型: 格式可能各有差异
+ *
+ * @param raw - LLM 返回的原始 tool_calls
+ * @returns 规范化后的 ToolCall 数组，或 undefined
+ */
+export function normalizeToolCalls(raw?: any[]): ToolCall[] | undefined {
+  if (!raw?.length) return undefined;
+
+  return raw.map((tc) => ({
+    id: tc.id,
+    type: 'function' as const,
+    function: {
+      name: tc.function?.name ?? '',
+      arguments: tc.function?.arguments ?? '{}',
+    },
+  }));
 }

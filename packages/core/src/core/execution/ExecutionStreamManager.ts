@@ -13,6 +13,7 @@ import {
   type SubAgentProgress,
 } from './types.js';
 import type { ConfirmDetails } from '../tool/types.js';
+import type { AgentStats } from '../stats/index.js';
 import { logger } from '../../utils/logger.js';
 import { eventLogger } from '../../utils/logUtils.js';
 
@@ -628,11 +629,17 @@ export class ExecutionStreamManager {
 
   // ==================== Token 统计 ====================
 
-  updateStats(stats: Partial<ExecutionStats>, totalCost?: number): void {
+  /**
+   * 更新统计信息
+   * @param stats - 部分执行统计（旧接口，保持兼容）
+   * @param totalCost - 累计费用（CNY）
+   * @param agentStats - 完整的 Agent 统计数据（新接口，推荐使用）
+   */
+  updateStats(stats: Partial<ExecutionStats>, totalCost?: number, agentStats?: AgentStats): void {
     Object.assign(this.snapshot.stats, stats);
     this.snapshot.stats.totalTokens =
       this.snapshot.stats.inputTokens + this.snapshot.stats.outputTokens;
-    this.emit({ type: 'stats:update', stats, totalCost });
+    this.emit({ type: 'stats:update', stats, totalCost, agentStats });
   }
 
   incrementLoopCount(): void {

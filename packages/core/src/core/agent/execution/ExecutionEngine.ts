@@ -24,7 +24,7 @@ import { logger } from '../../../utils/logger.js';
 import { loopLogger, contextLogger } from '../../../utils/logUtils.js';
 import { eventBus } from '../../../evaluation/EventBus.js';
 import { ExecutionStreamManager } from '../../execution/index.js';
-import { SessionStats } from '../../stats/index.js';
+import { StatsManager } from '../../stats/index.js';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 
@@ -125,7 +125,7 @@ export class ExecutionEngine {
   private workingDirectory: string;
 
   // 统计
-  private sessionStats?: SessionStats;
+  private statsManager?: StatsManager;
 
   // 中断控制
   private abortSignal?: AbortSignal;
@@ -146,7 +146,7 @@ export class ExecutionEngine {
     this.modelLimit = config?.modelLimit ?? DEFAULT_MODEL_LIMIT;
     this.agentName = config?.agentName ?? 'agent';
     this.executionStream = config?.executionStream;
-    this.sessionStats = config?.sessionStats;
+    this.statsManager = config?.statsManager;
     this.abortSignal = config?.abortSignal;
     this.workingDirectory = config?.workingDirectory ?? process.cwd();
 
@@ -308,16 +308,19 @@ export class ExecutionEngine {
         reasoningTokens: response.usage.reasoningTokens,
       };
 
-      // 更新 SessionStats 计算费用
-      if (this.sessionStats) {
-        this.sessionStats.update(tokenUsage);
+      // 更新 StatsManager 计算费用
+      if (this.statsManager) {
+        this.statsManager.update(tokenUsage);
       }
 
       // 获取累计费用（CNY）
-      const totalCost = this.sessionStats?.getTotalCostCNY() ?? 0;
+      const totalCost = this.statsManager?.getTotalCostCNY() ?? 0;
 
-      // 更新执行流统计（携带完整 token 信息和 totalCost，单位为 CNY）
-      this.executionStream?.updateStats(tokenUsage, totalCost);
+      // 获取完整的 AgentStats（新接口）
+      const agentStats = this.statsManager?.getStats(this.contextManager);
+
+      // 更新执行流统计（携带完整 token 信息、totalCost 和 agentStats）
+      this.executionStream?.updateStats(tokenUsage, totalCost, agentStats);
 
       this.contextManager.updateTokenCount(response.usage.promptTokens);
     }

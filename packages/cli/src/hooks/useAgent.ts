@@ -21,7 +21,7 @@ import os from 'os';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import { configManager } from '../config/manager.js';
-import { getModelTokenLimit, getModelPricing } from '../config/tokenLimits.js';
+import { getModelTokenLimit, getModelPricing } from '@reason-code/core';
 import { logger } from '../util/logger.js';
 import { agentLogger } from '../util/logUtils.js';
 import { useExecutionState } from '../context/execution.js';
@@ -246,9 +246,9 @@ export function useAgent(): UseAgentReturn {
       // 存入 Store（让 useAgentStats 能立即获取）
       useAppStore.getState().setSessionTotalCost(historyCostCNY);
 
-      // 同时初始化 SessionStats（用于后续累加）
+      // 同时初始化 StatsManager（用于后续累加）
       if (historyCostCNY > 0) {
-        agent.getSessionStats().initFromHistory(historyCostCNY);
+        agent.getStatsManager().initFromHistory(historyCostCNY);
         logger.info('Restored history cost', { historyCostCNY });
       }
 
@@ -370,7 +370,7 @@ export function useAgent(): UseAgentReturn {
             if (splitIndex !== -1) {
               const partialHistory = coreHistory.slice(splitIndex + 1);
               agentInstance.getContextManager().loadWithSummary(checkpoint.summary, partialHistory);
-              agentInstance.getSessionStats().restore(checkpoint.stats);
+              agentInstance.getStatsManager().restore(checkpoint.stats);
             } else {
               await Session.deleteCheckpoint(currentSessionId);
               agentInstance.loadHistory(coreHistory, {
@@ -399,9 +399,9 @@ export function useAgent(): UseAgentReturn {
           // 存入 Store（让 useAgentStats 能立即获取）
           useAppStore.getState().setSessionTotalCost(historyCostCNY);
 
-          // 同时初始化 SessionStats（用于后续累加）
+          // 同时初始化 StatsManager（用于后续累加）
           if (historyCostCNY > 0) {
-            agentInstance.getSessionStats().initFromHistory(historyCostCNY);
+            agentInstance.getStatsManager().initFromHistory(historyCostCNY);
             logger.info('Restored history cost on session switch', { historyCostCNY });
           }
 
@@ -436,7 +436,7 @@ export function useAgent(): UseAgentReturn {
               summary: event.summary,
               loadAfterMessageId: lastCompressedMsg.id,
               compressedAt: Date.now(),
-              stats: agentInstance!.getSessionStats().toCheckpoint(),
+              stats: agentInstance!.getStatsManager().toCheckpoint(),
             };
 
             // 异步保存检查点（使用 Core Session API）

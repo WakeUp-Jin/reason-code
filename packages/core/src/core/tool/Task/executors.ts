@@ -146,13 +146,17 @@ export async function executeTask(
       executionStream: subExecStream,
     });
 
+    // 8. 获取子代理的统计数据（Token 消耗和费用）
+    const agentStats = subAgent.getStats();
+
     logger.info('TaskTool completed', {
       agentName: subagent_type,
       success: result.success,
       toolCallCount: toolSummary.length,
+      stats: agentStats,
     });
 
-    // 8. 返回结果
+    // 9. 返回结果（包含 Token 统计）
     return {
       success: result.success,
       output: result.finalResponse || result.error || '',
@@ -160,6 +164,7 @@ export async function executeTask(
         agentName: subagent_type,
         sessionId: sessionId || context?.sessionId || 'unknown',
         summary: toolSummary,
+        stats: agentStats,
       },
     };
   } finally {

@@ -12,7 +12,7 @@ import { eventBus } from '../../evaluation/EventBus.js';
 import { buildSystemPrompt, type SystemPromptContext } from '../promptManager/index.js';
 import { ExecutionStreamManager } from '../execution/index.js';
 import { ApprovalMode, ConfirmDetails, ConfirmOutcome, InternalTool } from '../tool/types.js';
-import { SessionStats, type ModelPricing } from '../stats/index.js';
+import { StatsManager, type ModelPricing, type AgentStats } from '../stats/index.js';
 import { logger } from '../../utils/logger.js';
 import type { AgentConfig } from './config/types.js';
 import type { SharedRuntime } from './AgentManager.js';
@@ -124,8 +124,8 @@ export class Agent {
   private initialized = false;
   private executionStream: ExecutionStreamManager;
 
-  /** 会话统计（费用累计） */
-  private sessionStats: SessionStats;
+  /** 统计管理器（Token 统计 + 费用计算） */
+  private statsManager: StatsManager;
 
   /** 压缩完成回调 */
   private onCompressionComplete?: (event: CompressionCompleteEvent) => void;
@@ -145,7 +145,7 @@ export class Agent {
     this.contextManager = new ContextManager();
     this.toolManager = runtime.toolManager;
     this.executionStream = new ExecutionStreamManager();
-    this.sessionStats = new SessionStats();
+    this.statsManager = new StatsManager();
   }
 
   /**
@@ -273,7 +273,7 @@ export class Agent {
       }
 
       // 恢复统计数据
-      this.sessionStats.restore(checkpoint.stats);
+      this.statsManager.restore(checkpoint.stats);
     } else {
       // 无检查点：加载完整历史
       this.loadHistory(history);
@@ -325,7 +325,7 @@ export class Agent {
     eventBus.reset();
 
     // 记录执行前的累计费用（用于计算本次执行费用）
-    const costBeforeRun = this.sessionStats.getTotalCostCNY();
+    const costBeforeRun = this.statsManager.getTotalCostCNY();
 
     // 发射 Agent 调用事件
     eventBus.emit('agent:call', { agentName: this.config.name });
@@ -363,7 +363,7 @@ export class Agent {
           onConfirmRequired: options?.onConfirmRequired,
           approvalMode: options?.approvalMode,
           abortSignal: this.abortController.signal,
-          sessionStats: this.sessionStats,
+          statsManager: this.statsManager,
           workingDirectory: this.promptContext?.workingDirectory,
         }
       );
@@ -396,7 +396,7 @@ export class Agent {
       this.contextManager.finishTurn();
 
       // 计算本次执行的费用（CNY）= 当前累计 - 执行前累计
-      const costCNY = this.sessionStats.getTotalCostCNY() - costBeforeRun;
+      const costCNY = this.statsManager.getTotalCostCNY() - costBeforeRun;
 
       // 完成执行流，传递本次执行费用
       executionStream.complete(costCNY);
@@ -550,24 +550,39 @@ export class Agent {
   // ============ 统计相关 ============
 
   /**
-   * 获取会话统计
+   * 获取统计管理器
    */
-  getSessionStats(): SessionStats {
-    return this.sessionStats;
+  getStatsManager(): StatsManager {
+    return this.statsManager;
+  }
+
+  /**
+   * 获取完整统计数据（核心对外接口）
+   * 包含 Token 统计、上下文使用情况、费用统计
+   */
+  getStats(): AgentStats {
+    return this.statsManager.getStats(this.contextManager);
   }
 
   /**
    * 设置模型定价（用于费用计算）
    */
   setModelPricing(pricing: ModelPricing): void {
-    this.sessionStats.setPricing(pricing);
+    this.statsManager.setPricing(pricing);
   }
 
   /**
    * 设置汇率
    */
   setExchangeRate(rate: number): void {
-    this.sessionStats.setExchangeRate(rate);
+    this.statsManager.setExchangeRate(rate);
+  }
+
+  /**
+   * 设置模型（自动加载定价和限制）
+   */
+  setStatsModel(modelId: string): void {
+    this.statsManager.setModel(modelId);
   }
 
   /**
@@ -587,15 +602,13 @@ export class Agent {
    * 获取累计费用
    */
   getTotalCost(currency: 'USD' | 'CNY' = 'CNY'): number {
-    return currency === 'USD'
-      ? this.sessionStats.getTotalCostUSD()
-      : this.sessionStats.getTotalCostCNY();
+    return this.statsManager.getTotalCost(currency);
   }
 
   /**
    * 获取格式化的费用字符串
    */
   getFormattedCost(currency: 'USD' | 'CNY' = 'CNY'): string {
-    return this.sessionStats.getFormattedCost(currency);
+    return this.statsManager.getFormattedCost(currency);
   }
 }

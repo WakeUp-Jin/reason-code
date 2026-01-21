@@ -1,6 +1,6 @@
 import type { ExecutionStreamManager } from '../../execution/index.js';
 import type { ApprovalMode, ConfirmDetails, ConfirmOutcome } from '../../tool/types.js';
-import type { SessionStats } from '../../stats/index.js';
+import type { StatsManager } from '../../stats/index.js';
 
 /** 图片数据 */
 export interface ImageData {
@@ -182,8 +182,8 @@ export interface ToolLoopConfig {
   // 统计相关
   // ============================================================
 
-  /** 会话统计（用于费用计算） */
-  sessionStats?: SessionStats;
+  /** 统计管理器（用于 Token 统计和费用计算） */
+  statsManager?: StatsManager;
 
   // ============================================================
   // 工作目录
