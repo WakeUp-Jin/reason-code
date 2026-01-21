@@ -288,112 +288,10 @@ export const Ripgrep = {
   },
 
   /**
-   * 流式搜索生成器
-   *
-   * 使用 Response.text() 读取所有输出，然后逐行 yield。
-   * 这种方式比手动流式读取更可靠，不会在超时时触发 Bun 流错误。
-   *
-   * @param input - 输入参数
-   * @param input.cwd - 搜索路径（可以是目录或文件）
-   * @param input.pattern - 搜索模式
-   * @param input.glob - 文件过滤 glob 模式
-   * @param input.binDir - 本地二进制缓存目录
-   * @param input.signal - 中止信号
-   * @param input.maxCount - 每个文件的最大匹配数（默认 100）
-   * @yields 每一行搜索结果（格式：文件路径|行号|行内容）
-   */
-  async *searchStream(input: {
-    cwd: string;
-    pattern: string;
-    glob?: string;
-    binDir?: string;
-    signal?: AbortSignal;
-    maxCount?: number;
-  }): AsyncGenerator<string, void, unknown> {
-    // 1. 初始检查
-    if (input.signal?.aborted) {
-      throw createAbortError();
-    }
-
-    // 2. 检查搜索路径是文件还是目录
-    let searchTarget = input.cwd;
-    let processCwd = input.cwd;
-
-    try {
-      const stat = statSync(input.cwd);
-      if (stat.isFile()) {
-        processCwd = dirname(input.cwd);
-      }
-    } catch {
-      // stat 失败，保持原样
-    }
-
-    // 3. 准备命令
-    const rgPath = await Ripgrep.filepath(input.binDir);
-    const args = [
-      '-nH', // -n: 行号, -H: 文件名
-      '--field-match-separator=|', // 使用 | 分隔字段
-      '--no-messages', // 抑制权限/读取失败等噪音错误，避免 stderr 堵塞
-      '--regexp',
-      input.pattern,
-    ];
-
-    // 🔑 添加 --max-count 限制（防止输出过大）
-    const maxCount = input.maxCount ?? 100; // 默认每个文件最多 100 条
-    args.push('--max-count', String(maxCount));
-
-    if (input.glob) {
-      args.push('--glob', input.glob);
-    }
-    args.push(searchTarget);
-
-    // 4. 启动进程
-    logger.debug(`🚀 [Ripgrep:SearchStream] Starting process`, {
-      rgPath,
-      args,
-      cwd: processCwd,
-    });
-
-    const proc = createProcess(rgPath, args, {
-      cwd: processCwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    // 5. 设置 Abort 处理
-    const abortHandler = setupAbortHandler(proc, input.signal, 'Ripgrep');
-    const checkAborted = () => abortHandler.aborted;
-
-    try {
-      // 6. 使用 Response.text() 读取所有输出
-      // 这种方式不会在超时时触发 Bun 流错误
-      logger.debug('📖 [searchStream] Starting to read stdout');
-      const output = await readStreamAsText(proc.stdout, input.signal);
-      logger.debug('📖 [searchStream] Finished reading stdout', { length: output.length });
-
-      // 7. 等待进程退出
-      logger.debug('⏳ [searchStream] Waiting for process exit');
-      await waitForProcessExit(proc, checkAborted, [0, 1], 'ripgrep');
-      logger.debug('✅ [searchStream] Process exited', { exitCode: proc.exitCode });
-
-      // 8. 逐行 yield
-      if (output) {
-        const lines = output.trim().split(/\r?\n/);
-        logger.debug('📝 [searchStream] Yielding lines', { count: lines.length });
-        for (const line of lines) {
-          if (line) yield line;
-        }
-      }
-    } finally {
-      // 9. 清理资源
-      logger.debug('🧹 [searchStream] Cleaning up');
-      abortHandler.cleanup();
-    }
-  },
-
-  /**
    * 执行搜索（累积所有输出）
    *
-   * 注意：对于大范围搜索，建议使用 searchStream() 流式方法。
+   * 注意：对于大范围搜索，请务必设置 maxOutputBytes / maxOutputLines，
+   * 避免 stdout 输出过大导致内存占用或运行时异常（尤其在 Bun 环境）。
    *
    * @param input - 输入参数
    * @param input.cwd - 搜索路径（可以是目录或文件）
@@ -403,7 +301,6 @@ export const Ripgrep = {
    * @param input.signal - 中止信号
    * @param input.maxCount - 每个文件的最大匹配数（默认 100）
    * @returns 搜索输出
-   * @deprecated 建议使用 searchStream() 流式方法，避免内存问题
    */
   async search(input: {
     cwd: string;
