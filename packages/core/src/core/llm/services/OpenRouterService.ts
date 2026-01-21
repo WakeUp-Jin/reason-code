@@ -138,15 +138,8 @@ export class OpenRouterService implements ILLMService {
           model: this.model,
           messages: this.addCacheControlForClaude(messages),
           tools: tools && tools.length > 0 ? tools : undefined,
-          tool_choice: options?.toolChoice,
-          temperature: options?.temperature,
-          max_tokens: options?.maxTokens,
-          top_p: options?.topP,
-          frequency_penalty: options?.frequencyPenalty,
-          presence_penalty: options?.presencePenalty,
-          stop: options?.stop,
-          response_format: options?.responseFormat,
-        });
+          ...options,
+        } as any);
         console.dir(response, { depth: null });
 
         const message = response.choices[0]?.message;

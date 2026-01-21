@@ -119,6 +119,10 @@ export interface LLMChatOptions {
   extraBody?: Record<string, any>;
   /** 中断信号（用于取消 API 请求） */
   abortSignal?: AbortSignal;
+  /** 推理是否启用 */
+  reasoning?:{
+    enabled: boolean;
+  }
 }
 
 /**

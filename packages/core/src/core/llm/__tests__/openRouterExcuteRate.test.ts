@@ -10,11 +10,13 @@ const input=await readFile('/Users/xjk/Desktop/ScriptCode/reason-code/packages/c
 async function testOpenRouterExcuteRate() {
   const service = await createLLMService({
     provider: 'openrouter',
-    model: 'google/gemini-3-flash-preview',
+    // model: 'google/gemini-3-flash-preview',//9
+    model: 'x-ai/grok-4.1-fast', //12.83
+    // model:'z-ai/glm-4.7-flash',
     apiKey: process.env.OPENROUTER_API_KEY,
   });
   console.time('OpenRouterExcuteRate');
-  const response = await service.complete([{ role: 'user', content: input }]);
+  const response = await service.complete([{ role: 'user', content: input }],undefined,{reasoning:{enabled:false}});
   console.log(response);
   console.timeEnd('OpenRouterExcuteRate');
 }
