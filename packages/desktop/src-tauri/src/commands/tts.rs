@@ -110,8 +110,11 @@ pub async fn tts_speak(text: String, voice_type: Option<String>) -> Result<Vec<u
         .await
         .map_err(|e| format!("解析响应失败: {}", e))?;
 
-    if tts_response.code != 0 {
-        return Err(format!("TTS 失败: {}", tts_response.message));
+    if tts_response.code != 0 && tts_response.code != 3000 {
+        return Err(format!(
+            "TTS 失败 (code {}): {}",
+            tts_response.code, tts_response.message
+        ));
     }
 
     let audio_base64 = tts_response.data.ok_or("无音频数据返回")?;

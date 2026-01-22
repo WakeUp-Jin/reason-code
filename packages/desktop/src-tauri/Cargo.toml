@@ -6,6 +6,7 @@ authors = ["reason-code"]
 license = "Apache-2.0"
 repository = ""
 edition = "2021"
+default-run = "reason-desktop"
 
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }
