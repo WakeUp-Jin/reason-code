@@ -1,14 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
+import { useAppStore } from '@/lib/store';
 
 export function OutputPanel() {
-  // TODO: 从 store 或 props 获取实际输出
-  const [output, setOutput] = useState('');
+  const output = useAppStore((state) => state.output);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  // 模拟输出（仅用于测试）
-  useEffect(() => {
-    // 可以删除这个模拟
-  }, []);
 
   // 自动滚动到底部
   useEffect(() => {

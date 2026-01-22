@@ -1,21 +1,39 @@
-import { useState, useCallback, KeyboardEvent } from 'react';
+import { useState, useCallback, KeyboardEvent, MouseEvent } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { OutputPanel } from './OutputPanel';
+import { VoiceButton } from './VoiceButton';
+import { appendVoiceSessionEntry } from '@/lib/tauri';
 
 interface ExpandedViewProps {
   onCollapse: () => void;
+  onPrompt: (text: string) => Promise<void>;
 }
 
-export function ExpandedView({ onCollapse }: ExpandedViewProps) {
+export function ExpandedView({ onCollapse, onPrompt }: ExpandedViewProps) {
   const [inputText, setInputText] = useState('');
+
+  const handleTitleBarMouseDown = useCallback((e: MouseEvent<HTMLDivElement>) => {
+    // Ignore drags that begin on no-drag controls (e.g. the collapse button).
+    if ((e.target as HTMLElement)?.closest?.('[data-tauri-drag-region="false"]')) return;
+    getCurrentWindow().startDragging().catch(console.error);
+  }, []);
 
   const handleSend = useCallback(() => {
     const text = inputText.trim();
     if (!text) return;
-    
-    // TODO: 发送消息到 Agent
-    console.log('Send:', text);
+
     setInputText('');
-  }, [inputText]);
+
+    void appendVoiceSessionEntry({
+      role: 'user',
+      text,
+      source: 'text',
+    }).catch((error) => {
+      console.error('Failed to append voice session entry:', error);
+    });
+
+    void onPrompt(text);
+  }, [inputText, onPrompt]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLInputElement>) => {
@@ -27,14 +45,20 @@ export function ExpandedView({ onCollapse }: ExpandedViewProps) {
     [handleSend]
   );
 
+  const handleResizeMouseDown = useCallback(() => {
+    getCurrentWindow().startResizeDragging('South').catch(console.error);
+  }, []);
+
   return (
     <div className="h-full flex flex-col">
       {/* 顶栏 - 40px, 可拖动 */}
       <div
         data-tauri-drag-region
-        className="h-10 flex items-center px-3 border-b border-gray-100 shrink-0"
+        onMouseDown={handleTitleBarMouseDown}
+        className="h-10 flex items-center px-3 border-b border-gray-100 shrink-0 relative"
       >
         <button
+          data-tauri-drag-region="false"
           onClick={onCollapse}
           className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
           title="收起"
@@ -50,9 +74,15 @@ export function ExpandedView({ onCollapse }: ExpandedViewProps) {
               strokeLinejoin="round"
               strokeWidth={2}
               d="M15 19l-7-7 7-7"
-            />
-          </svg>
+          />
+        </svg>
         </button>
+        <div
+          data-tauri-drag-region="false"
+          className="absolute left-1/2 -translate-x-1/2"
+        >
+          <VoiceButton size="sm" onTranscribed={onPrompt} />
+        </div>
       </div>
 
       {/* 输出区域 - 自适应高度，最小 30px */}
@@ -61,7 +91,7 @@ export function ExpandedView({ onCollapse }: ExpandedViewProps) {
       </div>
 
       {/* 底栏 - 48px, 输入框 + 发送按钮 */}
-      <div className="h-12 flex items-center gap-2 px-3 border-t border-gray-100 shrink-0">
+      <div className="h-12 mb-2 flex items-center gap-2 px-3 border-t border-gray-100 shrink-0">
         <input
           type="text"
           value={inputText}
@@ -90,6 +120,15 @@ export function ExpandedView({ onCollapse }: ExpandedViewProps) {
             />
           </svg>
         </button>
+      </div>
+
+      {/* 底部拖拽手柄 - 更明显的高度调整入口 */}
+      <div
+        onMouseDown={handleResizeMouseDown}
+        className="h-2 flex items-center justify-center cursor-row-resize select-none"
+        title="拖拽调整高度"
+      >
+        <div className="w-10 h-0.5 bg-gray-300 rounded-full" />
       </div>
     </div>
   );

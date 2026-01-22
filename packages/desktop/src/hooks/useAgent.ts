@@ -7,39 +7,62 @@ import {
   onAgentError,
 } from '@/lib/tauri';
 
-export function useAgent() {
+interface UseAgentOptions {
+  onFinished?: (fullText: string) => void;
+  onError?: (message: string) => void;
+}
+
+export function useAgent(options: UseAgentOptions = {}) {
   const { setStatus, appendOutput, clearOutput, setError, setIsRecording } =
     useAppStore();
+  const { onFinished, onError } = options;
 
   // 监听 Agent 事件
   useEffect(() => {
+    let isActive = true;
     const unlisteners: (() => void)[] = [];
 
+    const registerListener = (promise: Promise<() => void>) => {
+      promise.then((unlisten) => {
+        if (!isActive) {
+          unlisten();
+          return;
+        }
+        unlisteners.push(unlisten);
+      });
+    };
+
     // 监听输出
-    onAgentOutput((chunk) => {
+    registerListener(onAgentOutput((chunk) => {
       appendOutput(chunk);
-    }).then((unlisten) => unlisteners.push(unlisten));
+    }));
 
     // 监听完成
-    onAgentFinished((_fullText) => {
+    registerListener(onAgentFinished((fullText) => {
       setStatus('idle');
       setIsRecording(false);
-    }).then((unlisten) => unlisteners.push(unlisten));
+      onFinished?.(fullText);
+    }));
 
     // 监听错误
-    onAgentError((message) => {
+    registerListener(onAgentError((message) => {
       setError(message);
       setIsRecording(false);
-    }).then((unlisten) => unlisteners.push(unlisten));
+      onError?.(message);
+    }));
 
     return () => {
+      isActive = false;
       unlisteners.forEach((unlisten) => unlisten());
     };
-  }, [appendOutput, setStatus, setError, setIsRecording]);
+  }, [appendOutput, setStatus, setError, setIsRecording, onFinished, onError]);
 
   const runAgent = useCallback(
-    async (prompt: string) => {
+    async (prompt: string, prefillOutput?: string) => {
       clearOutput();
+      if (prefillOutput) {
+        appendOutput(prefillOutput);
+      }
       setStatus('thinking');
 
       try {
@@ -48,7 +71,7 @@ export function useAgent() {
         setError((error as Error).message);
       }
     },
-    [clearOutput, setStatus, setError]
+    [clearOutput, appendOutput, setStatus, setError]
   );
 
   return {

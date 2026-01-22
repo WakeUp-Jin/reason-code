@@ -1,23 +1,37 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
+import { useAppStore } from '@/lib/store';
+import { useRecorder } from '@/hooks/useRecorder';
 
-export function VoiceButton() {
-  const [isRecording, setIsRecording] = useState(false);
+type VoiceButtonSize = 'sm' | 'md';
+
+interface VoiceButtonProps {
+  size?: VoiceButtonSize;
+  className?: string;
+  onTranscribed?: (text: string) => void;
+}
+
+export function VoiceButton({ size = 'md', className, onTranscribed }: VoiceButtonProps) {
+  const isRecording = useAppStore((state) => state.isRecording);
+  const { startRecording, stopRecording } = useRecorder({ onTranscribed });
+  const buttonSizeClass = size === 'sm' ? 'w-7 h-7' : 'w-8 h-8';
+  const micIconClass = size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4';
+  const stopIconClass = size === 'sm' ? 'w-3 h-3' : 'w-3.5 h-3.5';
 
   const handleClick = useCallback(() => {
-    setIsRecording((prev) => !prev);
-    // TODO: 实际的录音逻辑
-    if (!isRecording) {
-      console.log('开始录音');
+    console.log('[VoiceButton] click', { isRecording });
+    if (isRecording) {
+      stopRecording();
     } else {
-      console.log('停止录音');
+      startRecording();
     }
-  }, [isRecording]);
+  }, [isRecording, startRecording, stopRecording]);
 
   return (
     <button
+      data-tauri-drag-region="false"
       onClick={handleClick}
       className={`
-        w-8 h-8 rounded-full flex items-center justify-center
+        ${buttonSizeClass} rounded-full flex items-center justify-center
         transition-all duration-200
         focus:outline-none focus:ring-2 focus:ring-offset-2
         ${
@@ -25,18 +39,19 @@ export function VoiceButton() {
             ? 'bg-red-500 hover:bg-red-600 focus:ring-red-400 recording-pulse'
             : 'bg-violet-500 hover:bg-violet-600 focus:ring-violet-400'
         }
+        ${className ?? ''}
       `}
       title={isRecording ? '停止录音' : '开始录音'}
     >
       {isRecording ? (
         // 停止图标（方块）
-        <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 24 24">
+        <svg className={`${stopIconClass} text-white`} fill="currentColor" viewBox="0 0 24 24">
           <rect x="6" y="6" width="12" height="12" rx="2" />
         </svg>
       ) : (
         // 麦克风图标
         <svg
-          className="w-4 h-4 text-white"
+          className={`${micIconClass} text-white`}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"

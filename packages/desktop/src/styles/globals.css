@@ -21,8 +21,13 @@ body {
 }
 
 /* 窗口拖拽区域 */
-[data-tauri-drag-region] {
+[data-tauri-drag-region]:not([data-tauri-drag-region="false"]) {
   -webkit-app-region: drag;
+}
+
+/* 显式声明不参与拖拽的区域（避免被上面的 attribute 选择器误伤） */
+[data-tauri-drag-region="false"] {
+  -webkit-app-region: no-drag;
 }
 
 /* 防止按钮和输入框被拖拽 */

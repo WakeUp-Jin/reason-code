@@ -14,6 +14,7 @@ interface AppState {
   isRecording: boolean;
   output: string;
   error: string | null;
+  voiceSessionId: string | null;
 
   // 配置
   config: {
@@ -35,6 +36,7 @@ interface AppState {
   clearOutput: () => void;
   setError: (error: string | null) => void;
   setConfig: (config: AppState['config']) => void;
+  setVoiceSessionId: (sessionId: string | null) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -43,6 +45,7 @@ export const useAppStore = create<AppState>((set) => ({
   isRecording: false,
   output: '',
   error: null,
+  voiceSessionId: null,
   config: null,
 
   // Actions
@@ -53,4 +56,5 @@ export const useAppStore = create<AppState>((set) => ({
   clearOutput: () => set({ output: '' }),
   setError: (error) => set({ error, status: error ? 'error' : 'idle' }),
   setConfig: (config) => set({ config }),
+  setVoiceSessionId: (sessionId) => set({ voiceSessionId: sessionId }),
 }));

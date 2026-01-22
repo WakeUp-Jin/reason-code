@@ -76,6 +76,27 @@ export async function speakText(
   return new Uint8Array(bytes);
 }
 
+// ============ 语音会话记录 ============
+
+export type VoiceSessionRole = 'user' | 'assistant';
+export type VoiceSessionSource = 'voice' | 'text' | 'agent';
+
+export interface VoiceSessionEntryInput {
+  role: VoiceSessionRole;
+  text: string;
+  source: VoiceSessionSource;
+}
+
+export async function startVoiceSession(): Promise<string> {
+  return await invoke<string>('voice_session_start');
+}
+
+export async function appendVoiceSessionEntry(
+  entry: VoiceSessionEntryInput
+): Promise<void> {
+  await invoke('voice_session_append', entry);
+}
+
 // ============ 窗口控制 ============
 
 export async function setWindowSize(
