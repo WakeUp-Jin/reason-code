@@ -78,7 +78,29 @@ export type ExecutionEvent =
       toolCallId: string;
       /** 子代理进度信息 */
       progress: SubAgentProgress;
-    };
+    }
+
+  // 压缩事件
+  | { type: 'compression:start'; tokenUsage: string }
+  | { type: 'compression:complete'; result: CompressionEventResult };
+
+/**
+ * 压缩事件结果数据
+ */
+export interface CompressionEventResult {
+  /** 原始 token 数 */
+  originalTokens: number;
+  /** 压缩后 token 数 */
+  compressedTokens: number;
+  /** 原始消息数 */
+  originalCount: number;
+  /** 压缩后消息数 */
+  compressedCount: number;
+  /** 节省百分比 */
+  savedPercentage: number;
+  /** 保留消息中的文件路径 */
+  retainedFiles: string[];
+}
 
 /**
  * 事件处理器类型

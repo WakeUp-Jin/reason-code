@@ -539,3 +539,11 @@ export function useAgent(): UseAgentReturn {
     isRunning,
   };
 }
+
+/**
+ * 获取当前 Agent 实例（供命令系统等非 React 上下文使用）
+ * @returns Agent 实例，如果未初始化则返回 null
+ */
+export function getAgentInstance(): Agent | null {
+  return agentInstance;
+}

@@ -1,10 +1,12 @@
-import { ContextType, Message } from './types.js';
+import { ContextType, Message, CompressionResult } from './types.js';
 import { SystemPromptContext } from './modules/SystemPromptContext.js';
 import { HistoryContext } from './modules/HistoryContext.js';
 import { CurrentTurnContext } from './modules/CurrentTurnContext.js';
 import { TokenEstimator } from './utils/tokenEstimator.js';
 import { sanitizeMessages } from './utils/messageSanitizer.js';
 import { logger } from '../../utils/logger.js';
+import type { ExecutionStreamManager } from '../execution/ExecutionStreamManager.js';
+import { relative } from 'path';
 
 /** 默认 Token 限制 */
 const DEFAULT_MODEL_LIMIT = 64000;
@@ -78,6 +80,9 @@ export class ContextManager {
   /** 上次请求的实际 Token 数（从 API 响应获取） */
   private lastPromptTokens: number = 0;
 
+  /** 执行流管理器（用于发送压缩事件） */
+  private executionStream?: ExecutionStreamManager;
+
   constructor() {
     this.systemPrompt = new SystemPromptContext();
     this.history = new HistoryContext();
@@ -140,6 +145,13 @@ export class ContextManager {
    */
   getLastPromptTokens(): number {
     return this.lastPromptTokens;
+  }
+
+  /**
+   * 设置执行流管理器（用于发送压缩事件）
+   */
+  setExecutionStream(stream: ExecutionStreamManager): void {
+    this.executionStream = stream;
   }
 
   // ============ 系统提示词相关 ============
@@ -271,14 +283,36 @@ export class ContextManager {
   async getContext(autoCompress: boolean = false): Promise<Message[]> {
     // 自动压缩检查（LLM 服务由 HistoryContext 从 LLMServiceRegistry 获取）
     if (autoCompress && this.needsCompression()) {
-      logger.info('触发自动压缩', { usage: this.getTokenUsage().formatted });
+      const tokenUsage = this.getTokenUsage();
+      logger.info('触发自动压缩', { usage: tokenUsage.formatted });
+
+      // 发送压缩开始事件
+      this.executionStream?.startCompression(tokenUsage.formatted);
+
       const result = await this.history.compress(this.sessionId);
       if (result.compressed) {
+        const retainedFiles = this.extractRetainedFiles();
+        const savedPercentage = Math.round(
+          (1 - result.compressedTokens / result.originalTokens) * 100
+        );
+
         logger.info('压缩完成', {
           originalCount: result.originalCount,
           compressedCount: result.compressedCount,
           originalTokens: result.originalTokens,
           compressedTokens: result.compressedTokens,
+          savedPercentage,
+          retainedFiles: retainedFiles.length,
+        });
+
+        // 发送压缩完成事件
+        this.executionStream?.completeCompression({
+          originalTokens: result.originalTokens,
+          compressedTokens: result.compressedTokens,
+          originalCount: result.originalCount,
+          compressedCount: result.compressedCount,
+          savedPercentage,
+          retainedFiles,
         });
       }
     }
@@ -361,5 +395,65 @@ export class ContextManager {
       default:
         logger.warn(`未知的上下文类型: ${type}`);
     }
+  }
+
+  // ============ 压缩相关方法 ============
+
+  /**
+   * 强制执行压缩（绕过阈值检查，供 /compact 命令使用）
+   */
+  async forceCompress(): Promise<CompressionResult> {
+    logger.info('手动触发压缩', { usage: this.getTokenUsage().formatted });
+    return this.history.compress(this.sessionId);
+  }
+
+  /**
+   * 从保留的历史消息中提取文件操作路径
+   * 提取 Read/Write/Edit 等工具操作的文件路径
+   */
+  extractRetainedFiles(): string[] {
+    const files = new Set<string>();
+    const messages = this.history.getAll();
+
+    // 文件操作相关的工具名称
+    const fileTools = ['Read', 'ReadFile', 'Write', 'WriteFile', 'Edit', 'StrReplace'];
+
+    for (const msg of messages) {
+      // 检查 assistant 消息中的 tool_calls
+      if (msg.role === 'assistant' && msg.tool_calls) {
+        for (const toolCall of msg.tool_calls) {
+          if (fileTools.includes(toolCall.function.name)) {
+            try {
+              const args = JSON.parse(toolCall.function.arguments);
+              // 提取 path 或 filePath 参数
+              const filePath = args.path || args.filePath || args.file;
+              if (filePath && typeof filePath === 'string') {
+                // 只保留文件名，不保留完整路径
+                // const fileName = filePath.split('/').pop() || filePath;
+                // 保留相对路径
+                const relativePath = relative(process.cwd(), filePath);
+                files.add(relativePath);
+              }
+            } catch {
+              // 解析失败，跳过
+            }
+          }
+        }
+      }
+
+      // 检查 tool 消息的 name 字段
+      if (msg.role === 'tool' && msg.name && fileTools.includes(msg.name)) {
+        // 尝试从 content 中提取文件路径
+        // 通常 tool 消息的 content 包含执行结果，可能包含文件路径
+        const pathMatch = msg.content.match(/(?:from|to|in|file:?)\s+([^\s,\n]+\.\w+)/i);
+        if (pathMatch && pathMatch[1]) {
+          // const fileName = pathMatch[1].split('/').pop() || pathMatch[1];
+          const relativePath = relative(process.cwd(), pathMatch[1]);
+          files.add(relativePath);
+        }
+      }
+    }
+
+    return Array.from(files);
   }
 }

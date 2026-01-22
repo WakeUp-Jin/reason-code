@@ -3,7 +3,7 @@
  * 管理 Agent 执行过程中的状态、工具调用、统计信息
  */
 
-import type { ExecutionEvent, ExecutionEventHandler } from './events.js';
+import type { ExecutionEvent, ExecutionEventHandler, CompressionEventResult } from './events.js';
 import {
   ExecutionState,
   ToolCallStatus,
@@ -625,6 +625,24 @@ export class ExecutionStreamManager {
       type: 'content:complete',
       content: this.snapshot.streamingContent,
     });
+  }
+
+  // ==================== 压缩事件 ====================
+
+  /**
+   * 发送压缩开始事件
+   * @param tokenUsage - 当前 token 使用情况（格式化字符串）
+   */
+  startCompression(tokenUsage: string): void {
+    this.emit({ type: 'compression:start', tokenUsage });
+  }
+
+  /**
+   * 发送压缩完成事件
+   * @param result - 压缩结果数据
+   */
+  completeCompression(result: CompressionEventResult): void {
+    this.emit({ type: 'compression:complete', result });
   }
 
   // ==================== Token 统计 ====================

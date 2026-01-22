@@ -325,6 +325,9 @@ export class Agent {
     // 使用外部传入的 executionStream（如果有），否则使用内部的
     const executionStream = options?.executionStream || this.executionStream;
 
+    // 将 executionStream 注入到 ContextManager（用于发送压缩事件）
+    this.contextManager.setExecutionStream(executionStream);
+
     // 启动执行流
     executionStream.start();
 
@@ -537,6 +540,67 @@ export class Agent {
   clearContext(): void {
     this.contextManager.clear(ContextType.HISTORY);
     this.contextManager.clearCurrentTurn();
+  }
+
+  // ============ 压缩相关 ============
+
+  /**
+   * 手动触发压缩（供 CLI /compact 命令调用）
+   * 绕过阈值检查，立即执行压缩
+   */
+  async compress(): Promise<{
+    compressed: boolean;
+    originalTokens?: number;
+    compressedTokens?: number;
+    originalCount?: number;
+    compressedCount?: number;
+    savedPercentage?: number;
+    retainedFiles?: string[];
+  }> {
+    const tokenUsage = this.contextManager.getTokenUsage();
+
+    // 发送压缩开始事件
+    this.executionStream.startCompression(tokenUsage.formatted);
+
+    // 执行压缩（绕过阈值检查）
+    const result = await this.contextManager.forceCompress();
+
+    if (result.compressed) {
+      const retainedFiles = this.contextManager.extractRetainedFiles();
+      const savedPercentage = Math.round(
+        (1 - result.compressedTokens / result.originalTokens) * 100
+      );
+
+      // 发送压缩完成事件
+      this.executionStream.completeCompression({
+        originalTokens: result.originalTokens,
+        compressedTokens: result.compressedTokens,
+        originalCount: result.originalCount,
+        compressedCount: result.compressedCount,
+        savedPercentage,
+        retainedFiles,
+      });
+
+      logger.info('手动压缩完成', {
+        originalTokens: result.originalTokens,
+        compressedTokens: result.compressedTokens,
+        savedPercentage,
+        retainedFiles: retainedFiles.length,
+      });
+
+      return {
+        compressed: true,
+        originalTokens: result.originalTokens,
+        compressedTokens: result.compressedTokens,
+        originalCount: result.originalCount,
+        compressedCount: result.compressedCount,
+        savedPercentage,
+        retainedFiles,
+      };
+    }
+
+    logger.info('压缩跳过：历史消息太短或无需压缩');
+    return { compressed: false };
   }
 
   // ============ 统计相关 ============

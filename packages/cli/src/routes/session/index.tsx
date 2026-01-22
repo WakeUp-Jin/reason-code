@@ -4,18 +4,19 @@ import { useTheme } from '../../context/theme.js';
 import { useIsExecuting, useExecutionState } from '../../context/execution.js';
 import {
   useCurrentSession,
-  useStaticMessages,
-  useDynamicMessages,
   useStreamingMessage,
   useAppStore,
+  useStaticTimelineItems,
+  useDynamicTimelineItems,
 } from '../../context/store.js';
-import type { Message } from '../../context/store.js';
+import type { Message, Notice, TimelineItem } from '../../context/store.js';
 import { Header } from './header.js';
 import { Footer } from './footer.js';
 import { UserMessage } from '../../component/message-area/user-message.js';
 import { AssistantMessage } from '../../component/message-area/assistant-message.js';
 import { ToolMessage } from '../../component/message-area/tool-message.js';
 import { ThinkingMessage } from '../../component/message-area/thinking-message.js';
+import { CompressionNotice } from '../../component/notice/CompressionNotice.js';
 import { InputArea } from './inputArea.js';
 import { ExecutionStream } from '../../component/execution/index.js';
 import { TodoDisplay } from '../../component/execution/TodoDisplay.js';
@@ -24,7 +25,8 @@ import { useExecutionMessages } from '../../hooks/useExecutionMessages.js';
 // Static 区域的 item 类型
 type StaticItem =
   | { id: string; type: 'header' }
-  | { id: string; type: 'message'; message: Message };
+  | { id: string; type: 'message'; message: Message }
+  | { id: string; type: 'notice'; notice: Notice };
 
 // 需要隐藏的工具（不在消息区域显示，但保存到历史记录）
 const HIDDEN_TOOLS = new Set(['TodoWrite', 'TodoRead']);
@@ -34,8 +36,8 @@ export function Session() {
   const isExecuting = useIsExecuting();
   const { isPendingConfirm, todos, showTodos, toggleTodos } = useExecutionState();
   const session = useCurrentSession();
-  const staticMessages = useStaticMessages();
-  const dynamicMessages = useDynamicMessages();
+  const staticTimelineItems = useStaticTimelineItems();
+  const dynamicTimelineItems = useDynamicTimelineItems();
   const streamingMessage = useStreamingMessage();
   const currentSessionId = useAppStore((state) => state.currentSessionId);
 
@@ -93,28 +95,48 @@ export function Session() {
   };
 
   // 构建 Static 区域的 items - Header 作为第一个 item
+  // 使用新的 timeline hooks，已自动处理 notices 的位置和阻塞点逻辑
   const staticItems: StaticItem[] = useMemo(() => {
-    return [
-      { id: 'header', type: 'header' },
-      ...staticMessages
-        .filter((m) => m.role !== 'assistant' || m.content) // 过滤空 assistant 消息
-        .map((m) => ({
-          id: m.id,
+    const items: StaticItem[] = [{ id: 'header', type: 'header' }];
+
+    for (const timelineItem of staticTimelineItems) {
+      if (timelineItem.type === 'message') {
+        const msg = timelineItem.data;
+        // 过滤空 assistant 消息
+        if (msg.role === 'assistant' && !msg.content) continue;
+        items.push({
+          id: msg.id,
           type: 'message' as const,
-          message: m,
-        })),
-    ];
-  }, [staticMessages]);
+          message: msg,
+        });
+      } else if (timelineItem.type === 'notice') {
+        items.push({
+          id: `notice-${timelineItem.data.id}`,
+          type: 'notice' as const,
+          notice: timelineItem.data,
+        });
+      }
+    }
+
+    return items;
+  }, [staticTimelineItems]);
 
   return (
     <>
-      {/* Static 区域 - 固定已完成消息 */}
+      {/* Static 区域 - 固定已完成消息和通知 */}
       <Static items={staticItems}>
         {(item: StaticItem) => {
           if (item.type === 'header') {
             return (
               <Box key="header" paddingTop={1} paddingLeft={2} paddingRight={2}>
                 <Header />
+              </Box>
+            );
+          }
+          if (item.type === 'notice') {
+            return (
+              <Box key={item.id} paddingLeft={2} paddingRight={2}>
+                <CompressionNotice notice={item.notice} />
               </Box>
             );
           }
@@ -126,12 +148,20 @@ export function Session() {
         }}
       </Static>
 
-      {/* 动态区域 - 未完成的消息 */}
-      {dynamicMessages.map((m) => {
-        const content = renderMessage(m);
+      {/* 动态区域 - 未完成的消息和 pending notices */}
+      {dynamicTimelineItems.map((item) => {
+        if (item.type === 'notice') {
+          return (
+            <Box key={`notice-${item.data.id}`} paddingLeft={2} paddingRight={2}>
+              <CompressionNotice notice={item.data} />
+            </Box>
+          );
+        }
+        // item.type === 'message'
+        const content = renderMessage(item.data);
         if (!content) return null;
         return (
-          <Box key={m.id} paddingLeft={2} paddingRight={2}>
+          <Box key={item.data.id} paddingLeft={2} paddingRight={2}>
             {content}
           </Box>
         );

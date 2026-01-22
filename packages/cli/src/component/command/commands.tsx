@@ -8,6 +8,7 @@ import { PanelHelp } from '../panel/panel-help.js';
 import { useAppStore } from '../../context/store.js';
 import { useRoute } from '../../context/route.js';
 import { logger } from '../../util/logger.js';
+import { getAgentInstance } from '../../hooks/useAgent.js';
 
 /**
  * 注册所有核心命令
@@ -109,5 +110,41 @@ export function registerCommands() {
     category: 'System',
     type: 'panel',
     panelFactory: (onClose) => <PanelHelp onClose={onClose} />,
+  });
+
+  // ============================================================
+  // Context 相关命令
+  // ============================================================
+
+  commandRegistry.register({
+    id: 'compact',
+    name: 'compact',
+    label: 'Compress History',
+    description: 'Compress chat history to save context tokens',
+    category: 'Context',
+    type: 'instant',
+    action: async () => {
+      const agent = getAgentInstance();
+      if (!agent) {
+        logger.warn('Agent not initialized, cannot compress');
+        return;
+      }
+
+      try {
+        logger.info('Starting manual compression...');
+        const result = await agent.compress();
+        if (result.compressed) {
+          logger.info('Compression completed', {
+            originalTokens: result.originalTokens,
+            compressedTokens: result.compressedTokens,
+            savedPercentage: result.savedPercentage,
+          });
+        } else {
+          logger.info('Compression skipped: not enough history to compress');
+        }
+      } catch (error) {
+        logger.error('Compression failed', { error });
+      }
+    },
   });
 }
