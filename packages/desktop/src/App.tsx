@@ -1,38 +1,31 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { CollapsedView } from './components/CollapsedView';
 import { ExpandedView } from './components/ExpandedView';
 import { useAppStore } from '@/lib/store';
-import { appendVoiceSessionEntry, startVoiceSession } from '@/lib/tauri';
-import { useAgent } from '@/hooks/useAgent';
+import { startVoiceSession } from '@/lib/tauri';
 import { useAudio } from '@/hooks/useAudio';
 
 function App() {
   const [isExpanded, setIsExpanded] = useState(false);
   const output = useAppStore((state) => state.output);
+  const lastOutputRef = useRef(output);
   const setVoiceSessionId = useAppStore((state) => state.setVoiceSessionId);
+  const clearOutput = useAppStore((state) => state.clearOutput);
+  const appendOutput = useAppStore((state) => state.appendOutput);
   const { speak } = useAudio();
 
-  const handleAgentFinished = useCallback(
-    (fullText: string) => {
-      const text = fullText.trim();
-      if (!text) return;
+  const handlePrompt = useCallback(
+    async (text: string) => {
+      const cleaned = text.trim();
+      if (!cleaned) return;
 
-      void appendVoiceSessionEntry({
-        role: 'assistant',
-        text,
-        source: 'agent',
-      }).catch((error) => {
-        console.error('Failed to append voice session entry:', error);
-      });
-
-      // TODO: 待确定音色后再开启 TTS
-      // void speak(text);
+      clearOutput();
+      appendOutput(cleaned);
+      void speak(cleaned);
     },
-    [speak]
+    [clearOutput, appendOutput, speak]
   );
-
-  const { runAgent } = useAgent({ onFinished: handleAgentFinished });
 
   // 展开时调整窗口大小
   const handleExpand = useCallback(async () => {
@@ -52,9 +45,15 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!isExpanded && output.trim()) {
+    const previousOutput = lastOutputRef.current;
+    const hasNewOutput =
+      output !== previousOutput && output.trim().length > 0;
+
+    if (!isExpanded && hasNewOutput) {
       handleExpand();
     }
+
+    lastOutputRef.current = output;
   }, [isExpanded, output, handleExpand]);
 
   useEffect(() => {
@@ -95,9 +94,9 @@ function App() {
   return (
     <div className="w-full h-full bg-white rounded-xl shadow-lg overflow-hidden">
       {isExpanded ? (
-        <ExpandedView onCollapse={handleCollapse} onPrompt={runAgent} />
+        <ExpandedView onCollapse={handleCollapse} onPrompt={handlePrompt} />
       ) : (
-        <CollapsedView onExpand={handleExpand} onPrompt={runAgent} />
+        <CollapsedView onExpand={handleExpand} onPrompt={handlePrompt} />
       )}
     </div>
   );

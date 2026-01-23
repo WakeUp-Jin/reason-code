@@ -21,7 +21,8 @@ interface AppState {
     volcengine: {
       appId: string;
       accessToken: string;
-      resourceId: string;
+      sttResourceId: string;
+      ttsResourceId: string;
     };
     tts: {
       voiceType: string;

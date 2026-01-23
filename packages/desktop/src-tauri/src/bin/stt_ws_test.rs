@@ -20,8 +20,24 @@ struct VolcengineConfig {
     app_id: String,
     #[serde(rename = "accessToken")]
     access_token: String,
-    #[serde(rename = "resourceId")]
+    #[serde(rename = "resourceId", default)]
+    legacy_resource_id: Option<String>,
+    #[serde(default)]
+    stt: SttConfig,
+}
+
+#[derive(Debug, Deserialize)]
+struct SttConfig {
+    #[serde(rename = "resourceId", default)]
     resource_id: String,
+}
+
+impl Default for SttConfig {
+    fn default() -> Self {
+        Self {
+            resource_id: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -72,7 +88,7 @@ struct SttResult {
     text: String,
 }
 
-fn read_volcengine_config() -> Result<VolcengineConfig, String> {
+fn read_volcengine_config() -> Result<(VolcengineConfig, String), String> {
     let path = dirs::home_dir()
         .ok_or_else(|| "Cannot find home directory".to_string())?
         .join(".reason-code")
@@ -81,9 +97,20 @@ fn read_volcengine_config() -> Result<VolcengineConfig, String> {
         .map_err(|e| format!("Failed to read config: {}", e))?;
     let config: ReasonConfig =
         serde_json::from_str(&content).map_err(|e| format!("Failed to parse config: {}", e))?;
-    config
+    let volcengine = config
         .volcengine
-        .ok_or_else(|| "Missing volcengine config".to_string())
+        .ok_or_else(|| "Missing volcengine config".to_string())?;
+
+    let resource_id = if !volcengine.stt.resource_id.is_empty() {
+        volcengine.stt.resource_id.clone()
+    } else {
+        volcengine.legacy_resource_id.clone().unwrap_or_default()
+    };
+    if resource_id.is_empty() {
+        return Err("Missing STT resourceId in config".to_string());
+    }
+
+    Ok((volcengine, resource_id))
 }
 
 fn build_full_client_request(config: &SttRequest) -> Vec<u8> {
@@ -206,12 +233,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map_err(|e| format!("Failed to read audio file: {}", e))?;
     let (format, codec) = parse_audio_format(audio_path)?;
 
-    let config = read_volcengine_config()?;
+    let (config, resource_id) = read_volcengine_config()?;
     if config.app_id.is_empty() || config.access_token.is_empty() {
         return Err("Missing appId or accessToken in config".into());
-    }
-    if config.resource_id.is_empty() {
-        return Err("Missing resourceId in config".into());
     }
 
     let request = SttRequest {
@@ -252,7 +276,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     ws_request.headers_mut().insert(
         "X-Api-Resource-Id",
-        HeaderValue::from_str(&config.resource_id)
+        HeaderValue::from_str(&resource_id)
             .map_err(|e| format!("Invalid X-Api-Resource-Id header: {}", e))?,
     );
     ws_request.headers_mut().insert(

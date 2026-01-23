@@ -6,10 +6,14 @@ import { listen, UnlistenFn } from '@tauri-apps/api/event';
 export interface VolcengineConfig {
   appId: string;
   accessToken: string;
-  resourceId: string;
+  resourceId?: string;
+  stt: {
+    resourceId: string;
+  };
   tts: {
     voiceType: string;
     cluster: string;
+    resourceId: string;
   };
 }
 
@@ -74,6 +78,37 @@ export async function speakText(
 ): Promise<Uint8Array> {
   const bytes = await invoke<number[]>('tts_speak', { text, voiceType });
   return new Uint8Array(bytes);
+}
+
+export async function speakTextStream(
+  text: string,
+  voiceType?: string
+): Promise<void> {
+  await invoke('tts_speak_stream', { text, voiceType });
+}
+
+export function onTtsStreamChunk(
+  callback: (chunk: Uint8Array) => void
+): Promise<UnlistenFn> {
+  return listen<{ chunk: number[] }>('tts-stream-chunk', (event) => {
+    callback(new Uint8Array(event.payload.chunk));
+  });
+}
+
+export function onTtsStreamFinished(
+  callback: (totalBytes: number) => void
+): Promise<UnlistenFn> {
+  return listen<{ totalBytes: number }>('tts-stream-finished', (event) => {
+    callback(event.payload.totalBytes);
+  });
+}
+
+export function onTtsStreamError(
+  callback: (message: string) => void
+): Promise<UnlistenFn> {
+  return listen<{ message: string }>('tts-stream-error', (event) => {
+    callback(event.payload.message);
+  });
 }
 
 // ============ 语音会话记录 ============

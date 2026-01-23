@@ -171,8 +171,16 @@ pub async fn stt_transcribe(audio_bytes: Vec<u8>, mime_type: String) -> Result<S
     if volcengine_config.app_id.is_empty() || volcengine_config.access_token.is_empty() {
         return Err("请先在设置中配置火山引擎 API".to_string());
     }
-    if volcengine_config.resource_id.is_empty() {
-        return Err("请先在设置中配置火山引擎资源 ID".to_string());
+    let resource_id = if !volcengine_config.stt.resource_id.is_empty() {
+        volcengine_config.stt.resource_id.clone()
+    } else {
+        volcengine_config
+            .legacy_resource_id
+            .clone()
+            .unwrap_or_default()
+    };
+    if resource_id.is_empty() {
+        return Err("请先在设置中配置火山引擎语音识别资源 ID".to_string());
     }
 
     let (format, codec) = parse_audio_format(&mime_type)?;
@@ -214,7 +222,7 @@ pub async fn stt_transcribe(audio_bytes: Vec<u8>, mime_type: String) -> Result<S
     );
     ws_request.headers_mut().insert(
         "X-Api-Resource-Id",
-        HeaderValue::from_str(&volcengine_config.resource_id)
+        HeaderValue::from_str(&resource_id)
             .map_err(|e| format!("Invalid X-Api-Resource-Id header: {}", e))?,
     );
     ws_request.headers_mut().insert(

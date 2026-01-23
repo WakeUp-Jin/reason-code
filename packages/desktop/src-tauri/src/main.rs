@@ -6,9 +6,11 @@ mod commands;
 use commands::{agent, config, stt, tts, voice_session, window};
 
 fn main() {
+    //1. 初始化语音会话
     let voice_session_state =
         voice_session::VoiceSessionState::new().expect("Failed to init voice session");
 
+    //2. 构建 Tauri 应用
     tauri::Builder::default()
         .manage(voice_session_state)
         .plugin(tauri_plugin_shell::init())
@@ -22,6 +24,7 @@ fn main() {
             agent::agent_run,
             // 语音合成
             tts::tts_speak,
+            tts::tts_speak_stream,
             // 语音会话记录
             voice_session::voice_session_start,
             voice_session::voice_session_append,
