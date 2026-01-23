@@ -3,24 +3,22 @@
  * 子代理 - 代码库探索专家（只读）
  */
 
+import { ModelTier } from '../../../index.js';
 import type { AgentConfig } from '../types.js';
-import { exploreSystem } from './expoloreSystem.js';
+import { explorePrompt } from '../../../promptManager/index.js';
 
 export const exploreAgent: AgentConfig = {
   name: 'explore',
-  mode: 'subagent',
-  description: 'Specialized agent for deep codebase investigation and analysis. Finds relevant files, understands architecture, and provides actionable insights.',
-  systemPrompt: exploreSystem,
+  role: 'subagent',
+  description:
+    'Specialized agent for deep codebase investigation and analysis. Finds relevant files, understands architecture, and provides actionable insights.',
+  systemPrompt: explorePrompt,
   tools: {
     include: ['Glob', 'Grep', 'ReadFile', 'ListFiles', 'ReadManyFiles'],
   },
-  model: { 
-    provider: 'deepseek',
-    model: 'deepseek-chat',
-  },
+  modelTier: ModelTier.SECONDARY,
   execution: {
     maxLoops: 20,
     enableCompression: false,
   },
 };
-

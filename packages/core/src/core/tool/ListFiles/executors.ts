@@ -4,12 +4,28 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import type { ToolResult } from '../types.js';
 
 export interface ListFilesArgs {
   /** 目录路径，默认为当前工作目录 */
   directory?: string;
+}
+
+/**
+ * 展开路径中的 ~ 符号为用户 home 目录
+ * @param inputPath - 输入路径
+ * @returns 展开后的路径
+ */
+function expandTilde(inputPath: string): string {
+  if (inputPath.startsWith('~/')) {
+    return path.join(os.homedir(), inputPath.slice(2));
+  }
+  if (inputPath === '~') {
+    return os.homedir();
+  }
+  return inputPath;
 }
 
 /** ListFiles 业务数据 */
@@ -40,7 +56,9 @@ export async function listFilesExecutor(
   config: any
 ): Promise<ListFilesResult> {
   const cwd = config?.cwd || process.cwd();
-  const targetDir = args.directory ? path.resolve(cwd, args.directory) : cwd;
+  // 先展开 ~ 符号，再解析路径
+  const expandedDir = args.directory ? expandTilde(args.directory) : '';
+  const targetDir = expandedDir ? path.resolve(cwd, expandedDir) : cwd;
 
   // 检查目录是否存在
   if (!fs.existsSync(targetDir)) {

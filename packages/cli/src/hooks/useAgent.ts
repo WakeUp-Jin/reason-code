@@ -28,6 +28,7 @@ import { useExecutionState } from '../context/execution.js';
 import { useAppStore } from '../context/store.js';
 import { convertToCoreMsgs } from '../util/messageConverter.js';
 import { filterForStorage } from '../util/messageUtils.js';
+import { getAgentMode } from '../app.js';
 
 // ==================== 模块级变量（跨 remount 持久化）====================
 let agentInstance: Agent | null = null;
@@ -136,26 +137,17 @@ export function useAgent(): UseAgentReturn {
       setIsLoading(true);
       setError(null);
 
-      // 加载配置（使用新的 ConfigService）
-      const modelConfig = await configService.getModelConfig(ModelTier.PRIMARY);
-      const { provider, model } = { provider: modelConfig.provider, model: modelConfig.model };
-
-      // 检查 API Key
-      if (!modelConfig.apiKey) {
-        throw new Error(
-          `API key not found for provider: ${provider}. Please set ${provider.toUpperCase()}_API_KEY in your environment or config file.`
-        );
-      }
+      // 获取当前 Agent 类型
+      const agentMode = getAgentMode();
 
       // 创建 Agent（模型配置由 ConfigService 管理，LLM 服务由 LLMServiceRegistry 提供）
-      const agent = agentManager.createAgent('build', {
-        model: { provider, model },
-      });
+      // Agent 将从 config.modelTier（默认 PRIMARY）读取模型
+      const agent = agentManager.createAgent(agentMode);
 
-      // 构建系统提示词上下文
+      // 构建系统提示词上下文（modelName 暂时用占位符，init 后会自动使用正确的模型名）
       const promptContext: SystemPromptContext = {
         workingDirectory: resolveWorkingDirectory(),
-        modelName: model,
+        modelName: 'initializing', // 由 Agent.init() 内部获取并使用
         osInfo: `${os.type()} ${os.release()} (${os.arch()})`,
         currentDate: new Date().toLocaleDateString('zh-CN', {
           year: 'numeric',
@@ -185,13 +177,23 @@ export function useAgent(): UseAgentReturn {
           (msg) => msg.id === checkpoint.loadAfterMessageId
         );
 
+        // 构建 Monitor 配置（仅非 steward 模式启用）
+        const monitorConfig =
+          agentMode !== 'steward' && currentSessionId
+            ? {
+                enabled: true,
+                sessionId: currentSessionId,
+                projectPath: resolveWorkingDirectory(),
+              }
+            : undefined;
+
         if (splitIndex === -1) {
           // 消息 ID 找不到，清除检查点，使用完整历史
           logger.warn('Checkpoint message ID not found, clearing checkpoint');
           if (currentSessionId) {
             await Session.deleteCheckpoint(currentSessionId);
           }
-          await agent.init({ promptContext });
+          await agent.init({ promptContext, monitor: monitorConfig });
           agent.loadHistory(coreHistory, { clearExisting: true, skipSystemPrompt: true });
         } else {
           // 使用 initWithCheckpoint
@@ -204,16 +206,29 @@ export function useAgent(): UseAgentReturn {
               compressedAt: checkpoint.compressedAt,
               stats: checkpoint.stats,
             },
-            { promptContext }
+            { promptContext, monitor: monitorConfig }
           );
         }
       } else {
+        // 构建 Monitor 配置（仅非 steward 模式启用）
+        const monitorConfig =
+          agentMode !== 'steward' && currentSessionId
+            ? {
+                enabled: true,
+                sessionId: currentSessionId,
+                projectPath: resolveWorkingDirectory(),
+              }
+            : undefined;
+
         // 无检查点：正常初始化 + 加载完整历史
-        await agent.init({ promptContext });
+        await agent.init({ promptContext, monitor: monitorConfig });
         if (coreHistory.length > 0) {
           agent.loadHistory(coreHistory, { clearExisting: true, skipSystemPrompt: true });
         }
       }
+
+      // 从 Agent 获取模型配置（init 后已缓存）
+      const { provider, model } = agent.getModelConfig();
 
       // 设置模型定价
       const pricing = getModelPricing(model);
@@ -268,6 +283,7 @@ export function useAgent(): UseAgentReturn {
       logger.info('Agent initialized successfully', {
         provider,
         model,
+        agentMode,
         hasCheckpoint: !!checkpoint,
         historyCount: coreHistory.length,
       });
@@ -445,6 +461,12 @@ export function useAgent(): UseAgentReturn {
           }
         };
 
+        // 更新 MonitorWriter 的当前指令（通过 Agent 获取）
+        const monitorWriter = agentInstance.getMonitorWriter();
+        if (monitorWriter) {
+          monitorWriter.setCurrentCommand(message);
+        }
+
         // 执行 Agent
         const result = await agentInstance.run(message, {
           modelLimit,
@@ -546,4 +568,15 @@ export function useAgent(): UseAgentReturn {
  */
 export function getAgentInstance(): Agent | null {
   return agentInstance;
+}
+
+/**
+ * 关闭 MonitorWriter（标记为 idle 状态）
+ * 在进程退出时调用
+ */
+export function shutdownMonitorWriter(): void {
+  if (agentInstance) {
+    agentInstance.shutdownMonitorWriter();
+    logger.info('MonitorWriter marked as idle on shutdown');
+  }
 }

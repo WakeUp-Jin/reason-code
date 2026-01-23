@@ -4,4 +4,5 @@
 
 export { buildAgent } from './build.js';
 export { exploreAgent } from './explore.js';
+export { stewardAgent } from './steward.js';
 

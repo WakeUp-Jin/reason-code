@@ -28,6 +28,8 @@ export interface ProviderConfig {
   baseUrl?: string;
   /** 超时时间（毫秒） */
   timeout?: number;
+  /** 可切换的模型列表（用于前端 /model 命令展示） */
+  options: string[];
 }
 
 /** 完整的模型配置（解析后，包含 Provider 信息） */

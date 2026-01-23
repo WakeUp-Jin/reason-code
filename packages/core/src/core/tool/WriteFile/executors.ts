@@ -6,8 +6,24 @@
  */
 
 import { mkdir } from 'fs/promises';
+import * as os from 'os';
 import * as path from 'path';
 import type { ToolResult } from '../types.js';
+
+/**
+ * 展开路径中的 ~ 符号为用户 home 目录
+ * @param inputPath - 输入路径
+ * @returns 展开后的路径
+ */
+function expandTilde(inputPath: string): string {
+  if (inputPath.startsWith('~/')) {
+    return path.join(os.homedir(), inputPath.slice(2));
+  }
+  if (inputPath === '~') {
+    return os.homedir();
+  }
+  return inputPath;
+}
 
 export interface WriteFileArgs {
   /** 文件路径 */
@@ -46,7 +62,9 @@ export async function writeFileExecutor(
   context: any
 ): Promise<WriteFileResult> {
   const cwd = context?.cwd || process.cwd();
-  const targetPath = path.resolve(cwd, args.filePath);
+  // 先展开 ~ 符号，再解析路径
+  const expandedPath = expandTilde(args.filePath);
+  const targetPath = path.resolve(cwd, expandedPath);
   const encoding = args.encoding || 'utf-8';
   const append = args.append ?? false;
 

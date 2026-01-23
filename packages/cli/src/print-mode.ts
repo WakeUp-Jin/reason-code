@@ -10,10 +10,11 @@ import ora from 'ora';
 /**
  * 运行 Print Mode
  * @param prompt - 用户输入的提示词
+ * @param mode - Agent 模式 (build | butler)
  */
-export async function runPrintMode(prompt: string): Promise<void> {
-  // 1. 创建 Agent
-  const agent = agentManager.createAgent('build');
+export async function runPrintMode(prompt: string, mode: string = 'build'): Promise<void> {
+  // 1. 创建 Agent（根据模式选择）
+  const agent = agentManager.createAgent(mode);
 
   // 2. 初始化 Agent
   const spinner = ora('Initializing...').start();

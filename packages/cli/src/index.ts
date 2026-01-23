@@ -11,17 +11,31 @@ program
   .name('reason')
   .description('AI Agent CLI powered by Reason')
   .version('0.0.1')
-  .option('-p, --print <prompt>', 'Print mode: execute prompt and output result directly');
+  .option('-p, --print <prompt>', 'Print mode: execute prompt and output result directly')
+  .option('-m, --mode <mode>', 'Agent mode: build (default), steward (assistant)', 'build');
 
-// 处理 -p/--print 选项（在命令解析前检查）
+// 处理 -p/--print 和 -m/--mode 选项（在命令解析前检查）
 const args = process.argv.slice(2);
 const printIndex = args.findIndex((arg) => arg === '-p' || arg === '--print');
+const modeIndex = args.findIndex((arg) => arg === '-m' || arg === '--mode');
+
+// 获取模式参数
+let agentMode = 'build';
+if (modeIndex !== -1 && args[modeIndex + 1]) {
+  agentMode = args[modeIndex + 1];
+  // 验证模式有效性
+  const validModes = ['build', 'steward'];
+  if (!validModes.includes(agentMode)) {
+    console.error(chalk.red(`Error: Invalid mode '${agentMode}'. Valid modes: ${validModes.join(', ')}`));
+    process.exit(1);
+  }
+}
 
 if (printIndex !== -1 && args[printIndex + 1]) {
   // Print Mode：直接执行并退出
   const prompt = args[printIndex + 1];
   import('./print-mode.js').then(({ runPrintMode }) => {
-    runPrintMode(prompt).catch((error) => {
+    runPrintMode(prompt, agentMode).catch((error) => {
       console.error(chalk.red('Error: ') + (error as Error).message);
       process.exit(1);
     });
@@ -33,7 +47,7 @@ if (printIndex !== -1 && args[printIndex + 1]) {
     .description('Start the interactive TUI interface')
     .action(async () => {
       const { startTUI } = await import('./app.js');
-      await startTUI();
+      await startTUI({ mode: agentMode });
     });
 
   program

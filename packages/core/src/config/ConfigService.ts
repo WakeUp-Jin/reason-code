@@ -35,16 +35,19 @@ const DEFAULT_CONFIG: AppConfig = {
       apiKey: '',
       baseUrl: 'https://api.deepseek.com',
       timeout: 60000,
+      options: ['deepseek-chat', 'deepseek-reasoner'],
     },
     openai: {
       apiKey: '',
       baseUrl: 'https://api.openai.com/v1',
       timeout: 60000,
+      options: ['gpt-4o', 'gpt-4o-mini', 'o1', 'o1-mini'],
     },
     openrouter: {
       apiKey: '',
       baseUrl: 'https://openrouter.ai/api/v1',
       timeout: 60000,
+      options: ['anthropic/claude-sonnet-4', 'x-ai/grok-4.1-fast'],
     },
   },
   agent: {

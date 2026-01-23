@@ -3,28 +3,51 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { CollapsedView } from './components/CollapsedView';
 import { ExpandedView } from './components/ExpandedView';
 import { useAppStore } from '@/lib/store';
-import { startVoiceSession } from '@/lib/tauri';
+import { appendVoiceSessionEntry, startVoiceSession } from '@/lib/tauri';
 import { useAudio } from '@/hooks/useAudio';
+import { useAgent } from '@/hooks/useAgent';
 
 function App() {
   const [isExpanded, setIsExpanded] = useState(false);
   const output = useAppStore((state) => state.output);
   const lastOutputRef = useRef(output);
+  const lastPromptRef = useRef('');
   const setVoiceSessionId = useAppStore((state) => state.setVoiceSessionId);
-  const clearOutput = useAppStore((state) => state.clearOutput);
-  const appendOutput = useAppStore((state) => state.appendOutput);
+  const setOutput = useAppStore((state) => state.setOutput);
   const { speak } = useAudio();
+  const { runAgent } = useAgent({
+    onFinished: (fullText) => {
+      const cleaned = fullText.trimEnd();
+      if (!cleaned) return;
+
+      void appendVoiceSessionEntry({
+        role: 'assistant',
+        text: cleaned,
+        source: 'agent',
+      }).catch((error) => {
+        console.error('Failed to append voice session entry:', error);
+      });
+
+      const prompt = lastPromptRef.current.trim();
+      const finalOutput = prompt
+        ? `你：${prompt}\n\nAgent：${cleaned}`
+        : cleaned;
+      setOutput(finalOutput);
+
+      void speak(cleaned);
+    },
+  });
 
   const handlePrompt = useCallback(
     async (text: string) => {
       const cleaned = text.trim();
       if (!cleaned) return;
 
-      clearOutput();
-      appendOutput(cleaned);
-      void speak(cleaned);
+      lastPromptRef.current = cleaned;
+      const prefill = `你：${cleaned}\n\nAgent：`;
+      await runAgent(cleaned, prefill);
     },
-    [clearOutput, appendOutput, speak]
+    [runAgent]
   );
 
   // 展开时调整窗口大小

@@ -12,6 +12,10 @@ export {
   INSIGHT_FORMAT_GUIDE,
 } from './system/agentPrompts.js';
 
+// ============ Agent 模式专用提示词 ============
+export { stewardPrompt } from './system/stewardPrompt.js';
+export { explorePrompt } from './system/explorePrompt.js';
+
 // ============ 系统提示词构建器 ============
 export {
   buildSystemPrompt,

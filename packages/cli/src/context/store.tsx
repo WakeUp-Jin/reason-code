@@ -284,6 +284,10 @@ interface AppState {
 
   // Agent/Model Actions
   setCurrentModel: (modelId: string) => void;
+  /** 从配置文件加载模型列表 */
+  loadModels: () => Promise<void>;
+  /** 设置模型列表（由 loadModels 内部使用） */
+  setModels: (models: ModelInfo[]) => void;
 
   // Config Actions
   updateConfig: (updates: Partial<Config>) => void;
@@ -320,63 +324,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     { id: 'default', name: 'Default Agent', description: 'General purpose AI assistant' },
     { id: 'coder', name: 'Coder', description: 'Specialized in coding tasks' },
   ],
-  models: [
-    {
-      id: 'deepseek/deepseek-chat',
-      name: 'DeepSeek Chat',
-      provider: 'DeepSeek',
-      maxTokens: 64_000,
-      pricing: {
-        input: 2.0, // ¥2.0 per 1M tokens
-        output: 3.0, // ¥3.0 per 1M tokens
-      },
-      description: 'Fast and affordable chat model',
-    },
-    {
-      id: 'deepseek/deepseek-reasoner',
-      name: 'DeepSeek Reasoner',
-      provider: 'DeepSeek',
-      maxTokens: 64_000,
-      pricing: {
-        input: 2.0, // ¥2.0 per 1M tokens
-        output: 3.0, // ¥3.0 per 1M tokens
-      },
-      description: 'Advanced reasoning model (R1)',
-    },
-    {
-      id: 'claude-sonnet-4',
-      name: 'Claude Sonnet 4',
-      provider: 'Anthropic',
-      maxTokens: 200_000,
-      pricing: {
-        input: 21.6, // ¥21.6 per 1M tokens
-        output: 108.0, // ¥108.0 per 1M tokens
-      },
-      description: 'Most capable Claude model with 200K context',
-    },
-    {
-      id: 'gpt-4o',
-      name: 'GPT-4o',
-      provider: 'OpenAI',
-      maxTokens: 128_000,
-      pricing: {
-        input: 18.0, // ¥18.0 per 1M tokens
-        output: 72.0, // ¥72.0 per 1M tokens
-      },
-      description: 'Fast and capable GPT-4 model',
-    },
-    {
-      id: 'gemini-pro',
-      name: 'Gemini Pro',
-      provider: 'Google',
-      maxTokens: 1_000_000,
-      pricing: {
-        input: 3.6, // ¥3.6 per 1M tokens
-        output: 10.8, // ¥10.8 per 1M tokens
-      },
-      description: 'Long context Google model with 1M context',
-    },
-  ],
+  // 模型列表初始为空，由 loadModels() 从配置文件加载
+  models: [],
   currentModel: 'deepseek/deepseek-chat',
   sessionTotalCost: 0, // 当前会话累计费用（CNY）
   config: {
@@ -632,6 +581,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Agent/Model Actions
   setCurrentModel: (modelId) => {
     set({ currentModel: modelId });
+  },
+
+  loadModels: async () => {
+    // 动态导入避免循环依赖
+    const { loadModelsFromConfig } = await import('../config/modelLoader.js');
+    const models = await loadModelsFromConfig();
+    set({ models });
+  },
+
+  setModels: (models) => {
+    set({ models });
   },
 
   // Config Actions

@@ -4,19 +4,19 @@ overview: 为 Agent 系统添加"管家模式"（Butler Mode），这是一个�
 todos:
   - id: butler-preset
     content: 创建 butler.ts 预设配置 + butlerSystem.ts 提示词
-    status: pending
+    status: completed
   - id: monitor-writer
     content: 实现 MonitorWriter 并集成到 ExecutionStreamManager
-    status: pending
+    status: completed
   - id: monitor-lifecycle
     content: 实现 Monitor 文件生命周期管理（创建/清理）
-    status: pending
+    status: completed
   - id: cli-mode-arg
     content: CLI 添加 -m/--mode 参数支持模式切换
-    status: pending
+    status: completed
   - id: export-update
     content: 更新 presets/index.ts 和 AgentManager 注册
-    status: pending
+    status: completed
 ---
 
 # 管家模式（Butler Mode）实现方案

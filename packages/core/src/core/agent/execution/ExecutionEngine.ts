@@ -161,7 +161,9 @@ export class ExecutionEngine {
       executionStream: this.executionStream,
       enableToolSummarization,
       toolOutputSummarizer: enableToolSummarization ? new ToolOutputSummarizer() : undefined,
-      onConfirmRequired: onConfirmRequired ? this.createConfirmHandler(onConfirmRequired) : undefined,
+      onConfirmRequired: onConfirmRequired
+        ? this.createConfirmHandler(onConfirmRequired)
+        : undefined,
     });
 
     // 配置压缩（LLM 服务由 HistoryContext 从 LLMServiceRegistry 获取）
@@ -239,6 +241,7 @@ export class ExecutionEngine {
       this.executionStream?.startThinking();
       const response = await this.llmService.complete(messages, tools, {
         abortSignal: this.abortSignal,
+        reasoning: { enabled: false },
       });
 
       // 5. 中断检查（LLM 调用后）
@@ -446,17 +449,21 @@ export class ExecutionEngine {
   /**
    * 创建确认处理器
    * 包装外部的 onConfirmRequired 回调，添加工具名称参数
-   * 
+   *
    */
 
   private createConfirmHandler(
-    onConfirmRequired:(callId:string,toolName:string,details:ConfirmDetails) => Promise<ConfirmOutcome>
-  ):(callId:string,details:ConfirmDetails) => Promise<ConfirmOutcome>  {
-    return async (callId,details) => {
+    onConfirmRequired: (
+      callId: string,
+      toolName: string,
+      details: ConfirmDetails
+    ) => Promise<ConfirmOutcome>
+  ): (callId: string, details: ConfirmDetails) => Promise<ConfirmOutcome> {
+    return async (callId, details) => {
       const records = this.toolScheduler.getRecords();
       const record = records.find((r) => r.request.callId === callId);
       const toolName = record?.request.toolName ?? 'unknown';
-      return onConfirmRequired(callId,toolName,details);
-    }
-  };
+      return onConfirmRequired(callId, toolName, details);
+    };
+  }
 }

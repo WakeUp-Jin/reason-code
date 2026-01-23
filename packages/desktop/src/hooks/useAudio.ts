@@ -218,6 +218,7 @@ export function useAudio() {
 
   const playOnce = useCallback(
     async (text: string) => {
+      console.log('[TTS] playOnce start', { length: text.length });
       const audioBytes = await speakText(text, config?.tts.voiceType);
 
       const audioBlob = new Blob([audioBytes], { type: 'audio/mp3' });
@@ -244,7 +245,12 @@ export function useAudio() {
         URL.revokeObjectURL(audioUrl);
       };
 
-      await audio.play();
+      try {
+        await audio.play();
+      } catch (error) {
+        console.error('[TTS] audio play failed', error);
+        throw error;
+      }
     },
     [config, setStatus]
   );
@@ -259,11 +265,21 @@ export function useAudio() {
 
         const supportsStream = canStream();
         console.log('[TTS] speak', { length: text.length, supportsStream });
-        if (!supportsStream) {
-          throw new Error('TTS stream not supported in this environment');
+
+        if (supportsStream) {
+          try {
+            await playStream(text);
+            return;
+          } catch (error) {
+            console.error('TTS stream error:', error);
+            cleanupStream();
+            console.warn('[TTS] fallback to non-stream playback');
+          }
+        } else {
+          console.warn('[TTS] stream unsupported, use non-stream playback');
         }
 
-        await playStream(text);
+        await playOnce(text);
       } catch (error) {
         console.error('TTS error:', error);
         setStatus('idle');

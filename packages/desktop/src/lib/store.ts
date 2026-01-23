@@ -35,6 +35,7 @@ interface AppState {
   setIsRecording: (isRecording: boolean) => void;
   appendOutput: (chunk: string) => void;
   clearOutput: () => void;
+  setOutput: (output: string) => void;
   setError: (error: string | null) => void;
   setConfig: (config: AppState['config']) => void;
   setVoiceSessionId: (sessionId: string | null) => void;
@@ -55,6 +56,7 @@ export const useAppStore = create<AppState>((set) => ({
   appendOutput: (chunk) =>
     set((state) => ({ output: state.output + chunk })),
   clearOutput: () => set({ output: '' }),
+  setOutput: (output) => set({ output }),
   setError: (error) => set({ error, status: error ? 'error' : 'idle' }),
   setConfig: (config) => set({ config }),
   setVoiceSessionId: (sessionId) => set({ voiceSessionId: sessionId }),

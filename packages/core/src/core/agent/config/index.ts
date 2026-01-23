@@ -3,8 +3,8 @@
  */
 
 // 类型导出
-export type { AgentConfig, AgentMode } from './types.js';
+export type { AgentConfig, AgentRole, AgentType } from './types.js';
 
 // 预设导出
-export { buildAgent, exploreAgent } from './presets/index.js';
+export { buildAgent, exploreAgent, stewardAgent } from './presets/index.js';
 

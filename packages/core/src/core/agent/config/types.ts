@@ -3,22 +3,34 @@
  * 用于定义主代理和子代理的配置
  */
 
-/** 代理模式 */
-export type AgentMode = 'primary' | 'subagent' | 'all';
+import { ModelTier } from '../../../config/types.js';
+import type { SystemPromptContext } from '../../promptManager/index.js';
+
+/** 代理角色（定义代理在系统中的定位） */
+export type AgentRole = 'primary' | 'subagent' | 'all';
+
+/** 代理类型（前端传入的模式标识） */
+export type AgentType = 'build' | 'steward' | 'explore';
+
+/** 系统提示词构建器函数类型 */
+export type SystemPromptBuilder = (context: SystemPromptContext) => string;
 
 /** 代理配置 */
 export interface AgentConfig {
-  /** 唯一标识 */
-  name: string;
+  /** 唯一标识（即 AgentType） */
+  name: AgentType;
 
-  /** 模式 */
-  mode: AgentMode;
+  /** 角色定位 */
+  role: AgentRole;
 
   /** 描述（用于 Task 工具说明） */
   description: string;
 
-  /** 自定义系统提示词 */
+  /** 自定义系统提示词（静态字符串） */
   systemPrompt?: string;
+
+  /** 系统提示词构建器（动态构建，需要 promptContext） */
+  systemPromptBuilder?: SystemPromptBuilder;
 
   /** 工具配置 */
   tools?: {
@@ -30,11 +42,8 @@ export interface AgentConfig {
     [toolName: string]: boolean | string[] | undefined;
   };
 
-  /** 模型配置（可选，覆盖默认） */
-  model?: {
-    provider: string;
-    model: string;
-  };
+  /** 模型层级配置（可选，默认 PRIMARY） */
+  modelTier?: ModelTier;
 
   /** 执行配置 */
   execution?: {
@@ -45,4 +54,3 @@ export interface AgentConfig {
   /** 是否隐藏（不在 UI 显示） */
   hidden?: boolean;
 }
-

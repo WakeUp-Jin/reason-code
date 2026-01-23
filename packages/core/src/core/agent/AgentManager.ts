@@ -12,6 +12,7 @@
 import type { AgentConfig } from './config/types.js';
 import { buildAgent } from './config/presets/build.js';
 import { exploreAgent } from './config/presets/explore.js';
+import { stewardAgent } from './config/presets/steward.js';
 import { ToolManager } from '../tool/ToolManager.js';
 import { logger } from '../../utils/logger.js';
 import { Agent } from './Agent.js';
@@ -40,6 +41,7 @@ export class AgentManager {
     // 注册内置预设
     this.register(buildAgent);
     this.register(exploreAgent);
+    this.register(stewardAgent);
 
     logger.debug('AgentManager initialized', {
       registeredAgents: Array.from(this.configs.keys()),
@@ -69,7 +71,7 @@ export class AgentManager {
 
     logger.debug('Agent registered', {
       name: config.name,
-      mode: config.mode,
+      role: config.role,
       description: config.description,
     });
 
@@ -120,7 +122,7 @@ export class AgentManager {
    */
   listSubAgents(): AgentConfig[] {
     return Array.from(this.configs.values()).filter(
-      (c) => c.mode === 'subagent' || c.mode === 'all'
+      (c) => c.role === 'subagent' || c.role === 'all'
     );
   }
 
@@ -129,7 +131,7 @@ export class AgentManager {
    */
   listPrimaryAgents(): AgentConfig[] {
     return Array.from(this.configs.values())
-      .filter((c) => c.mode === 'primary' || c.mode === 'all')
+      .filter((c) => c.role === 'primary' || c.role === 'all')
       .filter((c) => !c.hidden);
   }
 

@@ -28,6 +28,8 @@ pub struct AgentErrorPayload {
 pub async fn agent_run(app: tauri::AppHandle, prompt: String) -> Result<String, String> {
     // 启动 reason CLI 进程
     let mut child = Command::new("reason")
+        .arg("-m")
+        .arg("steward")
         .arg("-p")
         .arg(&prompt)
         .stdout(Stdio::piped())

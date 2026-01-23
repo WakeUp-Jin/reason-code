@@ -12,6 +12,9 @@ export {
   ModelTier,
 } from '@reason-cli/core';
 
+// 模型列表加载器
+export { loadModelsFromConfig, type ModelInfo } from './modelLoader.js';
+
 export type {
   AppConfig,
   ModelConfig,
