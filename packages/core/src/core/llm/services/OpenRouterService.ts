@@ -8,7 +8,7 @@ import {
   UnifiedToolManager,
 } from '../types/index.js';
 import { logger } from '../../../utils/logger.js';
-import { sleep, normalizeToolCalls } from '../utils/helpers.js';
+import { sleep, normalizeToolCalls, consumeStream } from '../utils/helpers.js';
 
 /**
  * OpenRouter LLM 服务
@@ -134,12 +134,27 @@ export class OpenRouterService implements ILLMService {
           `调用 OpenRouter API (尝试 ${attempt}/${this.maxRetries}): ${messages.length} 条消息, ${tools?.length || 0} 个工具`
         );
 
-        const response = await this.client.chat.completions.create({
+        // 构建请求参数（排除 onChunk，它不是 API 参数）
+        const { onChunk, ...apiOptions } = options || {};
+
+        const requestBody: Record<string, any> = {
           model: this.model,
           messages: this.addCacheControlForClaude(messages),
           tools: tools && tools.length > 0 ? tools : undefined,
-          ...options,
-        } as any);
+          ...apiOptions,
+        };
+
+        // 第一步：是否开启流式 → 添加 stream 参数
+        if (onChunk) {
+          requestBody.stream = true;
+        }
+
+        let response = await this.client.chat.completions.create(requestBody as any);
+
+        // 第二步：是否开启流式 → 处理流式结果
+        if (onChunk) {
+          response = await consumeStream(response as any, onChunk);
+        }
 
         const message = response.choices[0]?.message;
         if (!message) {

@@ -120,9 +120,11 @@ export interface LLMChatOptions {
   /** 中断信号（用于取消 API 请求） */
   abortSignal?: AbortSignal;
   /** 推理是否启用 */
-  reasoning?:{
+  reasoning?: {
     enabled: boolean;
-  }
+  };
+  /** 流式输出回调（传入则启用流式模式，文本实时回调，tool_calls 累积后返回） */
+  onChunk?: (chunk: string) => void;
 }
 
 /**
@@ -195,6 +197,13 @@ export interface ToolLoopConfig {
 
   /** 工作目录（用于传递给工具） */
   workingDirectory?: string;
+
+  // ============================================================
+  // LLM 调用选项透传
+  // ============================================================
+
+  /** LLM 调用选项（透传到 llmService.complete，支持 onChunk 等） */
+  llmOptions?: Partial<LLMChatOptions>;
 }
 
 /** LLM Service 核心接口 */

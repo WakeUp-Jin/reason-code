@@ -1,3 +1,4 @@
+import type OpenAI from 'openai';
 import { LLMConfig, ToolCall } from '../types/index.js';
 import { logger } from '../../../utils/logger.js';
 
@@ -177,4 +178,122 @@ export function normalizeToolCalls(raw?: any[]): ToolCall[] | undefined {
       arguments: tc.function?.arguments ?? '{}',
     },
   }));
+}
+
+/**
+ * 消费流式响应，累积成与非流式一致的 ChatCompletion 结构
+ *
+ * 设计理念：
+ * - 文本内容：累积 + 实时回调（用于 TTS 等场景）
+ * - tool_calls：仅累积，不回调（需要完整 JSON 才能执行）
+ * - 返回值：与非流式 API 一致的结构，后续解析逻辑零改动
+ *
+ * @param stream - OpenAI 流式响应（AsyncIterable）
+ * @param onChunk - 文本回调函数
+ * @returns 与非流式 API 一致的 ChatCompletion 结构
+ */
+export async function consumeStream(
+  stream: AsyncIterable<OpenAI.ChatCompletionChunk>,
+  onChunk: (text: string) => void
+): Promise<OpenAI.ChatCompletion> {
+  let content = '';
+  const toolCalls: OpenAI.ChatCompletionMessageToolCall[] = [];
+  let finishReason: string = '';
+  let usage: OpenAI.CompletionUsage | undefined = undefined;
+  let reasoningContent = '';
+
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta;
+
+    // 文本内容：累积 + 回调
+    if (delta?.content) {
+      content += delta.content;
+      onChunk(delta.content);
+    }
+
+    // reasoning_content（DeepSeek Reasoner 专用）：仅累积
+    if ((delta as any)?.reasoning_content) {
+      reasoningContent += (delta as any).reasoning_content;
+    }
+
+    // tool_calls：仅累积（需要完整 JSON 才能执行）
+    if (delta?.tool_calls) {
+      accumulateToolCalls(toolCalls, delta.tool_calls);
+    }
+
+    // 元数据
+    if (chunk.choices[0]?.finish_reason) {
+      finishReason = chunk.choices[0].finish_reason;
+    }
+    if (chunk.usage) {
+      usage = chunk.usage as OpenAI.CompletionUsage;
+    }
+  }
+
+  // 构建与非流式 API 一致的结构
+  const message: any = {
+    role: 'assistant' as const,
+    content,
+  };
+
+  if (toolCalls.length > 0) {
+    message.tool_calls = toolCalls;
+  }
+
+  if (reasoningContent) {
+    message.reasoning_content = reasoningContent;
+  }
+
+  return {
+    id: 'stream',
+    object: 'chat.completion',
+    created: Math.floor(Date.now() / 1000),
+    model: '',
+    choices: [
+      {
+        index: 0,
+        message,
+        finish_reason: finishReason as any,
+      },
+    ],
+    usage,
+  } as OpenAI.ChatCompletion;
+}
+
+/**
+ * 累积流式 tool_calls delta
+ *
+ * OpenAI 流式 tool_calls 格式：
+ * - 每个 delta 包含 index 表示是第几个 tool_call
+ * - 首次出现时包含 id 和 function.name
+ * - 后续 delta 只包含 function.arguments 的增量
+ */
+function accumulateToolCalls(
+  toolCalls: OpenAI.ChatCompletionMessageToolCall[],
+  deltas: OpenAI.ChatCompletionChunk.Choice.Delta.ToolCall[]
+): void {
+  for (const delta of deltas) {
+    const index = delta.index;
+
+    // 新的 tool_call
+    if (!toolCalls[index]) {
+      toolCalls[index] = {
+        id: delta.id || '',
+        type: 'function',
+        function: {
+          name: delta.function?.name || '',
+          arguments: delta.function?.arguments || '',
+        },
+      };
+    } else {
+      // 累积 arguments
+      if (delta.function?.arguments) {
+        toolCalls[index].function.arguments += delta.function.arguments;
+      }
+      // 可能后续 delta 才有 name（虽然通常首次就有）
+      if (delta.function?.name) {
+        toolCalls[index].function.name = delta.function.name;
+      }
+    }
+  }
 }

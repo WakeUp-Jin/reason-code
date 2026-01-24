@@ -14,7 +14,13 @@
  * ```
  */
 
-import { ILLMService, ToolLoopResult, ToolLoopConfig, LLMResponse } from '../../llm/types/index.js';
+import {
+  ILLMService,
+  ToolLoopResult,
+  ToolLoopConfig,
+  LLMResponse,
+  LLMChatOptions,
+} from '../../llm/types/index.js';
 import { ContextManager, ToolOutputSummarizer } from '../../context/index.js';
 import { ToolManager } from '../../tool/ToolManager.js';
 import { ToolScheduler, ScheduleResult } from '../../tool/ToolScheduler.js';
@@ -130,6 +136,9 @@ export class ExecutionEngine {
   // 中断控制
   private abortSignal?: AbortSignal;
 
+  // LLM 调用选项（透传）
+  private llmOptions?: Partial<LLMChatOptions>;
+
   constructor(
     llmService: ILLMService,
     contextManager: ContextManager,
@@ -149,6 +158,7 @@ export class ExecutionEngine {
     this.statsManager = config?.statsManager;
     this.abortSignal = config?.abortSignal;
     this.workingDirectory = config?.workingDirectory ?? process.cwd();
+    this.llmOptions = config?.llmOptions;
 
     // 提取工具调度器配置
     const enableToolSummarization = config?.enableToolSummarization ?? true;
@@ -242,6 +252,7 @@ export class ExecutionEngine {
       const response = await this.llmService.complete(messages, tools, {
         abortSignal: this.abortSignal,
         reasoning: { enabled: false },
+        ...this.llmOptions, // 透传 onChunk 等选项
       });
 
       // 5. 中断检查（LLM 调用后）

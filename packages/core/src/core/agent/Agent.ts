@@ -5,7 +5,7 @@
 
 import { ContextManager, ContextType, Message } from '../context/index.js';
 import { ToolManager } from '../tool/ToolManager.js';
-import { ILLMService } from '../llm/types/index.js';
+import { ILLMService, LLMChatOptions } from '../llm/types/index.js';
 import { llmServiceRegistry, ModelTier } from '../llm/index.js';
 import { ExecutionEngine } from './execution/index.js';
 import { eventBus } from '../../evaluation/EventBus.js';
@@ -83,7 +83,7 @@ export interface AgentRunOptions {
   modelLimit?: number;
 
   /** 会话 ID（用于压缩时引用历史文件） */
-  sessionId: string;
+  sessionId?: string;
 
   /** 工具确认回调（由 CLI 层提供） */
   onConfirmRequired?: (
@@ -100,6 +100,9 @@ export interface AgentRunOptions {
 
   /** 外部 ExecutionStream（用于子代理） */
   executionStream?: ExecutionStreamManager;
+
+  /** LLM 调用选项（透传到 llmService.complete，支持 onChunk 流式回调等） */
+  llmOptions?: Partial<LLMChatOptions>;
 }
 
 /**
@@ -464,6 +467,7 @@ export class Agent {
           abortSignal: this.abortController.signal,
           statsManager: this.statsManager,
           workingDirectory: this.promptContext?.workingDirectory,
+          llmOptions: options?.llmOptions,
         }
       );
 
