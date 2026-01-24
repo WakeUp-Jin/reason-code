@@ -222,23 +222,28 @@ export class ToolScheduler {
         executionStream: this.executionStream,
       };
       const result = await this.toolManager.execute(toolName, args, enrichedContext);
+
       const resultString = JSON.stringify(result);
 
       // 记录原始输出（DEBUG 级别完整记录）
-      toolLogger.rawOutput(toolName, callId, resultString.slice(0,5000)+'...');
+      toolLogger.rawOutput(toolName, callId, resultString.slice(0, 5000) + '...');
 
       // 7. 工具输出总结（可选）
       let processedOutput = resultString;
       if (this.enableToolSummarization && this.toolOutputSummarizer) {
         logger.info(`Tool output summarization enabled for tool: ${toolName}`, { args });
         try {
-          const summaryResult = await this.toolOutputSummarizer.process(resultString, toolName,args);
+          const summaryResult = await this.toolOutputSummarizer.process(
+            resultString,
+            toolName,
+            args
+          );
           if (summaryResult.summarized || summaryResult.truncated) {
             // 记录压缩详情（WARN 级别，包含完整的压缩前后数据）
             toolLogger.compressed(
               toolName,
               callId,
-              resultString.slice(0,1000)+'...', // 完整原始输出
+              resultString.slice(0, 1000) + '...', // 完整原始输出
               summaryResult.originalTokens,
               summaryResult.output, // 完整压缩输出
               summaryResult.processedTokens

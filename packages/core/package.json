@@ -21,16 +21,20 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "zod": "catalog:",
-    "openai": "^4.70.4",
     "dotenv": "^16.4.7",
-    "glob": "^11.0.0"
+    "glob": "^11.0.0",
+    "openai": "^4.70.4",
+    "uuid": "^13.0.0",
+    "ws": "^8.19.0",
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "typescript": "catalog:",
-    "@types/node": "catalog:",
     "@types/bun": "^1.2.9",
-    "tsx": "^4.19.2"
+    "@types/node": "catalog:",
+    "@types/uuid": "^11.0.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.19.2",
+    "typescript": "catalog:"
   },
   "engines": {
     "node": ">=18.0.0"

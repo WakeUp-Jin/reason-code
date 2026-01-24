@@ -1,6 +1,7 @@
 import type OpenAI from 'openai';
 import { LLMConfig, ToolCall } from '../types/index.js';
 import { logger } from '../../../utils/logger.js';
+import type { ExecutionStreamManager } from '../../execution/index.js';
 
 /**
  * 提取 API Key
@@ -184,17 +185,19 @@ export function normalizeToolCalls(raw?: any[]): ToolCall[] | undefined {
  * 消费流式响应，累积成与非流式一致的 ChatCompletion 结构
  *
  * 设计理念：
- * - 文本内容：累积 + 实时回调（用于 TTS 等场景）
+ * - 文本内容：累积 + 实时回调/事件（用于 TTS 等场景）
  * - tool_calls：仅累积，不回调（需要完整 JSON 才能执行）
  * - 返回值：与非流式 API 一致的结构，后续解析逻辑零改动
  *
  * @param stream - OpenAI 流式响应（AsyncIterable）
- * @param onChunk - 文本回调函数
+ * @param onChunk - 文本回调函数（可选，保留兼容）
+ * @param executionStream - 执行流管理器（可选，用于发送 content:delta 事件）
  * @returns 与非流式 API 一致的 ChatCompletion 结构
  */
 export async function consumeStream(
   stream: AsyncIterable<OpenAI.ChatCompletionChunk>,
-  onChunk: (text: string) => void
+  onChunk?: (text: string) => void,
+  executionStream?: ExecutionStreamManager
 ): Promise<OpenAI.ChatCompletion> {
   let content = '';
   const toolCalls: OpenAI.ChatCompletionMessageToolCall[] = [];
@@ -205,10 +208,11 @@ export async function consumeStream(
   for await (const chunk of stream) {
     const delta = chunk.choices[0]?.delta;
 
-    // 文本内容：累积 + 回调
+    // 文本内容：累积 + 回调 + 事件
     if (delta?.content) {
       content += delta.content;
-      onChunk(delta.content);
+      onChunk?.(delta.content); // 保留回调兼容
+      executionStream?.appendContent(delta.content); // 发送 content:delta 事件
     }
 
     // reasoning_content（DeepSeek Reasoner 专用）：仅累积
@@ -228,6 +232,11 @@ export async function consumeStream(
     if (chunk.usage) {
       usage = chunk.usage as OpenAI.CompletionUsage;
     }
+  }
+
+  // 流式完成，发送 content:complete 事件
+  if (content && executionStream) {
+    executionStream.completeContent();
   }
 
   // 构建与非流式 API 一致的结构

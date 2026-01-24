@@ -127,7 +127,6 @@ export async function readFileExecutor(args: ReadFileArgs, context: any): Promis
       content = `${head}\n\n... [内容已截断，省略 ${omittedChars} 字符] ...\n\n${tail}`;
       warning = `内容已截断，省略 ${omittedChars} 字符`;
     }
-
     return {
       success: true,
       warning,
@@ -143,6 +142,7 @@ export async function readFileExecutor(args: ReadFileArgs, context: any): Promis
       },
     };
   } catch (error) {
+    console.error('读取文件错误', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     return {
       success: false,

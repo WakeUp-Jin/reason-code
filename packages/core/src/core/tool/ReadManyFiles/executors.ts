@@ -123,11 +123,32 @@ async function readSingleFile(
     // 检查是否是二进制文件（简单判断）
     const ext = path.extname(filePath).toLowerCase();
     const binaryExtensions = [
-      '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp',
-      '.pdf', '.zip', '.tar', '.gz', '.rar', '.7z',
-      '.exe', '.dll', '.so', '.dylib',
-      '.mp3', '.mp4', '.avi', '.mov', '.wav',
-      '.woff', '.woff2', '.ttf', '.eot',
+      '.png',
+      '.jpg',
+      '.jpeg',
+      '.gif',
+      '.webp',
+      '.ico',
+      '.bmp',
+      '.pdf',
+      '.zip',
+      '.tar',
+      '.gz',
+      '.rar',
+      '.7z',
+      '.exe',
+      '.dll',
+      '.so',
+      '.dylib',
+      '.mp3',
+      '.mp4',
+      '.avi',
+      '.mov',
+      '.wav',
+      '.woff',
+      '.woff2',
+      '.ttf',
+      '.eot',
     ];
     if (binaryExtensions.includes(ext)) {
       return { success: false, error: `Binary file (${ext})` };
@@ -195,9 +216,7 @@ export async function readManyFilesExecutor(
     let filteredFiles = allFiles;
     if (args.include && args.include.length > 0) {
       const includePatterns = args.include.map((p) => new RegExp(p.replace(/\*/g, '.*')));
-      filteredFiles = allFiles.filter((f) =>
-        includePatterns.some((pattern) => pattern.test(f))
-      );
+      filteredFiles = allFiles.filter((f) => includePatterns.some((pattern) => pattern.test(f)));
     }
 
     // 检查文件数量限制
@@ -264,6 +283,7 @@ export async function readManyFilesExecutor(
       },
     };
   } catch (error) {
+    console.error('读取多个文件错误', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     return {
       success: false,
@@ -302,7 +322,9 @@ export function renderResultForAssistant(result: ReadManyFilesResult): string {
   // 输出每个文件
   for (const file of data.files) {
     const truncatedMark = file.isTruncated ? ' [truncated]' : '';
-    lines.push(`=== File: ${file.path} (${formatSize(file.size)}, ${file.lineCount} lines)${truncatedMark} ===`);
+    lines.push(
+      `=== File: ${file.path} (${formatSize(file.size)}, ${file.lineCount} lines)${truncatedMark} ===`
+    );
     lines.push(file.content);
     lines.push(''); // 空行分隔
   }

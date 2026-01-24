@@ -125,6 +125,10 @@ export interface LLMChatOptions {
   };
   /** 流式输出回调（传入则启用流式模式，文本实时回调，tool_calls 累积后返回） */
   onChunk?: (chunk: string) => void;
+  /** 是否开启流式模式（默认 false，开启后通过 executionStream 发送 content:delta 事件） */
+  stream?: boolean;
+  /** 执行流管理器（用于发送 content:delta / content:complete 事件） */
+  executionStream?: ExecutionStreamManager;
 }
 
 /**

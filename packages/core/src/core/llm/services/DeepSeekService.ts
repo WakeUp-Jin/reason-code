@@ -95,7 +95,8 @@ export class DeepSeekService implements ILLMService {
         }
 
         // 第一步：是否开启流式 → 添加 stream 参数
-        if (options?.onChunk) {
+        // 支持两种方式：stream 参数 或 onChunk 回调
+        if (options?.stream || options?.onChunk) {
           requestBody.stream = true;
         }
 
@@ -115,10 +116,15 @@ export class DeepSeekService implements ILLMService {
           requestBody as any,
           Object.keys(requestOptions).length > 0 ? requestOptions : undefined
         );
+        console.dir(response, { depth: null });
 
         // 第二步：是否开启流式 → 处理流式结果
-        if (options?.onChunk) {
-          response = await consumeStream(response as any, options.onChunk);
+        if (options?.stream || options?.onChunk) {
+          response = await consumeStream(
+            response as any,
+            options?.onChunk,
+            options?.executionStream
+          );
         }
 
         // 检查响应是否有效
@@ -137,7 +143,7 @@ export class DeepSeekService implements ILLMService {
 
         // 提取 DeepSeek 特有的 usage 字段
         const usage = response.usage as any;
-        
+
         const result: LLMResponse = {
           content: message.content || '',
           reasoningContent: reasoningContent || undefined,

@@ -134,8 +134,8 @@ export class OpenRouterService implements ILLMService {
           `调用 OpenRouter API (尝试 ${attempt}/${this.maxRetries}): ${messages.length} 条消息, ${tools?.length || 0} 个工具`
         );
 
-        // 构建请求参数（排除 onChunk，它不是 API 参数）
-        const { onChunk, ...apiOptions } = options || {};
+        // 构建请求参数（排除非 API 参数）
+        const { onChunk, stream, executionStream, ...apiOptions } = options || {};
 
         const requestBody: Record<string, any> = {
           model: this.model,
@@ -145,15 +145,16 @@ export class OpenRouterService implements ILLMService {
         };
 
         // 第一步：是否开启流式 → 添加 stream 参数
-        if (onChunk) {
+        // 支持两种方式：stream 参数 或 onChunk 回调
+        if (stream || onChunk) {
           requestBody.stream = true;
         }
 
         let response = await this.client.chat.completions.create(requestBody as any);
 
         // 第二步：是否开启流式 → 处理流式结果
-        if (onChunk) {
-          response = await consumeStream(response as any, onChunk);
+        if (stream || onChunk) {
+          response = await consumeStream(response as any, onChunk, executionStream);
         }
 
         const message = response.choices[0]?.message;

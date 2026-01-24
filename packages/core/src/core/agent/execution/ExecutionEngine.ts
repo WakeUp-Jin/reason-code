@@ -251,8 +251,8 @@ export class ExecutionEngine {
       this.executionStream?.startThinking();
       const response = await this.llmService.complete(messages, tools, {
         abortSignal: this.abortSignal,
-        reasoning: { enabled: false },
-        ...this.llmOptions, // 透传 onChunk 等选项
+        executionStream: this.executionStream, // 传递 executionStream 用于流式事件
+        ...this.llmOptions, // 透传 stream、onChunk 等选项
       });
 
       // 5. 中断检查（LLM 调用后）
