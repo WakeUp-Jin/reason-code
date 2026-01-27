@@ -116,7 +116,6 @@ export class DeepSeekService implements ILLMService {
           requestBody as any,
           Object.keys(requestOptions).length > 0 ? requestOptions : undefined
         );
-        console.dir(response, { depth: null });
 
         // 第二步：是否开启流式 → 处理流式结果
         if (options?.stream || options?.onChunk) {

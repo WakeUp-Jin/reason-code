@@ -3,32 +3,32 @@
  * 键为模型名称，值为最大 Token 数
  */
 export const TOKEN_LIMITS: Record<string, number> = {
-    // DeepSeek 模型
-    'deepseek-chat': 64_000,
-    'deepseek-reasoner': 64_000,
-  
-    // OpenAI 模型
-    'gpt-4o': 128_000,
-    'gpt-4o-mini': 128_000,
-    'gpt-4-turbo': 128_000,
-    'gpt-4': 8_192,
-    'gpt-3.5-turbo': 16_385,
-  
-    // Anthropic 模型
-    'claude-3-5-sonnet': 200_000,
-    'claude-3-opus': 200_000,
-    'claude-3-sonnet': 200_000,
-    'claude-3-haiku': 200_000,
-    'claude-sonnet-4': 200_000,
-  
-    // Google 模型
-    'gemini-2.0-flash': 1_048_576,
-    'gemini-pro': 1_000_000,
-    'gemini-1.5-pro': 1_000_000,
-    'gemini-1.5-flash': 1_000_000,
-  };
+  // DeepSeek 模型
+  'deepseek-chat': 128_000,
+  'deepseek-reasoner': 128_000,
 
-  /**
+  // OpenAI 模型
+  'gpt-4o': 128_000,
+  'gpt-4o-mini': 128_000,
+  'gpt-4-turbo': 128_000,
+  'gpt-4': 8_192,
+  'gpt-3.5-turbo': 16_385,
+
+  // Anthropic 模型
+  'claude-3-5-sonnet': 200_000,
+  'claude-3-opus': 200_000,
+  'claude-3-sonnet': 200_000,
+  'claude-3-haiku': 200_000,
+  'claude-sonnet-4': 200_000,
+
+  // Google 模型
+  'gemini-2.0-flash': 1_048_576,
+  'gemini-pro': 1_000_000,
+  'gemini-1.5-pro': 1_000_000,
+  'gemini-1.5-flash': 1_000_000,
+};
+
+/**
  * 默认 Token 限制（未知模型使用）
  */
 export const DEFAULT_TOKEN_LIMIT = 64_000;
@@ -41,7 +41,10 @@ export const DEFAULT_TOKEN_LIMIT = 64_000;
  * - output: 输出价格 (¥3.0/1M)
  * - cacheHit: 缓存命中的输入价格 (¥0.2/1M)
  */
-export const MODEL_PRICING_CONFIG: Record<string, { input: number; output: number; cacheHit?: number }> = {
+export const MODEL_PRICING_CONFIG: Record<
+  string,
+  { input: number; output: number; cacheHit?: number }
+> = {
   // DeepSeek 模型（CNY）- 支持缓存定价
   'deepseek-chat': { input: 2.0, output: 3.0, cacheHit: 0.2 },
   'deepseek-reasoner': { input: 2.0, output: 3.0, cacheHit: 0.2 },
