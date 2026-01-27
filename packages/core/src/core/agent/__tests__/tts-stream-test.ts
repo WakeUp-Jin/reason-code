@@ -152,7 +152,7 @@ function parseFrame(data: Buffer): ParsedFrame {
   }
 
   // 解析 payload
-  let payload = Buffer.alloc(0);
+  let payload: any = Buffer.alloc(0);
   if (offset + 4 <= data.length) {
     const payloadLen = data.readUInt32BE(offset);
     offset += 4;
