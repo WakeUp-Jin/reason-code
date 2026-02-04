@@ -8,6 +8,7 @@ import {
   CORE_CAPABILITIES,
   TOOL_USAGE_GUIDE,
   OUTPUT_STYLE_CONSTRAINTS,
+  EXPLANATORY_MODE_GUIDE,
   INSIGHT_FORMAT_GUIDE,
 } from './agentPrompts.js';
 
@@ -65,6 +66,28 @@ export function buildSystemPrompt(context: SystemPromptContext): string {
 }
 
 /**
+ * 构建解释型模式系统提示词（含教育性洞察）
+ *
+ * @param context - 动态上下文参数
+ * @returns 解释型模式系统提示词字符串
+ */
+export function buildExplanatorySystemPrompt(
+  context: SystemPromptContext
+): string {
+  const sections = [
+    ROLE_DEFINITION,
+    CORE_CAPABILITIES,
+    TOOL_USAGE_GUIDE,
+    OUTPUT_STYLE_CONSTRAINTS,
+    EXPLANATORY_MODE_GUIDE,
+    INSIGHT_FORMAT_GUIDE,
+    buildEnvironmentInfo(context),
+  ];
+
+  return sections.filter(Boolean).join('\n\n');
+}
+
+/**
  * 构建简化版系统提示词（不含教育性洞察）
  *
  * @param context - 动态上下文参数
@@ -81,4 +104,3 @@ export function buildSimpleSystemPrompt(context: SystemPromptContext): string {
 
   return sections.filter(Boolean).join('\n\n');
 }
-

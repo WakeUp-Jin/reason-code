@@ -11,6 +11,7 @@
 
 import type { AgentConfig } from './config/types.js';
 import { buildAgent } from './config/presets/build.js';
+import { explanatoryAgent } from './config/presets/explanatory.js';
 import { exploreAgent } from './config/presets/explore.js';
 import { stewardAgent } from './config/presets/steward.js';
 import { ToolManager } from '../tool/ToolManager.js';
@@ -40,6 +41,7 @@ export class AgentManager {
 
     // 注册内置预设
     this.register(buildAgent);
+    this.register(explanatoryAgent);
     this.register(exploreAgent);
     this.register(stewardAgent);
 

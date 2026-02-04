@@ -9,6 +9,7 @@ export {
   CORE_CAPABILITIES,
   TOOL_USAGE_GUIDE,
   OUTPUT_STYLE_CONSTRAINTS,
+  EXPLANATORY_MODE_GUIDE,
   INSIGHT_FORMAT_GUIDE,
 } from './system/agentPrompts.js';
 
@@ -19,6 +20,7 @@ export { explorePrompt } from './system/explorePrompt.js';
 // ============ 系统提示词构建器 ============
 export {
   buildSystemPrompt,
+  buildExplanatorySystemPrompt,
   buildSimpleSystemPrompt,
   type SystemPromptContext,
 } from './system/systemPromptBuilder.js';

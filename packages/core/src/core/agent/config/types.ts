@@ -10,7 +10,7 @@ import type { SystemPromptContext } from '../../promptManager/index.js';
 export type AgentRole = 'primary' | 'subagent' | 'all';
 
 /** 代理类型（前端传入的模式标识） */
-export type AgentType = 'build' | 'steward' | 'explore';
+export type AgentType = 'build' | 'steward' | 'explore' | 'explanatory';
 
 /** 系统提示词构建器函数类型 */
 export type SystemPromptBuilder = (context: SystemPromptContext) => string;
