@@ -3,27 +3,26 @@
  * 统一导出所有提示词
  */
 
-// ============ 系统提示词（模块化） ============
+// ============ 通用提示词常量 ============
 export {
   ROLE_DEFINITION,
   CORE_CAPABILITIES,
-  TOOL_USAGE_GUIDE,
+  PRIORITY_RULES,
+  TOOL_USAGE_GUIDE_LITE,
   OUTPUT_STYLE_CONSTRAINTS,
-  EXPLANATORY_MODE_GUIDE,
-  INSIGHT_FORMAT_GUIDE,
-} from './system/agentPrompts.js';
+  INSIGHT_MODE,
+} from './system/prompts.js';
 
-// ============ Agent 模式专用提示词 ============
-export { stewardPrompt } from './system/stewardPrompt.js';
-export { explorePrompt } from './system/explorePrompt.js';
+// ============ Agent 专用提示词 ============
+export { explorePrompt } from './system/agents/explore.js';
+export { stewardPrompt } from './system/agents/steward.js';
 
 // ============ 系统提示词构建器 ============
 export {
   buildSystemPrompt,
   buildExplanatorySystemPrompt,
-  buildSimpleSystemPrompt,
   type SystemPromptContext,
-} from './system/systemPromptBuilder.js';
+} from './system/builder.js';
 
 // ============ 压缩相关提示词 ============
 export {
