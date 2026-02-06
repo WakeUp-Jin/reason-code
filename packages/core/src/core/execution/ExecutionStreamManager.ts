@@ -3,7 +3,7 @@
  * 管理 Agent 执行过程中的状态、工具调用、统计信息
  */
 
-import type { ExecutionEvent, ExecutionEventHandler } from './events.js';
+import type { ExecutionEvent, ExecutionEventHandler, CompressionEventResult } from './events.js';
 import {
   ExecutionState,
   ToolCallStatus,
@@ -13,6 +13,7 @@ import {
   type SubAgentProgress,
 } from './types.js';
 import type { ConfirmDetails } from '../tool/types.js';
+import type { AgentStats } from '../stats/index.js';
 import { logger } from '../../utils/logger.js';
 import { eventLogger } from '../../utils/logUtils.js';
 
@@ -626,13 +627,37 @@ export class ExecutionStreamManager {
     });
   }
 
+  // ==================== 压缩事件 ====================
+
+  /**
+   * 发送压缩开始事件
+   * @param tokenUsage - 当前 token 使用情况（格式化字符串）
+   */
+  startCompression(tokenUsage: string): void {
+    this.emit({ type: 'compression:start', tokenUsage });
+  }
+
+  /**
+   * 发送压缩完成事件
+   * @param result - 压缩结果数据
+   */
+  completeCompression(result: CompressionEventResult): void {
+    this.emit({ type: 'compression:complete', result });
+  }
+
   // ==================== Token 统计 ====================
 
-  updateStats(stats: Partial<ExecutionStats>, totalCost?: number): void {
+  /**
+   * 更新统计信息
+   * @param stats - 部分执行统计（旧接口，保持兼容）
+   * @param totalCost - 累计费用（CNY）
+   * @param agentStats - 完整的 Agent 统计数据（新接口，推荐使用）
+   */
+  updateStats(stats: Partial<ExecutionStats>, totalCost?: number, agentStats?: AgentStats): void {
     Object.assign(this.snapshot.stats, stats);
     this.snapshot.stats.totalTokens =
       this.snapshot.stats.inputTokens + this.snapshot.stats.outputTokens;
-    this.emit({ type: 'stats:update', stats, totalCost });
+    this.emit({ type: 'stats:update', stats, totalCost, agentStats });
   }
 
   incrementLoopCount(): void {

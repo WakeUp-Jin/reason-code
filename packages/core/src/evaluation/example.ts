@@ -13,15 +13,11 @@ let agent: Agent | null = null;
 
 /**
  * 获取 Agent 实例（延迟初始化）
+ * 模型配置由 ConfigService 管理，LLM 服务由 LLMServiceRegistry 提供
  */
 async function getAgent(): Promise<Agent> {
   if (!agent) {
-    // 配置 AgentManager（使用环境变量）
-    agentManager.configure({
-      apiKey: process.env.DEEPSEEK_API_KEY,
-    });
-
-    // 创建 Agent
+    // 创建 Agent（模型配置已由 ConfigService 管理）
     agent = agentManager.createAgent('build');
     await agent.init();
   }

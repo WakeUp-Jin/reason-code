@@ -4,11 +4,14 @@
  */
 
 import type { AgentConfig } from '../types.js';
+import { buildSystemPrompt } from '../../../promptManager/index.js';
 
 export const buildAgent: AgentConfig = {
   name: 'build',
-  mode: 'primary',
-  description: 'General-purpose coding agent',
-  // 使用默认系统提示词和所有工具
+  role: 'primary',
+  description: 'General-purpose coding agent - 通用编程代理',
+  // 显式指定使用 buildSystemPrompt 构建器
+  systemPromptBuilder: buildSystemPrompt,
+  // modelTier 不配置，默认使用 PRIMARY
 };
 

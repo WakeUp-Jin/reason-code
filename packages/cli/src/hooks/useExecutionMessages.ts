@@ -51,6 +51,8 @@ export function useExecutionMessages(options: UseExecutionMessagesOptions) {
       insertMessageBefore: state.insertMessageBefore,
       updateMessage: state.updateMessage,
       addMessage: state.addMessage,
+      addNotice: state.addNotice,
+      updateNotice: state.updateNotice,
     };
   };
 
@@ -58,6 +60,8 @@ export function useExecutionMessages(options: UseExecutionMessagesOptions) {
   const toolMessageMapRef = useRef<Map<string, string>>(new Map());
   // 跟踪当前执行中的 thinking 消息 ID
   const thinkingMessageIdRef = useRef<string | null>(null);
+  // 跟踪当前压缩通知 ID（用于更新）
+  const compressionNoticeIdRef = useRef<string | null>(null);
   // 存储最新的参数值
   const optionsRef = useRef(options);
   optionsRef.current = options;
@@ -68,13 +72,14 @@ export function useExecutionMessages(options: UseExecutionMessagesOptions) {
       const { sessionId, assistantPlaceholderId } = optionsRef.current;
       if (!sessionId) return;
 
-      const { insertMessageBefore, updateMessage, addMessage } = getStoreActions();
+      const { insertMessageBefore, updateMessage, addMessage, addNotice, updateNotice } = getStoreActions();
 
       switch (event.type) {
         case 'execution:start':
           // 重置追踪状态
           toolMessageMapRef.current.clear();
           thinkingMessageIdRef.current = null;
+          compressionNoticeIdRef.current = null;
           logger.debug('Execution started, reset message tracking');
           break;
 
@@ -422,6 +427,68 @@ export function useExecutionMessages(options: UseExecutionMessagesOptions) {
           // 清理追踪状态
           toolMessageMapRef.current.clear();
           thinkingMessageIdRef.current = null;
+          compressionNoticeIdRef.current = null;
+          break;
+        }
+
+        case 'compression:start': {
+          const { tokenUsage } = event;
+
+          // 获取最后一条【非 streaming】消息的 ID
+          // 压缩触发时，当前 loop 之前的工具调用已经完成并添加到 messages
+          // 但 assistant 占位消息（isStreaming=true）在最后，需要跳过它
+          const sessionMessages = useAppStore.getState().messages[sessionId] || [];
+          const nonStreamingMessages = sessionMessages.filter((m) => !m.isStreaming);
+          const lastNonStreamingMsg = nonStreamingMessages[nonStreamingMessages.length - 1];
+
+          logger.info('Compression start event', {
+            tokenUsage,
+            totalMessages: sessionMessages.length,
+            nonStreamingMessages: nonStreamingMessages.length,
+            afterMessageId: lastNonStreamingMsg?.id,
+            afterMessageRole: lastNonStreamingMsg?.role,
+          });
+
+          // 创建压缩中通知，位置在最后一条非 streaming 消息之后
+          const noticeId = addNotice({
+            type: 'compression-pending',
+            afterMessageId: lastNonStreamingMsg?.id,
+            data: {
+              isPending: true,
+              tokenUsage,
+            },
+          });
+          compressionNoticeIdRef.current = noticeId;
+          break;
+        }
+
+        case 'compression:complete': {
+          const { result } = event;
+          logger.debug('Compression complete event', {
+            originalTokens: result.originalTokens,
+            compressedTokens: result.compressedTokens,
+            savedPercentage: result.savedPercentage,
+            retainedFiles: result.retainedFiles.length,
+          });
+
+          // 更新压缩通知为完成状态
+          // 注意：不更新 afterMessageId，保持在压缩开始时的位置
+          // 这样 Checkpoint 会出现在触发压缩的消息之后，而不是整个 loop 结束后
+          if (compressionNoticeIdRef.current) {
+            updateNotice(compressionNoticeIdRef.current, {
+              type: 'compression-complete',
+              data: {
+                isPending: false,
+                originalTokens: result.originalTokens,
+                compressedTokens: result.compressedTokens,
+                originalCount: result.originalCount,
+                compressedCount: result.compressedCount,
+                savedPercentage: result.savedPercentage,
+                retainedFiles: result.retainedFiles,
+              },
+            });
+            compressionNoticeIdRef.current = null;
+          }
           break;
         }
 
@@ -430,6 +497,7 @@ export function useExecutionMessages(options: UseExecutionMessagesOptions) {
           // 清理追踪状态
           toolMessageMapRef.current.clear();
           thinkingMessageIdRef.current = null;
+          compressionNoticeIdRef.current = null;
           break;
       }
     };

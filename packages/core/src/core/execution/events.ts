@@ -5,6 +5,7 @@
 
 import type { ExecutionState, ToolCallRecord, ExecutionStats, SubAgentProgress } from './types.js';
 import type { ConfirmDetails } from '../tool/types.js';
+import type { AgentStats } from '../stats/index.js';
 
 /**
  * 执行流事件类型
@@ -62,7 +63,13 @@ export type ExecutionEvent =
   | { type: 'content:complete'; content: string }
 
   // Token 统计事件
-  | { type: 'stats:update'; stats: Partial<ExecutionStats>; totalCost?: number }
+  | {
+      type: 'stats:update';
+      stats: Partial<ExecutionStats>;
+      totalCost?: number;
+      /** 完整的 Agent 统计数据（新增） */
+      agentStats?: AgentStats;
+    }
 
   // 子代理进度事件（TaskTool 专用）
   | {
@@ -71,7 +78,29 @@ export type ExecutionEvent =
       toolCallId: string;
       /** 子代理进度信息 */
       progress: SubAgentProgress;
-    };
+    }
+
+  // 压缩事件
+  | { type: 'compression:start'; tokenUsage: string }
+  | { type: 'compression:complete'; result: CompressionEventResult };
+
+/**
+ * 压缩事件结果数据
+ */
+export interface CompressionEventResult {
+  /** 原始 token 数 */
+  originalTokens: number;
+  /** 压缩后 token 数 */
+  compressedTokens: number;
+  /** 原始消息数 */
+  originalCount: number;
+  /** 压缩后消息数 */
+  compressedCount: number;
+  /** 节省百分比 */
+  savedPercentage: number;
+  /** 保留消息中的文件路径 */
+  retainedFiles: string[];
+}
 
 /**
  * 事件处理器类型

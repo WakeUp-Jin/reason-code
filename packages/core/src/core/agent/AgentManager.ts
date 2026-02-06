@@ -3,30 +3,25 @@
  * 
  * 职责：
  * 1. 注册内置和自定义 Agent 配置
- * 2. 管理运行时参数（apiKey、baseURL）
- * 3. 创建 Agent 实例（工厂方法）
- * 4. 提供子代理查询（供 Task 工具使用）
+ * 2. 创建 Agent 实例（工厂方法）
+ * 3. 提供子代理查询（供 Task 工具使用）
+ * 
+ * 注意：模型配置由 ConfigService 管理，LLM 服务由 LLMServiceRegistry 提供
  */
 
 import type { AgentConfig } from './config/types.js';
 import { buildAgent } from './config/presets/build.js';
+import { explanatoryAgent } from './config/presets/explanatory.js';
 import { exploreAgent } from './config/presets/explore.js';
+import { stewardAgent } from './config/presets/steward.js';
 import { ToolManager } from '../tool/ToolManager.js';
 import { logger } from '../../utils/logger.js';
 import { Agent } from './Agent.js';
 
 /**
- * 运行时配置
- */
-export interface RuntimeOptions {
-  apiKey?: string;
-  baseURL?: string;
-}
-
-/**
  * 共享运行时依赖
  */
-export interface SharedRuntime extends RuntimeOptions {
+export interface SharedRuntime {
   toolManager: ToolManager;
 }
 
@@ -46,7 +41,9 @@ export class AgentManager {
 
     // 注册内置预设
     this.register(buildAgent);
+    this.register(explanatoryAgent);
     this.register(exploreAgent);
+    this.register(stewardAgent);
 
     logger.debug('AgentManager initialized', {
       registeredAgents: Array.from(this.configs.keys()),
@@ -65,21 +62,6 @@ export class AgentManager {
   }
 
   /**
-   * 配置运行时参数
-   */
-  configure(options: RuntimeOptions): this {
-    this.sharedRuntime.apiKey = options.apiKey;
-    this.sharedRuntime.baseURL = options.baseURL;
-
-    logger.info('AgentManager configured', {
-      hasApiKey: !!options.apiKey,
-      hasBaseURL: !!options.baseURL,
-    });
-
-    return this;
-  }
-
-  /**
    * 注册 Agent 配置
    */
   register(config: AgentConfig): this {
@@ -91,7 +73,7 @@ export class AgentManager {
 
     logger.debug('Agent registered', {
       name: config.name,
-      mode: config.mode,
+      role: config.role,
       description: config.description,
     });
 
@@ -109,11 +91,6 @@ export class AgentManager {
    * 获取共享运行时依赖
    */
   getSharedRuntime(): SharedRuntime {
-    if (!this.sharedRuntime.apiKey) {
-      throw new Error(
-        'AgentManager not configured. Call configure() with apiKey before creating agents.'
-      );
-    }
     this.ensureToolManager();
     return this.sharedRuntime;
   }
@@ -147,7 +124,7 @@ export class AgentManager {
    */
   listSubAgents(): AgentConfig[] {
     return Array.from(this.configs.values()).filter(
-      (c) => c.mode === 'subagent' || c.mode === 'all'
+      (c) => c.role === 'subagent' || c.role === 'all'
     );
   }
 
@@ -156,7 +133,7 @@ export class AgentManager {
    */
   listPrimaryAgents(): AgentConfig[] {
     return Array.from(this.configs.values())
-      .filter((c) => c.mode === 'primary' || c.mode === 'all')
+      .filter((c) => c.role === 'primary' || c.role === 'all')
       .filter((c) => !c.hidden);
   }
 

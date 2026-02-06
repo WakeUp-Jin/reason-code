@@ -1,263 +1,118 @@
-# Reason CLI
+# Reason Code
 
-基于 **Monorepo + Workspace + Core/CLI 分层架构** 构建的 AI Agent 命令行工具。
+Reason Code 是采用“渐进式构建的方式”，目前我会先专注 Reason Code 的上下文的搜索和读取功能，而将写入和命令执行功能延后。
 
-## 架构特点
+我始终看重上下文的处理，**最重要的是 Agent 能够找到解决任务是最关键的那段上下文，我称为相关上下文**，所以先不开发写入功能是因为我觉得在上下文注入的时候不够准确，那么回应的写入和执行功能也会很糟糕，我遵循“简单有效”的原则，所以 Reason Code 的定位如下：
 
-- **Monorepo 管理**：使用 Bun Workspaces 统一管理多个包
-- **分层设计**：Core（核心逻辑）与 CLI（终端界面）分离
-- **智能构建**：Turbo 智能缓存和并行构建
-- **源码暴露**：开发时直接使用 TypeScript 源码，实现热更新
-- **类型安全**：完整的 TypeScript 类型支持
+1. **专注于代码的解读与学习，解释代码的逻辑和代码库的结构**
+2. 暂无写入工具，Reason Code 先专注确保读取和搜索准确，未来可以考虑接入写入和命令执行功能
 
-## 项目结构
+> 上下文是Agent的核心，相关性是其精髓。为每个任务找到最契合的上下文，正是我们探索的方向。
 
-```
-reason-cli/
-├── package.json              # 根配置（workspaces + catalog）
-├── turbo.json                # Turbo 构建配置
-├── tsconfig.json             # TypeScript 根配置
-└── packages/
-    ├── core/                 # 核心逻辑包
-    │   ├── src/
-    │   │   ├── agent.ts      # Agent 引擎
-    │   │   ├── llm.ts        # LLM 接口
-    │   │   ├── tools.ts      # 工具系统
-    │   │   └── index.ts      # 主导出
-    │   └── package.json
-    └── cli/                  # CLI 界面包
-        ├── src/
-        │   └── index.ts      # CLI 入口
-        └── package.json
-```
+<!-- 这是一张图片，ocr 内容为： -->
 
-## 快速开始
+![](./home.gif)
 
-### 环境要求
+## 这是什么
 
-- Bun（本仓库默认只支持 Bun 运行时）
+Reason Code 是一款智能代码理解工具，它集成于终端环境中，通过精准检索最相关的代码上下文，帮助您快速理解代码库结构、解析复杂代码逻辑，并深入学习编程实现——所有操作均可通过自然语言指令完成。未来将逐步演进为全功能的智能编程助手。
 
-### 安装依赖
+## 技术亮点
 
-```bash
-bun install
-```
+Reason Code 的核心技术设计：
 
-这会自动：
-- 安装所有依赖
-- 创建符号链接（node_modules/@reason-code/core -> packages/core）
-- 提升共同依赖到根目录
+- ✨ Agent 的形态：采用多智能体的设计，同时使用 Agent 的模式设计，让 Agent 专注于单一任务
+- 🧰 工具系统：在设计 Agent 的工具的时候，有一些很不错的工具的设计思路：
+  - Task 工具：主智能体可以借助 Task 工具来从 Agent 的模块中调起子智能体
+  - Grep 和 Glob 本地搜索工具：Grep 四重降级策略（ripgrep -> git grep -> system grep -> js 实现)，Glob 两重降级策略(ripgrep -> npm glob)
+  - Todo 工具：当模型推理能力不强时，使用 Todo 工具可以专注模型的推理能力，以此来提高模型的任务成功率
+- ⛳ 工具执行调度和审核模块：完善工具执行流程（验证 -> 调度 -> 审核等待 -> 执行 -> 成功｜失败｜取消），在审核模块中的设计中，要约定 Agent 模式下可以直接执行的工具和需要审核的工具，较为特殊的是命令执行工具，这个工具需要审核命令执行前缀
+- 📜 会话管理：采用全局模块的会话管理，统一调度历史消息的读取，和消息的写入等操作
+- 📝 上下文压缩：压缩上下文中关于会话历史记录前 70%，完整的保留后 30%，**并且添加了历史文件位置的引用(参考 Cursor 的设计思路）**，最终拼接完整的上下文注入给 LLM
+- 🪐 读取工具压缩：读取工具的有 2 层限制，第一层是读取文件的内容返回的结果不能大于 100000，第二层是工具模块的限制字符大于 2000 的就要让次模型进行压缩然后返回
+- 🌟 LLM 模块：我给在 Reason Code 中的模型按照速度和成本分级，
+  - **主模型**用于复杂任务的推理，主 Agent 首选
+  - **次模型**用于快速和成本低的任务，工具的压缩等任务可以选择
+  - **低模型**用于简单的分类和格式化等任
 
-### 开发运行
+## 30 秒体验
+
+**环境要求**：[Bun](https://bun.sh)
 
 ```bash
-# 运行 CLI
-bun run --cwd packages/cli dev
+# 克隆 & 安装
+git clone https://github.com/WakeUp-Jin/reason-code.git
+cd reason-code && bun install
 
-# 或者使用以下命令
-cd packages/cli
+# 配置 API Key
+cp .env.example .env
+# 编辑 .env 填入 API Key
+
+# 启动
 bun run dev
 ```
 
-### 可用命令
+## 架构概览
 
-```bash
-# 聊天命令
-bun run --cwd packages/cli dev chat "你好，你好吗？"
+Excalidraw 文件链接：[https://my.feishu.cn/file/J2X8bq9KooFgbcxzN4WcdTArnud](https://my.feishu.cn/file/J2X8bq9KooFgbcxzN4WcdTArnud)
 
-# 查看信息
-bun run --cwd packages/cli dev info
+![](./ReasonCode核心架构设计.png)
+
+上图是完整的 Reason Code 的核心设计，关于里面的某些模块或者工具的详细设计和实现思路访问下面链接：
+
+👉 仓库链接：
+
+👀 在线阅读链接：
+
+## 目录结构
+
+```plain
+reason-code/
+├── packages/
+│   ├── core/src/                # 核心引擎
+│   │   ├── core/
+│   │   │   ├── agent/           # Agent 系统（生命周期、执行引擎）
+│   │   │   ├── llm/             # LLM 服务（多供应商抽象）
+│   │   │   ├── tool/            # 工具系统（调度、权限、内置工具）
+│   │   │   ├── context/         # 上下文管理（Token 估算、压缩）
+│   │   │   ├── session/         # 会话管理（持久化、子会话）
+│   │   │   ├── promptManager/   # 提示词管理（系统提示构建）
+│   │   │   ├── execution/       # 执行流（状态机、事件流）
+│   │   │   └── stats/           # 统计管理（Token、费用）
+│   │   ├── config/              # 配置服务
+│   │   └── utils/               # 工具函数
+│   │
+│   └── cli/src/                 # 终端界面（Ink + React）
+│       ├── component/           # UI 组件
+│       │   ├── execution/       # 执行流展示
+│       │   ├── message-area/    # 消息区域
+│       │   ├── panel/           # 面板（确认、设置）
+│       │   └── command/         # 命令系统
+│       ├── context/             # React Context
+│       ├── hooks/               # 自定义 Hooks
+│       └── routes/              # 页面路由
+│
+├── docs/                        # AI 编码参考文档
+├── turbo.json                   # Turbo 构建配置
+└── package.json                 # Monorepo 根配置
 ```
-
-## 开发指南
-
-### 核心机制
-
-**1. 源码暴露**
-- CLI 通过 `workspace:*` 依赖 Core
-- Core 的 `exports` 指向 `.ts` 源码
-- 符号链接：`node_modules/@reason-code/core -> packages/core`
-- 修改 Core 代码立即在 CLI 中生效
-
-**2. 依赖管理**
-- 使用 Bun Workspaces 管理多个包
-- 共同依赖自动提升到根 `node_modules`
-- Catalog 统一管理依赖版本
-
-**3. 智能构建**
-- Turbo 自动分析依赖关系
-- 智能缓存构建结果
-- 并行执行无依赖任务
-
-### 常用命令
-
-```bash
-# 类型检查所有包
-bun run typecheck
-
-# 构建所有包
-bun run build
-
-# 清理构建产物
-bun run clean
-```
-
-### 包结构说明
-
-**Core 包**（`@reason-code/core`）
-- 纯业务逻辑，无 UI 依赖
-- 包含 Agent 引擎、LLM 接口、工具系统
-- 导出源码，支持热更新
-- 可被 CLI、Web、Desktop 等多平台复用
-
-**CLI 包**（`@reason-code/cli`）
-- 终端界面层
-- 依赖 Core 包（`workspace:*`）
-- 使用 Commander、Chalk、Ora 等 CLI 工具
-- 命令名称：`reason`
-
-## 架构优势
-
-### 1. 开发体验好
-- 修改 Core，CLI 立即看到效果
-- 完整的 TypeScript 类型信息
-- 精确的错误堆栈和调试信息
-
-### 2. 多平台复用
-- Core 可被 CLI、Web、Desktop 共享
-- 一次修改，所有平台生效
-- 保持核心逻辑稳定
-
-### 3. 易于测试
-- Core 独立于 UI，易于单元测试
-- 无需启动 CLI 或浏览器
-- 测试运行快速可靠
-
-### 4. 版本管理清晰
-- Core 保持稳定，很少更新
-- UI 层可以快速迭代
-- 依赖版本统一管理
-
-## 验证步骤
-
-### 1. 检查符号链接
-
-```bash
-# Bun workspaces 内部解析包
-# 可以通过在 CLI 中导入来验证
-```
-
-### 2. 类型检查
-
-```bash
-bun run typecheck
-# 所有包应该通过类型检查
-```
-
-### 3. 运行 CLI
-
-```bash
-bun run --cwd packages/cli dev info
-# 应该显示项目信息
-```
-
-### 4. 测试热更新
-
-1. 修改 `packages/core/src/agent.ts`
-2. 重新运行 CLI
-3. 立即看到修改效果
 
 ## 技术栈
 
 - **运行时**：Bun
-- **语言**：TypeScript 5.8.2
-- **构建工具**：Turbo 2.5.6
-- **CLI 框架**：Commander 12.0.0
-- **终端美化**：Chalk 5.0.0、Ora 8.0.0
-- **数据验证**：Zod 4.1.8
+- **语言**：TypeScript 5.8
+- **构建**：Turbo (Monorepo)
+- **CLI**：Ink (React for CLI)
+- **LLM**：DeepSeek / OpenRouter
 
-## 核心概念
+## 开发
 
-### Monorepo
-多个相关包在同一个仓库中管理，便于代码共享和原子化提交。
-
-### Workspaces
-包管理器提供的多包管理功能，自动创建符号链接和依赖提升。
-
-### Core/CLI 分层
-业务逻辑（Core）与表现层（CLI）分离，实现多平台复用。
-
-### 源码暴露
-开发时直接使用 `.ts` 源码，无需构建，实现热更新。
-
-### Catalog
-统一管理依赖版本，避免版本冲突。
-
-### Turbo
-智能构建系统，缓存构建结果，加速开发。
-
-## 参考资料
-
-本项目完全遵循现代化的 Monorepo 架构设计，详细文档请参考：
-- Monorepo 架构概述
-- Core + CLI 分层架构
-- 依赖管理和源码暴露
-- Turbo 构建系统
+```bash
+bun run dev        # 开发模式
+bun run typecheck  # 类型检查
+bun run build      # 构建
+```
 
 ## 许可证
 
-Apache-2.0
-
-本项目采用 Apache License 2.0 开源协议。详见 [LICENSE](LICENSE) 文件。
-
-## 作者
-
-Reason CLI Team
-
-## 全局命令（reason）
-
-本项目的 CLI 命令名是 `reason`（入口在 `packages/cli`）。
-
-- 发布态优先：如果 `packages/cli/dist/index.js` 存在，则默认运行构建产物。
-- 开发回退：如果 dist 不存在，则自动回退运行源码 `packages/cli/src/index.ts`。
-
-### 本地全局使用（开发/调试）
-
-1) 先构建一次（可选，但推荐）：
-
-```bash
-bun run --cwd packages/cli build
-```
-
-2) 注册到 Bun 的全局 link：
-
-```bash
-bun link --cwd packages/cli
-```
-
-3) 把 Bun 全局 bin 加入 PATH（只需一次）：
-
-```bash
-bun pm bin -g
-```
-
-把上面输出的目录加入 `~/.zshrc`：
-
-```bash
-export PATH="<bun-global-bin>:$PATH"
-```
-
-验证：
-
-```bash
-which reason
-reason info
-```
-
-### 强制走源码（不依赖 dist）
-
-```bash
-reason --dev info
-# 或
-REASON_DEV=1 reason info
-```
+[Apache-2.0](./LICENSE)

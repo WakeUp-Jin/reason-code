@@ -8,7 +8,7 @@ import {
   UnifiedToolManager,
 } from '../types/index.js';
 import { logger } from '../../../utils/logger.js';
-import { sleep } from '../utils/helpers.js';
+import { sleep, consumeStream } from '../utils/helpers.js';
 
 /**
  * DeepSeek LLM 服务
@@ -94,6 +94,12 @@ export class DeepSeekService implements ILLMService {
           requestBody.max_tokens = 8 * 1024;
         }
 
+        // 第一步：是否开启流式 → 添加 stream 参数
+        // 支持两种方式：stream 参数 或 onChunk 回调
+        if (options?.stream || options?.onChunk) {
+          requestBody.stream = true;
+        }
+
         // 合并外部传入的 extraBody（优先级最高）
         const extraBody = options?.extraBody;
 
@@ -106,10 +112,19 @@ export class DeepSeekService implements ILLMService {
           requestOptions.signal = options.abortSignal;
         }
 
-        const response = await this.client.chat.completions.create(
+        let response = await this.client.chat.completions.create(
           requestBody as any,
           Object.keys(requestOptions).length > 0 ? requestOptions : undefined
         );
+
+        // 第二步：是否开启流式 → 处理流式结果
+        if (options?.stream || options?.onChunk) {
+          response = await consumeStream(
+            response as any,
+            options?.onChunk,
+            options?.executionStream
+          );
+        }
 
         // 检查响应是否有效
         if (!response || !response.choices || response.choices.length === 0) {
@@ -127,7 +142,7 @@ export class DeepSeekService implements ILLMService {
 
         // 提取 DeepSeek 特有的 usage 字段
         const usage = response.usage as any;
-        
+
         const result: LLMResponse = {
           content: message.content || '',
           reasoningContent: reasoningContent || undefined,

@@ -131,12 +131,19 @@ export async function executeTask(
   try {
     // 6. 初始化子代理（传入父代理的工作目录）
     const workingDirectory = context?.workingDirectory || process.cwd();
+
+    // 先初始化子代理（会从配置文件读取并缓存模型配置）
+    // 使用临时的 promptContext，稍后更新
     await subAgent.init({
       promptContext: {
         workingDirectory,
-        modelName: subAgent.getModelConfig().model,
+        modelName: 'initializing', // 临时值，init() 后会使用正确的模型名
       },
     });
+
+    // 获取子代理的模型配置（已在 init() 中缓存）
+    const subAgentModelConfig = subAgent.getModelConfig();
+    logger.debug('SubAgent model config', { model: subAgentModelConfig.model });
 
     // 7. 执行子代理（传入 subExecStream，Agent 内部会自动管理生命周期）
     const result = await subAgent.run(prompt, {
@@ -146,13 +153,17 @@ export async function executeTask(
       executionStream: subExecStream,
     });
 
+    // 8. 获取子代理的统计数据（Token 消耗和费用）
+    const agentStats = subAgent.getStats();
+
     logger.info('TaskTool completed', {
       agentName: subagent_type,
       success: result.success,
       toolCallCount: toolSummary.length,
+      stats: agentStats,
     });
 
-    // 8. 返回结果
+    // 9. 返回结果（包含 Token 统计）
     return {
       success: result.success,
       output: result.finalResponse || result.error || '',
@@ -160,6 +171,7 @@ export async function executeTask(
         agentName: subagent_type,
         sessionId: sessionId || context?.sessionId || 'unknown',
         summary: toolSummary,
+        stats: agentStats,
       },
     };
   } finally {

@@ -8,6 +8,7 @@ export type {
   AgentResult,
   AgentRunOptions,
   AgentInitOptions,
+  MonitorOptions,
   HistoryLoadOptions,
   SessionCheckpoint,
   CompressionCompleteEvent,
@@ -15,13 +16,17 @@ export type {
 } from './Agent.js';
 
 // Agent 配置系统
-export type { AgentConfig, AgentMode } from './config/index.js';
-export { buildAgent, exploreAgent } from './config/index.js';
+export type { AgentConfig, AgentRole, AgentType } from './config/index.js';
+export {
+  buildAgent,
+  explanatoryAgent,
+  exploreAgent,
+  stewardAgent,
+} from './config/index.js';
 
 // Agent 管理器
 export { AgentManager, agentManager } from './AgentManager.js';
-export type { RuntimeOptions, SharedRuntime } from './AgentManager.js';
+export type { SharedRuntime } from './AgentManager.js';
 
 // 执行引擎
 export { ExecutionEngine } from './execution/index.js';
-

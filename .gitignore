@@ -7,6 +7,7 @@ store/
 # Build outputs
 dist/
 *.tsbuildinfo
+**/target/
 
 # Logs
 logs/

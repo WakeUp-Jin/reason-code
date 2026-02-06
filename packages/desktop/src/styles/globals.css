@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 基础布局 - 确保 100% 填充 */
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  color: #1f2937;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* 窗口拖拽区域 */
+[data-tauri-drag-region]:not([data-tauri-drag-region="false"]) {
+  -webkit-app-region: drag;
+}
+
+/* 显式声明不参与拖拽的区域（避免被上面的 attribute 选择器误伤） */
+[data-tauri-drag-region="false"] {
+  -webkit-app-region: no-drag;
+}
+
+/* 防止按钮和输入框被拖拽 */
+button, input, textarea, a {
+  -webkit-app-region: no-drag;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* 录音动画 */
+@keyframes recording-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
+}
+
+.recording-pulse {
+  animation: recording-pulse 1.5s ease-in-out infinite;
+}

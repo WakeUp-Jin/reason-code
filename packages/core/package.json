@@ -11,26 +11,36 @@
     "./tools": "./src/core/tool/index.ts",
     "./context": "./src/core/context/index.ts",
     "./session": "./src/core/session/index.ts",
-    "./config": "./src/config/env.ts",
+    "./config": "./src/config/index.ts",
     "./utils": "./src/utils/logger.ts"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:health": "vitest run --testNamePattern='健康检查'"
   },
   "dependencies": {
-    "zod": "catalog:",
-    "openai": "^4.70.4",
     "dotenv": "^16.4.7",
-    "glob": "^11.0.0"
+    "glob": "^11.0.0",
+    "openai": "^4.70.4",
+    "uuid": "^13.0.0",
+    "ws": "^8.19.0",
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "typescript": "catalog:",
-    "@types/node": "catalog:",
     "@types/bun": "^1.2.9",
-    "tsx": "^4.19.2"
+    "@types/node": "catalog:",
+    "@types/uuid": "^11.0.0",
+    "@types/ws": "^8.18.1",
+    "@vitest/coverage-v8": "^3.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "catalog:",
+    "vitest": "^3.0.0"
   },
   "engines": {
     "node": ">=18.0.0"

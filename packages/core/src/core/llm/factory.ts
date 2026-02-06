@@ -1,6 +1,7 @@
 import { ILLMService, LLMConfig, UnifiedToolManager } from './types/index.js';
 import { DeepSeekService } from './services/DeepSeekService.js';
 import { extractApiKey, getBaseURL } from './utils/helpers.js';
+import { OpenRouterService } from './services/OpenRouterService.js';
 
 /**
  * 公共工厂函数：创建 LLM 服务实例（支持可选的工具管理器）
@@ -75,6 +76,16 @@ async function _createLLMService(
           maxIterations: config.maxIterations || 5,
         }
       );
+    }
+    case 'openrouter': {
+      const { default: OpenAI } = await import('openai');
+      const openai = new OpenAI({ apiKey, baseURL });
+      return new OpenRouterService(openai, config.model || 'openrouter', {
+        baseURL,
+        maxRetries: 3,
+        toolManager,
+        maxIterations: config.maxIterations || 5,
+      });
     }
 
     // 🟡 可扩展：其他提供商

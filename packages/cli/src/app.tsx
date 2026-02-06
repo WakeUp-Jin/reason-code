@@ -13,9 +13,10 @@ import { useTerminalSize } from './util/useTerminalSize.js';
 import { registerCommands } from './component/command/index.js';
 import { logger } from './util/logger.js';
 import { logger as coreLogger, initializeSession } from '@reason-cli/core';
+import { shutdownMonitorWriter } from './hooks/useAgent.js';
 import { loadAllData } from './persistence/loader.js';
 import { usePersistence } from './hooks/usePersistence.js';
-import { configManager } from './config/manager.js';
+import { configService } from './config/index.js';
 
 // 获取项目根目录的绝对路径
 const __filename = fileURLToPath(import.meta.url);
@@ -25,6 +26,16 @@ const PROJECT_ROOT = join(__dirname, '..', '..', '..');
 // ==================== 模块级状态 ====================
 let appInitialized = false;
 let commandsRegistered = false;
+
+/** 当前 Agent 类型 (build | steward | explore) */
+let currentAgentMode = 'build';
+
+/**
+ * 获取当前 Agent 模式
+ */
+export function getAgentMode(): string {
+  return currentAgentMode;
+}
 
 // ==================== Ink 实例管理 ====================
 
@@ -36,6 +47,7 @@ function App() {
   const { columns: width } = useTerminalSize();
   const createSession = useAppStore((state) => state.createSession);
   const initializeFromDisk = useAppStore((state) => state.initializeFromDisk);
+  const loadModels = useAppStore((state) => state.loadModels);
   const currentSessionId = useAppStore((state) => state.currentSessionId);
   const { saveAll } = usePersistence();
 
@@ -60,13 +72,20 @@ function App() {
         try {
           const loadedData = await loadAllData();
 
+          // 从配置文件加载模型列表（/model 命令会用到）
+          await loadModels();
+
           if (loadedData.sessions.length > 0) {
             // 有历史数据，加载到内存（但不恢复旧会话）
+            // 新配置格式：model.primary.provider/model.primary.model
+            const primaryModel = loadedData.config.model.primary;
+            const currentModel = `${primaryModel.provider}/${primaryModel.model}`;
+            
             initializeFromDisk({
               sessions: loadedData.sessions,
               messages: loadedData.messages,
               currentSessionId: null, // 不恢复旧会话
-              currentModel: loadedData.config.model.current,
+              currentModel,
               currency: loadedData.config.ui.currency,
               exchangeRate: loadedData.config.ui.exchangeRate,
               approvalMode: loadedData.config.ui.approvalMode,
@@ -82,7 +101,7 @@ function App() {
         }
       })();
     }
-  }, [createSession, initializeFromDisk]);
+  }, [createSession, initializeFromDisk, loadModels]);
 
   // 监听退出事件，保存所有数据
   useEffect(() => {
@@ -112,11 +131,10 @@ function App() {
 
 // 根组件，包含所有 Provider
 function Root() {
-  // 加载配置以获取主题设置
-  const config = configManager.getConfig();
-
+  // 使用默认主题，配置会在 App 中异步加载
+  // 主题切换可以通过 ThemeProvider 的 context 进行
   return (
-    <ThemeProvider defaultTheme={config.ui.theme as any}>
+    <ThemeProvider defaultTheme="kanagawa">
       <StoreProvider>
         <ToastProvider>
           <RouteProvider>
@@ -130,8 +148,17 @@ function Root() {
   );
 }
 
+/** TUI 启动选项 */
+export interface StartTUIOptions {
+  /** Agent 模式 (build | butler) */
+  mode?: string;
+}
+
 // TUI 启动函数
-export async function startTUI(): Promise<void> {
+export async function startTUI(options: StartTUIOptions = {}): Promise<void> {
+  // 设置 Agent 模式
+  currentAgentMode = options.mode || 'build';
+  
   // 日志目录使用项目根目录的绝对路径
   const coreLogsDir = join(PROJECT_ROOT, 'logs', 'core');
 
@@ -160,6 +187,8 @@ export async function startTUI(): Promise<void> {
   // 优雅关闭处理器
   const handleShutdown = (signal: string) => {
     logger.info(`Received ${signal}, shutting down...`);
+    // 将 MonitorWriter 标记为 idle
+    shutdownMonitorWriter();
     logger.flush();
     coreLogger.flush();
     process.exit(0);

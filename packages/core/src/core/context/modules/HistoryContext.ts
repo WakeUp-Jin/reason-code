@@ -1,11 +1,14 @@
 /**
  * 会话历史上下文管理类
  * 负责管理会话历史消息和压缩功能
+ * 
+ * 压缩功能使用 SECONDARY 层级模型以平衡成本和效果
  */
 
 import { BaseContext } from '../base/BaseContext.js';
 import { ContextType, Message, CompressionResult } from '../types.js';
 import type { ILLMService } from '../../llm/types/index.js';
+import { llmServiceRegistry, ModelTier } from '../../llm/index.js';
 import { TokenEstimator } from '../utils/tokenEstimator.js';
 import {
   COMPRESSION_SYSTEM_PROMPT,
@@ -61,14 +64,13 @@ export class HistoryContext extends BaseContext<Message> {
 
   /**
    * 压缩历史并添加文件引用
+   * 使用 SECONDARY 层级模型进行压缩
    *
-   * @param llmService - LLM 服务（用于生成摘要）
    * @param sessionId - 会话 ID（用于生成文件引用）
    * @param preserveRatio - 保留最近历史的比例，默认 0.3
    * @returns 压缩结果
    */
   async compress(
-    llmService: ILLMService,
     sessionId?: string,
     preserveRatio: number = DEFAULT_PRESERVE_RATIO
   ): Promise<CompressionResult> {
@@ -105,6 +107,9 @@ export class HistoryContext extends BaseContext<Message> {
     const historyToPreserve = history.slice(splitIndex);
 
     try {
+      // 获取 SECONDARY 层级 LLM 服务进行压缩
+      const llmService = await llmServiceRegistry.getService(ModelTier.SECONDARY);
+      
       // 生成摘要
       const summary = await this.generateSummary(historyToCompress, llmService);
 

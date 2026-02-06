@@ -1,14 +1,16 @@
-import { LLMConfig } from '../types/index.js';
-import { config as envConfig, getLLMKeyByProvider } from '../../../config/env.js';
+import type OpenAI from 'openai';
+import { LLMConfig, ToolCall } from '../types/index.js';
 import { logger } from '../../../utils/logger.js';
+import type { ExecutionStreamManager } from '../../execution/index.js';
 
 /**
  * 提取 API Key
  *
  * 优先级（从高到低）：
- * 1. 用户传递的 config.apiKey（显式配置）
- * 2. 环境变量中的配置（通过 provider 自动查找）
- * 3. 如果都没有且该 provider 需要 API Key，则抛出错误
+ * 1. 用户传递的 config.apiKey（必须，由 ConfigService 提供）
+ * 2. 无需 API Key 的提供商返回占位符
+ *
+ * 注意：新架构中，API Key 应该由 ConfigService 在调用 createLLMService 前解析好
  *
  * @param config - LLM 配置
  * @returns API Key 字符串
@@ -21,14 +23,16 @@ export function extractApiKey(config: LLMConfig): string {
     return 'not-required';
   }
 
-  // 1. 优先使用用户传递的 API Key
+  // 使用传入的 API Key（应该由 ConfigService 提供）
   if (config.apiKey) {
     return config.apiKey;
   }
 
-  // 2. 尝试从环境变量配置中获取
-  const providerConfigKey = getLLMKeyByProvider(provider);
-  return providerConfigKey;
+  // 没有 API Key，抛出错误
+  throw new Error(
+    `API key not found for provider "${provider}". ` +
+      `Please configure your API key in ~/.reason-code/config.json`
+  );
 }
 
 /**
@@ -150,4 +154,155 @@ export function deepParseArgs(args: any): any {
   }
 
   return args;
+}
+
+
+/**
+ * 规范化 tool_calls - 统一不同 LLM 提供商的输出格式
+ *
+ * 解决的问题：
+ * - Claude: 无参数时不返回 arguments 字段
+ * - Gemini: 始终返回 arguments
+ * - 其他模型: 格式可能各有差异
+ *
+ * @param raw - LLM 返回的原始 tool_calls
+ * @returns 规范化后的 ToolCall 数组，或 undefined
+ */
+export function normalizeToolCalls(raw?: any[]): ToolCall[] | undefined {
+  if (!raw?.length) return undefined;
+
+  return raw.map((tc) => ({
+    id: tc.id,
+    type: 'function' as const,
+    function: {
+      name: tc.function?.name ?? '',
+      arguments: tc.function?.arguments ?? '{}',
+    },
+  }));
+}
+
+/**
+ * 消费流式响应，累积成与非流式一致的 ChatCompletion 结构
+ *
+ * 设计理念：
+ * - 文本内容：累积 + 实时回调/事件（用于 TTS 等场景）
+ * - tool_calls：仅累积，不回调（需要完整 JSON 才能执行）
+ * - 返回值：与非流式 API 一致的结构，后续解析逻辑零改动
+ *
+ * @param stream - OpenAI 流式响应（AsyncIterable）
+ * @param onChunk - 文本回调函数（可选，保留兼容）
+ * @param executionStream - 执行流管理器（可选，用于发送 content:delta 事件）
+ * @returns 与非流式 API 一致的 ChatCompletion 结构
+ */
+export async function consumeStream(
+  stream: AsyncIterable<OpenAI.ChatCompletionChunk>,
+  onChunk?: (text: string) => void,
+  executionStream?: ExecutionStreamManager
+): Promise<OpenAI.ChatCompletion> {
+  let content = '';
+  const toolCalls: OpenAI.ChatCompletionMessageToolCall[] = [];
+  let finishReason: string = '';
+  let usage: OpenAI.CompletionUsage | undefined = undefined;
+  let reasoningContent = '';
+
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta;
+
+    // 文本内容：累积 + 回调 + 事件
+    if (delta?.content) {
+      content += delta.content;
+      onChunk?.(delta.content); // 保留回调兼容
+      executionStream?.appendContent(delta.content); // 发送 content:delta 事件
+    }
+
+    // reasoning_content（DeepSeek Reasoner 专用）：仅累积
+    if ((delta as any)?.reasoning_content) {
+      reasoningContent += (delta as any).reasoning_content;
+    }
+
+    // tool_calls：仅累积（需要完整 JSON 才能执行）
+    if (delta?.tool_calls) {
+      accumulateToolCalls(toolCalls, delta.tool_calls);
+    }
+
+    // 元数据
+    if (chunk.choices[0]?.finish_reason) {
+      finishReason = chunk.choices[0].finish_reason;
+    }
+    if (chunk.usage) {
+      usage = chunk.usage as OpenAI.CompletionUsage;
+    }
+  }
+
+  // 流式完成，发送 content:complete 事件
+  if (content && executionStream) {
+    executionStream.completeContent();
+  }
+
+  // 构建与非流式 API 一致的结构
+  const message: any = {
+    role: 'assistant' as const,
+    content,
+  };
+
+  if (toolCalls.length > 0) {
+    message.tool_calls = toolCalls;
+  }
+
+  if (reasoningContent) {
+    message.reasoning_content = reasoningContent;
+  }
+
+  return {
+    id: 'stream',
+    object: 'chat.completion',
+    created: Math.floor(Date.now() / 1000),
+    model: '',
+    choices: [
+      {
+        index: 0,
+        message,
+        finish_reason: finishReason as any,
+      },
+    ],
+    usage,
+  } as OpenAI.ChatCompletion;
+}
+
+/**
+ * 累积流式 tool_calls delta
+ *
+ * OpenAI 流式 tool_calls 格式：
+ * - 每个 delta 包含 index 表示是第几个 tool_call
+ * - 首次出现时包含 id 和 function.name
+ * - 后续 delta 只包含 function.arguments 的增量
+ */
+function accumulateToolCalls(
+  toolCalls: OpenAI.ChatCompletionMessageToolCall[],
+  deltas: OpenAI.ChatCompletionChunk.Choice.Delta.ToolCall[]
+): void {
+  for (const delta of deltas) {
+    const index = delta.index;
+
+    // 新的 tool_call
+    if (!toolCalls[index]) {
+      toolCalls[index] = {
+        id: delta.id || '',
+        type: 'function',
+        function: {
+          name: delta.function?.name || '',
+          arguments: delta.function?.arguments || '',
+        },
+      };
+    } else {
+      // 累积 arguments
+      if (delta.function?.arguments) {
+        toolCalls[index].function.arguments += delta.function.arguments;
+      }
+      // 可能后续 delta 才有 name（虽然通常首次就有）
+      if (delta.function?.name) {
+        toolCalls[index].function.name = delta.function.name;
+      }
+    }
+  }
 }

@@ -5,8 +5,24 @@
  * 使用 Bun 原生 API 进行文件操作
  */
 
+import * as os from 'os';
 import * as path from 'path';
 import type { ToolResult } from '../types.js';
+
+/**
+ * 展开路径中的 ~ 符号为用户 home 目录
+ * @param inputPath - 输入路径
+ * @returns 展开后的路径
+ */
+function expandTilde(inputPath: string): string {
+  if (inputPath.startsWith('~/')) {
+    return path.join(os.homedir(), inputPath.slice(2));
+  }
+  if (inputPath === '~') {
+    return os.homedir();
+  }
+  return inputPath;
+}
 
 /** 默认文件大小限制（字符数） */
 const DEFAULT_MAX_FILE_SIZE = 100_000;
@@ -54,7 +70,9 @@ export type ReadFileResult = ToolResult<ReadFileData>;
  */
 export async function readFileExecutor(args: ReadFileArgs, context: any): Promise<ReadFileResult> {
   const cwd = context?.cwd || process.cwd();
-  const targetPath = path.resolve(cwd, args.filePath);
+  // 先展开 ~ 符号，再解析路径
+  const expandedPath = expandTilde(args.filePath);
+  const targetPath = path.resolve(cwd, expandedPath);
   const maxFileSize = context?.maxFileSize ?? DEFAULT_MAX_FILE_SIZE;
 
   const file = Bun.file(targetPath);
@@ -109,7 +127,6 @@ export async function readFileExecutor(args: ReadFileArgs, context: any): Promis
       content = `${head}\n\n... [内容已截断，省略 ${omittedChars} 字符] ...\n\n${tail}`;
       warning = `内容已截断，省略 ${omittedChars} 字符`;
     }
-
     return {
       success: true,
       warning,
@@ -125,6 +142,7 @@ export async function readFileExecutor(args: ReadFileArgs, context: any): Promis
       },
     };
   } catch (error) {
+    console.error('读取文件错误', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
     return {
       success: false,

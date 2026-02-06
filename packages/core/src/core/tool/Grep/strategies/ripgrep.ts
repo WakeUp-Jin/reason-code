@@ -8,7 +8,7 @@
  * - Rust 实现，多线程并行搜索
  * - 智能跳过二进制文件
  * - 自动遵守 .gitignore
- * - 流式读取，内存安全
+ * - 限制输出规模，内存更安全
  */
 
 import { GrepMatch, GrepStrategyOptions, GREP_DEFAULTS } from '../types.js';
@@ -36,7 +36,7 @@ export async function grepWithRipgrep(
     throw createAbortError();
   }
 
-  // 🔑 使用 search() 而不是 searchStream()，避免 async generator 问题
+  // 🔑 使用 search()（并限制输出规模），避免在 Bun 环境下大量输出导致的流/读取异常
   const output = await Ripgrep.search({
     cwd,
     pattern,

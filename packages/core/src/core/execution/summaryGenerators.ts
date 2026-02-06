@@ -3,6 +3,7 @@
  * 为不同类型的工具生成人类可读的结果摘要
  */
 
+import { relative } from 'node:path';
 import type { SummaryGeneratorRegistry } from './types.js';
 import type { ToolResult } from '../tool/types.js';
 
@@ -38,7 +39,8 @@ export const defaultSummaryGenerators: SummaryGeneratorRegistry = {
     const data = result.data;
     const lines = data?.lineCount ?? 0;
     const filePath = data?.filePath || params.file_path || params.path || params.filePath || 'file';
-    return `Read ${lines} lines from ${filePath}${getWarningSuffix(result)}`;
+    const displayPath = relative(process.cwd(), filePath);
+    return `Read ${lines} lines from ${displayPath}${getWarningSuffix(result)}`;
   },
 
   Read: (_, params, result) => {
@@ -119,7 +121,8 @@ export const defaultSummaryGenerators: SummaryGeneratorRegistry = {
     }
     const count = result.data?.totalCount ?? result.data?.files?.length ?? 0;
     const dirPath = result.data?.directory || params.path || params.directory || '.';
-    return `Listed ${count} items in ${dirPath}${getWarningSuffix(result)}`;
+    const displayDirPath = relative(process.cwd(), dirPath);
+    return `Listed ${count} items in ${displayDirPath}${getWarningSuffix(result)}`;
   },
 
   // TodoRead
@@ -157,6 +160,25 @@ export const defaultSummaryGenerators: SummaryGeneratorRegistry = {
     return `Read ${fileCount} files (${sizeStr})${getWarningSuffix(result)}`;
   },
 
+  // Task 工具
+  Task: (_, _params, result) => {
+    if (!result.success) {
+      return `Failed: ${result.error}`;
+    }
+    
+    const metadata = result.metadata;
+    const agentName = metadata?.agentName;
+    const stats = metadata?.stats;
+    const toolCount = metadata?.summary?.length ?? 0;
+    
+    if (stats && stats.tokens) {
+      const totalTokens = stats.tokens.total || ((stats.tokens.totalInput || 0) + (stats.tokens.totalOutput || 0));
+      return `Success | SubAgent: ${agentName} | Tools: ${toolCount} | Tokens: ${totalTokens}${getWarningSuffix(result)}`;
+    }
+    
+    return `Success | SubAgent: ${agentName} | Tools: ${toolCount}${getWarningSuffix(result)}`;
+  },
+
   // 默认
   default: (toolName, _, result) => {
     if (!result.success) {
@@ -191,7 +213,9 @@ export function generateParamsSummary(toolName: string, params: Record<string, a
     case 'Write':
     case 'WriteFile':
     case 'Edit':
-      return params.file_path || params.path || params.filePath || '';
+      let filePath = params.file_path || params.path || params.filePath || '';
+      const displaFilePath = relative(process.cwd(), filePath);
+      return displaFilePath || '';
 
     case 'Glob':
       return params.pattern || '';
@@ -204,17 +228,22 @@ export function generateParamsSummary(toolName: string, params: Record<string, a
       return cmd.length > 30 ? cmd.slice(0, 30) + '...' : cmd;
 
     case 'ListFiles':
-      return params.path || params.directory || '.';
+      let dirPath = params.path || params.directory || '.';
+      const displayListPath = relative(process.cwd(), dirPath);
+      return displayListPath || '';
 
     case 'ReadManyFiles': {
       const paths = params.paths;
       if (!paths || paths.length === 0) return '';
-      if (paths.length === 1) return paths[0];
+      if (paths.length === 1) {
+        const displayFilePath = relative(process.cwd(), paths[0]);
+        return displayFilePath || '';
+      }
       return `${paths.length} files`;
     }
 
     case 'Task':
-      return "Explore task implementation"
+      return params.description || "Explore task implementation"
 
     default:
       // 尝试找到第一个字符串参数

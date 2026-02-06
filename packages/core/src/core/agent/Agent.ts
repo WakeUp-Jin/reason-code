@@ -5,25 +5,42 @@
 
 import { ContextManager, ContextType, Message } from '../context/index.js';
 import { ToolManager } from '../tool/ToolManager.js';
-import { ILLMService } from '../llm/types/index.js';
-import { createLLMService } from '../llm/factory.js';
+import { ILLMService, LLMChatOptions } from '../llm/types/index.js';
+import { llmServiceRegistry, ModelTier } from '../llm/index.js';
 import { ExecutionEngine } from './execution/index.js';
 import { eventBus } from '../../evaluation/EventBus.js';
 import { buildSystemPrompt, type SystemPromptContext } from '../promptManager/index.js';
-import { ExecutionStreamManager } from '../execution/index.js';
+import { ExecutionStreamManager, MonitorWriter } from '../execution/index.js';
 import { ApprovalMode, ConfirmDetails, ConfirmOutcome, InternalTool } from '../tool/types.js';
-import { SessionStats, type ModelPricing } from '../stats/index.js';
+import { StatsManager, type ModelPricing, type AgentStats } from '../stats/index.js';
 import { logger } from '../../utils/logger.js';
+import { configService } from '../../config/index.js';
 import type { AgentConfig } from './config/types.js';
 import type { SharedRuntime } from './AgentManager.js';
 import type { SessionCheckpoint } from '../session/types.js';
 
 /**
+ * Monitor 配置选项
+ */
+export interface MonitorOptions {
+  /** 是否启用监控文件写入 */
+  enabled: boolean;
+  /** 会话 ID（用于文件命名） */
+  sessionId: string;
+  /** 项目路径 */
+  projectPath?: string;
+}
+
+/**
  * Agent 初始化选项
  */
 export interface AgentInitOptions {
-  /** 系统提示词上下文（由 CLI 传入的动态参数） */
+  /** 直接传入的系统提示词（最高优先级） */
+  systemPrompt?: string;
+  /** 系统提示词上下文（由 CLI 传入的动态参数，用于构建器） */
   promptContext?: SystemPromptContext;
+  /** Monitor 配置（启用后会写入监控文件供 Butler 读取） */
+  monitor?: MonitorOptions;
 }
 
 // 重新导出 SystemPromptContext 供外部使用
@@ -66,7 +83,7 @@ export interface AgentRunOptions {
   modelLimit?: number;
 
   /** 会话 ID（用于压缩时引用历史文件） */
-  sessionId: string;
+  sessionId?: string;
 
   /** 工具确认回调（由 CLI 层提供） */
   onConfirmRequired?: (
@@ -83,6 +100,9 @@ export interface AgentRunOptions {
 
   /** 外部 ExecutionStream（用于子代理） */
   executionStream?: ExecutionStreamManager;
+
+  /** LLM 调用选项（透传到 llmService.complete，支持 onChunk 流式回调等） */
+  llmOptions?: Partial<LLMChatOptions>;
 }
 
 /**
@@ -124,8 +144,8 @@ export class Agent {
   private initialized = false;
   private executionStream: ExecutionStreamManager;
 
-  /** 会话统计（费用累计） */
-  private sessionStats: SessionStats;
+  /** 统计管理器（Token 统计 + 费用计算） */
+  private statsManager: StatsManager;
 
   /** 压缩完成回调 */
   private onCompressionComplete?: (event: CompressionCompleteEvent) => void;
@@ -139,13 +159,51 @@ export class Agent {
   /** 系统提示词上下文（保存以供子代理使用） */
   private promptContext?: SystemPromptContext;
 
+  /** MonitorWriter 实例（用于写入监控文件） */
+  private monitorWriter?: MonitorWriter;
+  /** MonitorWriter 事件订阅取消函数 */
+  private monitorUnsubscribe?: () => void;
+  /** 缓存的模型配置（供 getModelConfig() 同步返回） */
+  private cachedModelConfig?: { provider: string; model: string };
+
   constructor(config: AgentConfig, runtime: SharedRuntime) {
     this.config = config;
     this.runtime = runtime;
     this.contextManager = new ContextManager();
     this.toolManager = runtime.toolManager;
     this.executionStream = new ExecutionStreamManager();
-    this.sessionStats = new SessionStats();
+    this.statsManager = new StatsManager();
+  }
+
+  /**
+   * 解析系统提示词
+   * 优先级：传入 > 配置静态 > 配置构建器 > 无
+   */
+  private resolveSystemPrompt(options?: AgentInitOptions): string | undefined {
+    // 1. 最高优先级：直接传入的系统提示词
+    if (options?.systemPrompt) {
+      logger.info('Using provided system prompt');
+      return options.systemPrompt;
+    }
+
+    // 2. 配置中的静态提示词
+    if (this.config.systemPrompt) {
+      logger.info('Using config static system prompt');
+      return this.config.systemPrompt;
+    }
+
+    // 3. 配置中的构建器 + promptContext
+    if (this.config.systemPromptBuilder && options?.promptContext) {
+      logger.info('Using config system prompt builder', {
+        workingDirectory: options.promptContext.workingDirectory,
+        modelName: options.promptContext.modelName,
+      });
+      return this.config.systemPromptBuilder(options.promptContext);
+    }
+
+    // 4. 无系统提示词
+    logger.warn('No system prompt configured');
+    return undefined;
   }
 
   /**
@@ -157,7 +215,7 @@ export class Agent {
     const toolConfig = this.config.tools || {};
 
     // 1. 自动排除（防止递归）
-    const autoExclude = this.config.mode === 'subagent' ? ['task'] : [];
+    const autoExclude = this.config.role === 'subagent' ? ['task'] : [];
 
     // 2. 白名单模式（如果指定了 include）
     if (toolConfig.include) {
@@ -166,10 +224,7 @@ export class Agent {
     }
 
     // 3. 黑名单模式（默认）
-    const excludeSet = new Set([
-      ...autoExclude,
-      ...(toolConfig.exclude || []),
-    ]);
+    const excludeSet = new Set([...autoExclude, ...(toolConfig.exclude || [])]);
 
     return allTools.filter((t) => {
       // 排除列表中的工具
@@ -191,47 +246,89 @@ export class Agent {
    *   - 如果不提供 promptContext，将使用 config.systemPrompt 或默认提示词
    */
   async init(options?: AgentInitOptions): Promise<void> {
-    // 使用 config.model 或默认值
-    const provider = this.config.model?.provider || 'deepseek';
-    const model = this.config.model?.model || 'deepseek-chat';
+    // 从配置读取模型层级，默认 PRIMARY
+    const tier = this.config.modelTier || ModelTier.PRIMARY;
 
-    // 创建 LLM 服务
-    this.llmService = await createLLMService({
-      provider,
-      model,
-      apiKey: this.runtime.apiKey,
-      baseURL: this.runtime.baseURL,
-    });
+    // 使用 LLMServiceRegistry 获取指定层级的模型服务
+    this.llmService = await llmServiceRegistry.getService(tier);
 
-    // 构建系统提示词
-    let systemPrompt: string;
+    // 获取当前模型配置（用于日志、提示词和缓存）
+    const modelConfig = await configService.getModelConfig(tier);
+    const model = modelConfig.model;
 
-    if (options?.promptContext) {
-      // 使用新的构建器（推荐方式）
-      systemPrompt = buildSystemPrompt(options.promptContext);
-      // 保存 promptContext 供后续使用（如子代理）
-      this.promptContext = options.promptContext;
-      logger.info('System prompt built from context', {
-        workingDirectory: options.promptContext.workingDirectory,
-        modelName: options.promptContext.modelName,
-      });
-    } else if (this.config.systemPrompt) {
-      // 使用配置中的自定义提示词
-      systemPrompt = this.config.systemPrompt;
-    } else {
-      // 没有提供 promptContext 也没有自定义提示词，使用默认构建
-      const defaultContext = {
-        workingDirectory: process.cwd(),
-        modelName: model,
-      };
-      systemPrompt = buildSystemPrompt(defaultContext);
-      // 保存默认 promptContext
-      this.promptContext = defaultContext;
-      logger.warn('No promptContext provided, using default system prompt');
+    // 缓存模型配置（供 getModelConfig() 同步返回）
+    this.cachedModelConfig = {
+      provider: modelConfig.provider,
+      model: modelConfig.model,
+    };
+
+    // 解析并设置系统提示词（优先级：传入 > 配置静态 > 配置构建器 > 无）
+    const systemPrompt = this.resolveSystemPrompt(options);
+    if (systemPrompt) {
+      this.contextManager.setSystemPrompt(systemPrompt);
     }
 
-    this.contextManager.setSystemPrompt(systemPrompt);
+    // 保存 promptContext（供后续使用，如子代理）
+    if (options?.promptContext) {
+      this.promptContext = options.promptContext;
+    }
+
+    // 初始化 MonitorWriter（如果启用）
+    if (options?.monitor?.enabled) {
+      this.initMonitorWriter(options.monitor, model);
+    }
+
     this.initialized = true;
+  }
+
+  /**
+   * 初始化 MonitorWriter
+   * 在 Core 层订阅执行流事件，写入监控文件
+   */
+  private initMonitorWriter(monitorConfig: MonitorOptions, model: string): void {
+    // 清理之前的 MonitorWriter
+    this.shutdownMonitorWriter();
+
+    // 创建新的 MonitorWriter
+    this.monitorWriter = new MonitorWriter({
+      sessionId: monitorConfig.sessionId,
+      projectPath: monitorConfig.projectPath || process.cwd(),
+      model,
+      agentMode: this.config.name,
+    });
+    this.monitorWriter.init();
+
+    // 订阅执行流事件
+    this.monitorUnsubscribe = this.executionStream.on((event) => {
+      this.monitorWriter?.handleEvent(event);
+    });
+
+    logger.info('MonitorWriter initialized in Agent', {
+      sessionId: monitorConfig.sessionId,
+      filePath: this.monitorWriter.getFilePath(),
+    });
+  }
+
+  /**
+   * 关闭 MonitorWriter
+   * 标记为 idle 状态并取消事件订阅
+   */
+  shutdownMonitorWriter(): void {
+    if (this.monitorWriter) {
+      this.monitorWriter.markAsIdle();
+      this.monitorWriter = undefined;
+    }
+    if (this.monitorUnsubscribe) {
+      this.monitorUnsubscribe();
+      this.monitorUnsubscribe = undefined;
+    }
+  }
+
+  /**
+   * 获取 MonitorWriter 实例
+   */
+  getMonitorWriter(): MonitorWriter | undefined {
+    return this.monitorWriter;
   }
 
   /**
@@ -273,7 +370,7 @@ export class Agent {
       }
 
       // 恢复统计数据
-      this.sessionStats.restore(checkpoint.stats);
+      this.statsManager.restore(checkpoint.stats);
     } else {
       // 无检查点：加载完整历史
       this.loadHistory(history);
@@ -282,29 +379,28 @@ export class Agent {
 
   /**
    * 切换模型
-   * 重新创建 LLM 服务，保留上下文
+   * 更新配置并重新获取 LLM 服务，保留上下文
+   *
+   * 当 /model 指令切换模型（如 deepseek-chat → deepseek-reasoner）时：
+   * 1. 更新内存：重新获取 LLM 服务实例
+   * 2. 写入配置文件：持久化到 model.primary（或对应层级），下次启动生效
+   * 3. 更新缓存：刷新 cachedModelConfig
    */
-  async setModel(provider: string, model: string, apiKey?: string): Promise<void> {
-    // 更新配置
-    if (!this.config.model) {
-      this.config.model = { provider, model };
-    } else {
-      this.config.model.provider = provider;
-      this.config.model.model = model;
-    }
+  async setModel(provider: string, model: string): Promise<void> {
+    // 获取当前使用的模型层级（默认 PRIMARY）
+    const tier = this.config.modelTier || ModelTier.PRIMARY;
 
-    // 更新运行时 apiKey（如果提供）
-    if (apiKey) {
-      this.runtime.apiKey = apiKey;
-    }
+    // 1. 写入配置文件（持久化）
+    await configService.updateModel(tier, { provider, model });
 
-    // 重新创建 LLM 服务（保留上下文）
-    this.llmService = await createLLMService({
-      provider,
-      model,
-      apiKey: this.runtime.apiKey,
-      baseURL: this.runtime.baseURL,
-    });
+    // 2. 使 LLM 服务缓存失效
+    llmServiceRegistry.invalidate(tier);
+
+    // 3. 重新获取 LLM 服务（内存更新）
+    this.llmService = await llmServiceRegistry.getService(tier);
+
+    // 4. 更新缓存的 modelConfig（供 getModelConfig() 同步返回）
+    this.cachedModelConfig = { provider, model };
   }
 
   /**
@@ -325,13 +421,16 @@ export class Agent {
     eventBus.reset();
 
     // 记录执行前的累计费用（用于计算本次执行费用）
-    const costBeforeRun = this.sessionStats.getTotalCostCNY();
+    const costBeforeRun = this.statsManager.getTotalCostCNY();
 
     // 发射 Agent 调用事件
     eventBus.emit('agent:call', { agentName: this.config.name });
 
     // 使用外部传入的 executionStream（如果有），否则使用内部的
     const executionStream = options?.executionStream || this.executionStream;
+
+    // 将 executionStream 注入到 ContextManager（用于发送压缩事件）
+    this.contextManager.setExecutionStream(executionStream);
 
     // 启动执行流
     executionStream.start();
@@ -348,6 +447,9 @@ export class Agent {
       isolatedToolManager.clear();
       filteredTools.forEach((tool) => isolatedToolManager.register(tool));
 
+      // 获取缓存的模型配置
+      const modelConfig = this.getModelConfig();
+
       // 创建执行引擎
       const engine = new ExecutionEngine(
         this.llmService,
@@ -357,14 +459,15 @@ export class Agent {
           maxLoops: this.config.execution?.maxLoops || 100,
           agentName: this.config.name,
           executionStream: executionStream,
-          model: this.config.model?.model || 'deepseek-chat',
+          model: modelConfig.model,
           modelLimit: options?.modelLimit,
           sessionId: options?.sessionId,
           onConfirmRequired: options?.onConfirmRequired,
           approvalMode: options?.approvalMode,
           abortSignal: this.abortController.signal,
-          sessionStats: this.sessionStats,
+          statsManager: this.statsManager,
           workingDirectory: this.promptContext?.workingDirectory,
+          llmOptions: options?.llmOptions,
         }
       );
 
@@ -396,7 +499,7 @@ export class Agent {
       this.contextManager.finishTurn();
 
       // 计算本次执行的费用（CNY）= 当前累计 - 执行前累计
-      const costCNY = this.sessionStats.getTotalCostCNY() - costBeforeRun;
+      const costCNY = this.statsManager.getTotalCostCNY() - costBeforeRun;
 
       // 完成执行流，传递本次执行费用
       executionStream.complete(costCNY);
@@ -481,12 +584,16 @@ export class Agent {
 
   /**
    * 获取当前模型配置
+   * 返回缓存的配置（在 init() 时从 ConfigService 获取并缓存）
    */
   getModelConfig(): { provider: string; model: string } {
-    return {
-      provider: this.config.model?.provider || 'deepseek',
-      model: this.config.model?.model || 'deepseek-chat',
-    };
+    // 返回缓存的配置，如果未初始化则返回默认值
+    return (
+      this.cachedModelConfig || {
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+      }
+    );
   }
 
   /**
@@ -547,27 +654,103 @@ export class Agent {
     this.contextManager.clearCurrentTurn();
   }
 
+  // ============ 压缩相关 ============
+
+  /**
+   * 手动触发压缩（供 CLI /compact 命令调用）
+   * 绕过阈值检查，立即执行压缩
+   */
+  async compress(): Promise<{
+    compressed: boolean;
+    originalTokens?: number;
+    compressedTokens?: number;
+    originalCount?: number;
+    compressedCount?: number;
+    savedPercentage?: number;
+    retainedFiles?: string[];
+  }> {
+    const tokenUsage = this.contextManager.getTokenUsage();
+
+    // 发送压缩开始事件
+    this.executionStream.startCompression(tokenUsage.formatted);
+
+    // 执行压缩（绕过阈值检查）
+    const result = await this.contextManager.forceCompress();
+
+    if (result.compressed) {
+      const retainedFiles = this.contextManager.extractRetainedFiles();
+      const savedPercentage = Math.round(
+        (1 - result.compressedTokens / result.originalTokens) * 100
+      );
+
+      // 发送压缩完成事件
+      this.executionStream.completeCompression({
+        originalTokens: result.originalTokens,
+        compressedTokens: result.compressedTokens,
+        originalCount: result.originalCount,
+        compressedCount: result.compressedCount,
+        savedPercentage,
+        retainedFiles,
+      });
+
+      logger.info('手动压缩完成', {
+        originalTokens: result.originalTokens,
+        compressedTokens: result.compressedTokens,
+        savedPercentage,
+        retainedFiles: retainedFiles.length,
+      });
+
+      return {
+        compressed: true,
+        originalTokens: result.originalTokens,
+        compressedTokens: result.compressedTokens,
+        originalCount: result.originalCount,
+        compressedCount: result.compressedCount,
+        savedPercentage,
+        retainedFiles,
+      };
+    }
+
+    logger.info('压缩跳过：历史消息太短或无需压缩');
+    return { compressed: false };
+  }
+
   // ============ 统计相关 ============
 
   /**
-   * 获取会话统计
+   * 获取统计管理器
    */
-  getSessionStats(): SessionStats {
-    return this.sessionStats;
+  getStatsManager(): StatsManager {
+    return this.statsManager;
+  }
+
+  /**
+   * 获取完整统计数据（核心对外接口）
+   * 包含 Token 统计、上下文使用情况、费用统计
+   */
+  getStats(): AgentStats {
+    return this.statsManager.getStats(this.contextManager);
   }
 
   /**
    * 设置模型定价（用于费用计算）
    */
   setModelPricing(pricing: ModelPricing): void {
-    this.sessionStats.setPricing(pricing);
+    this.statsManager.setPricing(pricing);
   }
 
   /**
    * 设置汇率
    */
   setExchangeRate(rate: number): void {
-    this.sessionStats.setExchangeRate(rate);
+    this.statsManager.setExchangeRate(rate);
+  }
+
+  /**
+   * 设置模型（自动加载定价和限制）
+   */
+  setStatsModel(modelId: string): void {
+    this.statsManager.setModel(modelId);
   }
 
   /**
@@ -587,15 +770,13 @@ export class Agent {
    * 获取累计费用
    */
   getTotalCost(currency: 'USD' | 'CNY' = 'CNY'): number {
-    return currency === 'USD'
-      ? this.sessionStats.getTotalCostUSD()
-      : this.sessionStats.getTotalCostCNY();
+    return this.statsManager.getTotalCost(currency);
   }
 
   /**
    * 获取格式化的费用字符串
    */
   getFormattedCost(currency: 'USD' | 'CNY' = 'CNY'): string {
-    return this.sessionStats.getFormattedCost(currency);
+    return this.statsManager.getFormattedCost(currency);
   }
 }

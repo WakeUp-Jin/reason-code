@@ -1,6 +1,6 @@
 import type { ExecutionStreamManager } from '../../execution/index.js';
 import type { ApprovalMode, ConfirmDetails, ConfirmOutcome } from '../../tool/types.js';
-import type { SessionStats } from '../../stats/index.js';
+import type { StatsManager } from '../../stats/index.js';
 
 /** 图片数据 */
 export interface ImageData {
@@ -119,6 +119,16 @@ export interface LLMChatOptions {
   extraBody?: Record<string, any>;
   /** 中断信号（用于取消 API 请求） */
   abortSignal?: AbortSignal;
+  /** 推理是否启用 */
+  reasoning?: {
+    enabled: boolean;
+  };
+  /** 流式输出回调（传入则启用流式模式，文本实时回调，tool_calls 累积后返回） */
+  onChunk?: (chunk: string) => void;
+  /** 是否开启流式模式（默认 false，开启后通过 executionStream 发送 content:delta 事件） */
+  stream?: boolean;
+  /** 执行流管理器（用于发送 content:delta / content:complete 事件） */
+  executionStream?: ExecutionStreamManager;
 }
 
 /**
@@ -182,8 +192,8 @@ export interface ToolLoopConfig {
   // 统计相关
   // ============================================================
 
-  /** 会话统计（用于费用计算） */
-  sessionStats?: SessionStats;
+  /** 统计管理器（用于 Token 统计和费用计算） */
+  statsManager?: StatsManager;
 
   // ============================================================
   // 工作目录
@@ -191,6 +201,13 @@ export interface ToolLoopConfig {
 
   /** 工作目录（用于传递给工具） */
   workingDirectory?: string;
+
+  // ============================================================
+  // LLM 调用选项透传
+  // ============================================================
+
+  /** LLM 调用选项（透传到 llmService.complete，支持 onChunk 等） */
+  llmOptions?: Partial<LLMChatOptions>;
 }
 
 /** LLM Service 核心接口 */

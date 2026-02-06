@@ -122,6 +122,62 @@ export interface MessageUpdate extends Omit<Partial<Message>, 'toolCall'> {
   toolCall?: Partial<ToolCallInfo>;
 }
 
+// ============ Notice 类型（仅内存，不持久化） ============
+
+/**
+ * Notice 类型枚举
+ */
+export type NoticeType = 'compression-pending' | 'compression-complete';
+
+/**
+ * 压缩通知数据
+ */
+export interface CompressionNoticeData {
+  /** 是否正在进行中 */
+  isPending: boolean;
+  /** Token 使用情况（pending 时显示） */
+  tokenUsage?: string;
+  /** 原始 token 数 */
+  originalTokens?: number;
+  /** 压缩后 token 数 */
+  compressedTokens?: number;
+  /** 原始消息数 */
+  originalCount?: number;
+  /** 压缩后消息数 */
+  compressedCount?: number;
+  /** 节省百分比 */
+  savedPercentage?: number;
+  /** 保留消息中的文件路径 */
+  retainedFiles?: string[];
+}
+
+/**
+ * 通知（仅内存显示，不持久化到磁盘）
+ * 用于显示压缩检查点等系统通知
+ */
+export interface Notice {
+  /** 唯一 ID */
+  id: string;
+  /** 通知类型 */
+  type: NoticeType;
+  /** 创建时间戳 */
+  timestamp: number;
+  /** 插入在哪条消息之后（用于时间线定位） */
+  afterMessageId?: string;
+  /** 通知数据 */
+  data: CompressionNoticeData;
+}
+
+// ============ Timeline Item 类型（统一 messages 和 notices） ============
+
+/**
+ * 时间线项目类型
+ * 用于统一 messages 和 notices 的渲染逻辑
+ */
+export type TimelineItem =
+  | { type: 'message'; data: Message }
+  | { type: 'notice'; data: Notice };
+
 // Agent 类型
 export interface AgentInfo {
   id: string;
@@ -177,6 +233,9 @@ interface AppState {
   // Message 相关
   messages: Record<string, Message[]>;
 
+  // Notice 相关（仅内存，不持久化）
+  notices: Notice[];
+
   // Agent 相关
   agents: AgentInfo[];
 
@@ -213,8 +272,22 @@ interface AppState {
   updateMessage: (sessionId: string, messageId: string, updates: MessageUpdate) => void;
   appendMessageContent: (sessionId: string, messageId: string, delta: string) => void;
 
+  // Notice Actions（仅内存）
+  /** 添加通知，返回生成的 ID */
+  addNotice: (notice: Omit<Notice, 'id' | 'timestamp'>) => string;
+  /** 更新通知 */
+  updateNotice: (id: string, updates: Partial<Omit<Notice, 'id'>>) => void;
+  /** 移除通知 */
+  removeNotice: (id: string) => void;
+  /** 清空所有通知 */
+  clearNotices: () => void;
+
   // Agent/Model Actions
   setCurrentModel: (modelId: string) => void;
+  /** 从配置文件加载模型列表 */
+  loadModels: () => Promise<void>;
+  /** 设置模型列表（由 loadModels 内部使用） */
+  setModels: (models: ModelInfo[]) => void;
 
   // Config Actions
   updateConfig: (updates: Partial<Config>) => void;
@@ -246,67 +319,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   sessions: [],
   currentSessionId: null,
   messages: {},
+  notices: [], // 仅内存，不持久化
   agents: [
     { id: 'default', name: 'Default Agent', description: 'General purpose AI assistant' },
     { id: 'coder', name: 'Coder', description: 'Specialized in coding tasks' },
   ],
-  models: [
-    {
-      id: 'deepseek/deepseek-chat',
-      name: 'DeepSeek Chat',
-      provider: 'DeepSeek',
-      maxTokens: 64_000,
-      pricing: {
-        input: 2.0, // ¥2.0 per 1M tokens
-        output: 3.0, // ¥3.0 per 1M tokens
-      },
-      description: 'Fast and affordable chat model',
-    },
-    {
-      id: 'deepseek/deepseek-reasoner',
-      name: 'DeepSeek Reasoner',
-      provider: 'DeepSeek',
-      maxTokens: 64_000,
-      pricing: {
-        input: 2.0, // ¥2.0 per 1M tokens
-        output: 3.0, // ¥3.0 per 1M tokens
-      },
-      description: 'Advanced reasoning model (R1)',
-    },
-    {
-      id: 'claude-sonnet-4',
-      name: 'Claude Sonnet 4',
-      provider: 'Anthropic',
-      maxTokens: 200_000,
-      pricing: {
-        input: 21.6, // ¥21.6 per 1M tokens
-        output: 108.0, // ¥108.0 per 1M tokens
-      },
-      description: 'Most capable Claude model with 200K context',
-    },
-    {
-      id: 'gpt-4o',
-      name: 'GPT-4o',
-      provider: 'OpenAI',
-      maxTokens: 128_000,
-      pricing: {
-        input: 18.0, // ¥18.0 per 1M tokens
-        output: 72.0, // ¥72.0 per 1M tokens
-      },
-      description: 'Fast and capable GPT-4 model',
-    },
-    {
-      id: 'gemini-pro',
-      name: 'Gemini Pro',
-      provider: 'Google',
-      maxTokens: 1_000_000,
-      pricing: {
-        input: 3.6, // ¥3.6 per 1M tokens
-        output: 10.8, // ¥10.8 per 1M tokens
-      },
-      description: 'Long context Google model with 1M context',
-    },
-  ],
+  // 模型列表初始为空，由 loadModels() 从配置文件加载
+  models: [],
   currentModel: 'deepseek/deepseek-chat',
   sessionTotalCost: 0, // 当前会话累计费用（CNY）
   config: {
@@ -527,9 +546,52 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
 
+  // Notice Actions（仅内存，不持久化）
+  addNotice: (notice) => {
+    const id = generateId();
+    const newNotice: Notice = {
+      ...notice,
+      id,
+      timestamp: Date.now(),
+    };
+    set((state) => ({
+      notices: [...state.notices, newNotice],
+    }));
+    return id;
+  },
+
+  updateNotice: (id, updates) => {
+    set((state) => ({
+      notices: state.notices.map((n) =>
+        n.id === id ? { ...n, ...updates } : n
+      ),
+    }));
+  },
+
+  removeNotice: (id) => {
+    set((state) => ({
+      notices: state.notices.filter((n) => n.id !== id),
+    }));
+  },
+
+  clearNotices: () => {
+    set({ notices: [] });
+  },
+
   // Agent/Model Actions
   setCurrentModel: (modelId) => {
     set({ currentModel: modelId });
+  },
+
+  loadModels: async () => {
+    // 动态导入避免循环依赖
+    const { loadModelsFromConfig } = await import('../config/modelLoader.js');
+    const models = await loadModelsFromConfig();
+    set({ models });
+  },
+
+  setModels: (models) => {
+    set({ models });
   },
 
   // Config Actions
@@ -632,8 +694,60 @@ export function useStreamingMessage(): Message | null {
   });
 }
 
-// 找到第一个阻塞点（未完成的工具或流式消息）
-// 阻塞点之前的消息可以进入 Static 区域，阻塞点及之后的消息在动态区域渲染
+// ============ Timeline Item 阻塞点逻辑 ============
+
+/**
+ * 合并 messages 和 notices 为统一的时间线
+ * notices 按照 afterMessageId 插入到对应消息之后
+ */
+function mergeTimelineItems(messages: Message[], notices: Notice[]): TimelineItem[] {
+  const items: TimelineItem[] = [];
+
+  for (const msg of messages) {
+    items.push({ type: 'message', data: msg });
+    // 插入该消息之后的 notices
+    const noticesAfter = notices.filter((n) => n.afterMessageId === msg.id);
+    for (const notice of noticesAfter) {
+      items.push({ type: 'notice', data: notice });
+    }
+  }
+
+  // 处理没有 afterMessageId 的 notices（追加到末尾）
+  const orphanNotices = notices.filter(
+    (n) => !n.afterMessageId || !messages.find((m) => m.id === n.afterMessageId)
+  );
+  for (const notice of orphanNotices) {
+    items.push({ type: 'notice', data: notice });
+  }
+
+  return items;
+}
+
+/**
+ * 找到第一个阻塞点（未完成的工具、流式消息、或 pending notice）
+ * 阻塞点之前的 items 可以进入 Static 区域，阻塞点及之后的 items 在动态区域渲染
+ */
+function findTimelineBlockingIndex(items: TimelineItem[]): number {
+  return items.findIndex((item) => {
+    if (item.type === 'message') {
+      const m = item.data;
+      // 流式消息是阻塞点
+      if (m.isStreaming) return true;
+      // 未完成的工具是阻塞点
+      if (m.role === 'tool' && m.toolCall) {
+        const status = m.toolCall.status;
+        return status !== 'success' && status !== 'error' && status !== 'cancelled';
+      }
+    }
+    if (item.type === 'notice') {
+      // pending notice 是阻塞点（需要动态更新 Spinner）
+      return item.data.data.isPending;
+    }
+    return false;
+  });
+}
+
+// 旧的 findBlockingIndex 保留兼容（仅用于 messages）
 function findBlockingIndex(messages: Message[]): number {
   return messages.findIndex((m) => {
     // 流式消息是阻塞点
@@ -676,5 +790,87 @@ export function useDynamicMessages(): Message[] {
       // 返回阻塞点及之后的消息（不含流式消息，流式消息单独处理）
       return messages.slice(blockingIndex).filter((m) => !m.isStreaming);
     })
+  );
+}
+
+// ============ Timeline Hooks（整合 messages 和 notices） ============
+
+/**
+ * 获取 Static 区域的时间线项目（阻塞点之前）
+ * 包含已完成的 messages 和 notices
+ */
+export function useStaticTimelineItems(): TimelineItem[] {
+  return useAppStore(
+    useShallow((state) => {
+      const id = state.currentSessionId;
+      const messages = id ? state.messages[id] || [] : [];
+      const notices = state.notices;
+
+      // 合并为时间线
+      const items = mergeTimelineItems(messages, notices);
+
+      // 找到阻塞点
+      const blockingIndex = findTimelineBlockingIndex(items);
+
+      // 没有阻塞点，所有 items 都可以进入 Static
+      if (blockingIndex === -1) return items;
+
+      // 返回阻塞点之前的 items
+      return items.slice(0, blockingIndex);
+    })
+  );
+}
+
+/**
+ * 获取动态区域的时间线项目（阻塞点及之后，不含流式消息）
+ * 包含未完成的 messages 和 pending notices
+ */
+export function useDynamicTimelineItems(): TimelineItem[] {
+  return useAppStore(
+    useShallow((state) => {
+      const id = state.currentSessionId;
+      const messages = id ? state.messages[id] || [] : [];
+      const notices = state.notices;
+
+      // 合并为时间线
+      const items = mergeTimelineItems(messages, notices);
+
+      // 找到阻塞点
+      const blockingIndex = findTimelineBlockingIndex(items);
+
+      // 没有阻塞点，动态区域为空
+      if (blockingIndex === -1) return [];
+
+      // 返回阻塞点及之后的 items（不含流式消息）
+      return items.slice(blockingIndex).filter((item) => {
+        if (item.type === 'message') {
+          return !item.data.isStreaming;
+        }
+        return true; // notices 全部保留
+      });
+    })
+  );
+}
+
+// ============ Notice Hooks（仅内存） ============
+
+/**
+ * 获取所有通知
+ */
+export function useNotices(): Notice[] {
+  return useAppStore(useShallow((state) => state.notices));
+}
+
+/**
+ * 获取 notice actions
+ */
+export function useNoticeActions() {
+  return useAppStore(
+    useShallow((state) => ({
+      addNotice: state.addNotice,
+      updateNotice: state.updateNotice,
+      removeNotice: state.removeNotice,
+      clearNotices: state.clearNotices,
+    }))
   );
 }

@@ -14,7 +14,13 @@
  * ```
  */
 
-import { ILLMService, ToolLoopResult, ToolLoopConfig, LLMResponse } from '../../llm/types/index.js';
+import {
+  ILLMService,
+  ToolLoopResult,
+  ToolLoopConfig,
+  LLMResponse,
+  LLMChatOptions,
+} from '../../llm/types/index.js';
 import { ContextManager, ToolOutputSummarizer } from '../../context/index.js';
 import { ToolManager } from '../../tool/ToolManager.js';
 import { ToolScheduler, ScheduleResult } from '../../tool/ToolScheduler.js';
@@ -24,7 +30,7 @@ import { logger } from '../../../utils/logger.js';
 import { loopLogger, contextLogger } from '../../../utils/logUtils.js';
 import { eventBus } from '../../../evaluation/EventBus.js';
 import { ExecutionStreamManager } from '../../execution/index.js';
-import { SessionStats } from '../../stats/index.js';
+import { StatsManager } from '../../stats/index.js';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 
@@ -125,10 +131,13 @@ export class ExecutionEngine {
   private workingDirectory: string;
 
   // 统计
-  private sessionStats?: SessionStats;
+  private statsManager?: StatsManager;
 
   // 中断控制
   private abortSignal?: AbortSignal;
+
+  // LLM 调用选项（透传）
+  private llmOptions?: Partial<LLMChatOptions>;
 
   constructor(
     llmService: ILLMService,
@@ -146,29 +155,31 @@ export class ExecutionEngine {
     this.modelLimit = config?.modelLimit ?? DEFAULT_MODEL_LIMIT;
     this.agentName = config?.agentName ?? 'agent';
     this.executionStream = config?.executionStream;
-    this.sessionStats = config?.sessionStats;
+    this.statsManager = config?.statsManager;
     this.abortSignal = config?.abortSignal;
     this.workingDirectory = config?.workingDirectory ?? process.cwd();
+    this.llmOptions = config?.llmOptions;
 
     // 提取工具调度器配置
     const enableToolSummarization = config?.enableToolSummarization ?? true;
     const approvalMode = config?.approvalMode ?? ApprovalMode.DEFAULT;
     const onConfirmRequired = config?.onConfirmRequired;
 
-    // 创建工具调度器
+    // 创建工具调度器（ToolOutputSummarizer 自动从 LLMServiceRegistry 获取 SECONDARY 模型）
     this.toolScheduler = new ToolScheduler(toolManager, {
       approvalMode,
       executionStream: this.executionStream,
       enableToolSummarization,
-      toolOutputSummarizer:enableToolSummarization ? new ToolOutputSummarizer(llmService) : undefined,
-      onConfirmRequired: onConfirmRequired ? this.createConfirmHandler(onConfirmRequired) : undefined,
+      toolOutputSummarizer: enableToolSummarization ? new ToolOutputSummarizer() : undefined,
+      onConfirmRequired: onConfirmRequired
+        ? this.createConfirmHandler(onConfirmRequired)
+        : undefined,
     });
 
-    // 配置压缩
+    // 配置压缩（LLM 服务由 HistoryContext 从 LLMServiceRegistry 获取）
     if (this.enableCompression) {
       contextManager.configureCompression({
         modelLimit: this.modelLimit,
-        llmService,
         sessionId: config?.sessionId,
       });
     }
@@ -240,6 +251,8 @@ export class ExecutionEngine {
       this.executionStream?.startThinking();
       const response = await this.llmService.complete(messages, tools, {
         abortSignal: this.abortSignal,
+        executionStream: this.executionStream, // 传递 executionStream 用于流式事件
+        ...this.llmOptions, // 透传 stream、onChunk 等选项
       });
 
       // 5. 中断检查（LLM 调用后）
@@ -308,16 +321,19 @@ export class ExecutionEngine {
         reasoningTokens: response.usage.reasoningTokens,
       };
 
-      // 更新 SessionStats 计算费用
-      if (this.sessionStats) {
-        this.sessionStats.update(tokenUsage);
+      // 更新 StatsManager 计算费用
+      if (this.statsManager) {
+        this.statsManager.update(tokenUsage);
       }
 
       // 获取累计费用（CNY）
-      const totalCost = this.sessionStats?.getTotalCostCNY() ?? 0;
+      const totalCost = this.statsManager?.getTotalCostCNY() ?? 0;
 
-      // 更新执行流统计（携带完整 token 信息和 totalCost，单位为 CNY）
-      this.executionStream?.updateStats(tokenUsage, totalCost);
+      // 获取完整的 AgentStats（新接口）
+      const agentStats = this.statsManager?.getStats(this.contextManager);
+
+      // 更新执行流统计（携带完整 token 信息、totalCost 和 agentStats）
+      this.executionStream?.updateStats(tokenUsage, totalCost, agentStats);
 
       this.contextManager.updateTokenCount(response.usage.promptTokens);
     }
@@ -444,17 +460,21 @@ export class ExecutionEngine {
   /**
    * 创建确认处理器
    * 包装外部的 onConfirmRequired 回调，添加工具名称参数
-   * 
+   *
    */
 
   private createConfirmHandler(
-    onConfirmRequired:(callId:string,toolName:string,details:ConfirmDetails) => Promise<ConfirmOutcome>
-  ):(callId:string,details:ConfirmDetails) => Promise<ConfirmOutcome>  {
-    return async (callId,details) => {
+    onConfirmRequired: (
+      callId: string,
+      toolName: string,
+      details: ConfirmDetails
+    ) => Promise<ConfirmOutcome>
+  ): (callId: string, details: ConfirmDetails) => Promise<ConfirmOutcome> {
+    return async (callId, details) => {
       const records = this.toolScheduler.getRecords();
       const record = records.find((r) => r.request.callId === callId);
       const toolName = record?.request.toolName ?? 'unknown';
-      return onConfirmRequired(callId,toolName,details);
-    }
-  };
+      return onConfirmRequired(callId, toolName, details);
+    };
+  }
 }

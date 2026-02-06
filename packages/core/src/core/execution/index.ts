@@ -18,3 +18,17 @@ export {
   generateSummary,
   generateParamsSummary,
 } from './summaryGenerators.js';
+
+// 监控文件相关导出
+export {
+  MonitorWriter,
+  type MonitorWriterOptions,
+  type MonitorEventFilter,
+} from './MonitorWriter.js';
+
+export {
+  MonitorFileOps,
+  type MonitorStatus,
+  type ParsedMonitorFileName,
+  type CleanupResult,
+} from './MonitorFileOps.js';
