@@ -11,9 +11,19 @@ Reason Code 是采用“渐进式构建的方式”，目前我会先专注 Reas
 
 <!-- 这是一张图片，ocr 内容为： -->
 
-![Reason Code的演示](./home.gif)
-
-<!-- ![Reason Code的演示](https://test.fukit.cn/autoupload/f/T1ctJDDxXuOhHOz5mOhTy9iO_OyvX7mIgxFBfDMDErs/20260206/qDfk/640X367/2%E6%9C%885%E6%97%A5_%281%29%282%29.gif) -->
+<div align="center">
+  <picture>
+    <!-- <source srcset="https://cdn.jsdelivr.net/gh/WakeUp-Jin/reason-code@main/home.gif" type="image/gif"> -->
+    <img
+      src="./home.gif"
+      alt="Reason Code 演示 - 加载中..."
+      loading="lazy"
+      width="100%"
+      style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 400px; border-radius: 8px; display: block;"
+    >
+  </picture>
+  <p><em><small>Reason Code 智能代码理解工具演示</small></em></p>
+</div>
 
 ## 这是什么
 
