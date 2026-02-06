@@ -18,7 +18,6 @@ Reason Code 是采用“渐进式构建的方式”，目前我会先专注 Reas
       src="./home.gif"
       alt="Reason Code 演示 - 加载中..."
       loading="lazy"
-      width="100%"
       style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 400px; border-radius: 8px; display: block;"
     >
   </picture>
